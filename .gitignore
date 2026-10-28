@@ -1,0 +1,17 @@
+# 知识库仓库忽略项
+# 笔记与索引都要进 git（索引是派生物，但保留 diff 便于审计）
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.swp
+.obsidian/workspace*.json
+
+# 脚本若将来引入依赖
+_meta/scripts/node_modules/
+
+# 触发器运行时状态（cursor / 待抽取窗口 / 裁判队列 / 临时文件），可重建，不进 git
+_meta/state/
+
+# 召回日志：高频追加的遥测，是热度的唯一来源，但不是笔记
+_meta/access.jsonl

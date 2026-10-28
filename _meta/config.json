@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "note": "知识库运行参数。改这里不用改脚本；所有勾选都与 _meta/schema.md §5 一一对应。",
+  "paths": {
+    "catalog": "_meta/catalog.jsonl",
+    "archive": "_meta/catalog.archive.jsonl",
+    "access": "_meta/access.jsonl",
+    "changeLog": "_meta/log.md",
+    "sessions": "10_Raw/sessions"
+  },
+  "extract": {
+    "idle_seconds": 300,
+    "max_delay_seconds": 1200,
+    "every_turns": 20,
+    "trigger_words": [
+      "记", "记住", "记一下", "别忘", "以后", "不要", "别", "喜欢", "讨厌",
+      "决定", "改成", "其实是", "不对", "每周", "每月", "截止", "交付",
+      "我的", "我用", "所谓", "定义为"
+    ]
+  },
+  "ingest": {
+    "note": "第 1/2 步触发器的运行参数（@local/kb-panel 读取）。状态文件写在 stateDir，已被 .gitignore 忽略。",
+    "enabled": true,
+    "nodePath": "",
+    "stateDir": "_meta/state",
+    "pendingMaxChars": 12000,
+    "appendTimeoutMs": 8000,
+    "candidatesTimeoutMs": 20000,
+    "rebuildTimeoutMs": 30000,
+    "skipSubagentSessions": true,
+    "judgeQueueMaxPending": 200,
+    "appendIndex": true
+  },
+  "consolidate": {
+    "daily": "03:30"
+  },
+  "limits": {
+    "catalog_max_rows": 3000,
+    "catalog_max_bytes": 300,
+    "summary_max_chars": 40,
+    "stale_days": 180,
+    "archive_days": 180,
+    "review_warn_days": 0,
+    "work_stale_days": 14
+  },
+  "judge": {
+    "provider": "deepseek-account",
+    "model": "deepseek-flash",
+    "enabled": true,
+    "mode": "write",
+    "intervalMs": 300000,
+    "batch": 3,
+    "timeoutMs": 60000,
+    "note": "第 3 步语义裁判：enabled 开才运行；mode=dry 只把裁决写进 _meta/state/judge-dry-run.jsonl 供人工审阅，mode=write 才经 kb.mjs add-atom 落入 20_Digest。provider 必须与当前 profile 的 llm 路由一致（desktop 用 deepseek-account）。"
+  }
+}

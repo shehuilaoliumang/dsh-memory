@@ -1,0 +1,10 @@
+- insert:
+    - id: kb-panel
+      name: '@local/kb-panel'
+      config:
+        workspaceRoot: 'C:/Users/Lu/Documents/Obsidian Vault/memory'
+        refreshMs: 30000
+        # 入库触发器默认开启；真正的阈值在 _meta/config.json（extract / ingest），
+        # 那份文件改完即生效，不需要重载插件。
+        ingest:
+          enabled: true

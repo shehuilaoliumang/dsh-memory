@@ -1,0 +1,38 @@
+# 路径 → 中文显示名
+# 只用于界面展示，不参与任何路径解析。改这里不会移动文件。
+# DSH 知识库面板 / Bases 视图 / index.md 都读这张表。
+# 工作区根 = Obsidian Vault\memory，本表所有路径都相对它。
+
+version: 1
+
+dirs:
+  "00_Inbox": 收件箱
+  "10_Raw": 原文层
+  "10_Raw/sessions": 对话记录
+  "10_Raw/clippings": 剪藏
+  "20_Digest": 摘要层
+  "20_Digest/atoms": 原子记忆
+  "20_Digest/topics": 主题
+  "20_Digest/work": 工作页
+  "30_Canon": 结论层
+  "30_Canon/principles": 方法论
+  "30_Canon/decisions": 决策
+  "90_Archive": 归档
+  "_meta": 元数据
+  "_meta/templates": 模板
+
+files:
+  "AGENTS.md": 知识库协议
+  "30_Canon/core.md": 核心记忆
+  "_meta/schema.md": 规范
+  "_meta/index.md": 导航
+  "_meta/log.md": 变更日志
+
+# Bases 视图建议标题（v2 界面用）
+views:
+  raw: 原文
+  digest: 摘要
+  work: 工作页
+  canon: 结论
+  review: 待复查
+  conflicts: 冲突待裁决

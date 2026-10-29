@@ -17,7 +17,7 @@ updated: 2026-10-29
 
 ## 元数据
 
-- 规范 → `_meta/schema.md`（v1.9）
+- 规范 → `_meta/schema.md`（v1.9.1）
 - 变更日志 → `_meta/log.md`
 - 显示名映射 → `_meta/labels.yaml`
 - 抽取样例 → `_meta/rules/samples.md`；裁判黄金集 → `_meta/rules/golden.jsonl`（100 条）
@@ -28,7 +28,7 @@ updated: 2026-10-29
 
 - 笔记数：以 `node _meta/scripts/kb.mjs stats` 为准（分层 / 状态 / 类型）
 - 索引：`catalog.jsonl` 由 `kb.mjs rebuild` 生成，`validate` 通过（0 错误 0 警告）
-- 规则层：v1.9 已落地 —— Phase 0（元窗口冻结、索引容错与原子写、删除闸 TTY、`/kb/*` 同源防护、CI）+ Phase 1（subject/supersedes、`superseded` 终态、衰减热度 shadow、consolidate truth）+ Phase 2（100 条黄金集、precision 回归、promptVersion、breaker、队列降级、反馈标签）+ Phase 3（search、线上衰减排序、`<untrusted-memory>`、redaction、CSRF、c-0010 威胁模型）+ Phase 4（共享 frontmatter/节名、append-session JSON、scope 回落、会话 id 去重、access 轮转、配置缓存、VERSION/CHANGELOG/init）；裁判仍为 deepseek-flash 直调
+- 规则层：v1.9.1 已落地 —— Phase 0（元窗口冻结、索引容错与原子写、删除闸 TTY、`/kb/*` 同源防护、CI）+ Phase 1（subject/supersedes、`superseded` 终态、衰减热度 shadow、consolidate truth）+ Phase 2（100 条黄金集、precision 回归、promptVersion+promptHash、breaker、队列降级、反馈标签）+ Phase 3（search、线上衰减排序、`<untrusted-memory>`、redaction、CSRF、c-0010 威胁模型）+ Phase 4（共享 frontmatter/节名、append-session JSON、scope 回落、会话 id 去重、access 轮转、配置缓存、VERSION/CHANGELOG/init）；裁判仍为 deepseek-flash 直调
 - 界面：`@local/kb-panel` 已启用 —— 记忆 chip、会话菜单、知识库页（含「工作页」徽标）、安全重载
 - 未决：晋升确认界面 / 冲突裁决形态 / git 远端备份
 

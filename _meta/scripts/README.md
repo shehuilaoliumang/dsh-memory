@@ -44,7 +44,7 @@ node _meta/scripts/kb.mjs rebuild --dry-run
 
 ## 冒烟测试
 
-`smoke.ps1` 把 vault 复制到临时目录，跑一遍 validate / rebuild / id-next / add-atom（dry-run + 真实 + 去重）/ set-status / clear-scope / batch-status / promote / access / consolidate / 当前真相（supersedes 与反馈）/ 裁判黄金集回归 / work-new / work-brief / 工作页唯一性、状态守卫、归档恢复与批量预校验 / 只读检索 / append-session 脱敏 / Phase 4 契约（JSON 输出、同分钟会话、version、init），共 80 条断言，结束清理。**不触碰真实库。**
+`smoke.ps1` 把 vault 复制到临时目录，跑一遍 validate / rebuild / id-next / add-atom（dry-run + 真实 + 去重）/ set-status / clear-scope / batch-status / promote / access / consolidate / 当前真相（supersedes 与反馈）/ 裁判黄金集回归 / work-new / work-brief / 工作页唯一性、状态守卫、归档恢复与批量预校验 / 只读检索 / append-session 脱敏 / Phase 4 契约（JSON 输出、同分钟会话、version、init），共 81 条断言，结束清理。**不触碰真实库。**
 
 ```powershell
 # 文件是 UTF-8 BOM，PowerShell 5.1 与 pwsh 都能直接 -File；执行策略可能需 Bypass
@@ -67,7 +67,7 @@ node _meta/plugin/kb-panel/test/work-brief.test.mjs
 node _meta/plugin/kb-panel/test/http-guard.test.mjs
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
-# 共 99 条：ingest 32 / judge 27 / transcript 6 / work-brief 18 / http-guard 7 / redact 5 / shared-frontmatter 4
+# 共 101 条：ingest 32 / judge 29 / transcript 6 / work-brief 18 / http-guard 7 / redact 5 / shared-frontmatter 4
 ```
 
 不要用 `node --test`：沙箱不允许它用管道 stdio 再 spawn 子进程。

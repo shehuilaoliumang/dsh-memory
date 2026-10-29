@@ -8,6 +8,9 @@ import assert from 'node:assert/strict';
 
 import {
   JUDGE_SYSTEM,
+  DEFAULT_JUDGE,
+  judgePromptHash,
+  predictionMatchesPrompt,
   clampText,
   similarity,
   dedupeAtoms,
@@ -262,3 +265,26 @@ test('prompt redacts secrets before they reach the model', () => {
   assert.doesNotMatch(prompt, /hunter2long/);
   assert.match(prompt, /\[REDACTED/);
 });
+
+test('judgePromptHash: stable 16-char fingerprint of the rendered system prompt', () => {
+  const hash = judgePromptHash();
+  assert.match(hash, /^[0-9a-f]{16}$/);
+  assert.equal(hash, judgePromptHash(DEFAULT_JUDGE));
+});
+
+test('predictionMatchesPrompt: rejects a stale prompt version or prompt hash', () => {
+  const hash = judgePromptHash();
+  assert.equal(
+    predictionMatchesPrompt({ promptVersion: DEFAULT_JUDGE.promptVersion, promptHash: hash }),
+    true,
+  );
+  assert.equal(
+    predictionMatchesPrompt({ promptVersion: 'stale-version', promptHash: hash }),
+    false,
+  );
+  assert.equal(
+    predictionMatchesPrompt({ promptVersion: DEFAULT_JUDGE.promptVersion, promptHash: 'deadbeefdeadbeef' }),
+    false,
+  );
+});
+

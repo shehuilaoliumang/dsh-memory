@@ -22,7 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildJudgePrompt, buildJudgeSystem, parseVerdict, DEFAULT_JUDGE } from '../plugin/kb-panel/judge.js';
+import { buildJudgePrompt, buildJudgeSystem, parseVerdict, DEFAULT_JUDGE, judgePromptHash, predictionMatchesPrompt } from '../plugin/kb-panel/judge.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const args = process.argv.slice(2);
@@ -142,7 +142,7 @@ function ratio(a, b) {
   return b ? a / b : 0;
 }
 
-function summarize(cases, promptVersion, opts) {
+function summarize(cases, promptVersion, promptHash, opts) {
   let tp = 0;
   let fp = 0;
   let fn = 0;
@@ -178,6 +178,7 @@ function summarize(cases, promptVersion, opts) {
     generatedAt: new Date().toISOString(),
     adapter: opts.adapter,
     promptVersion,
+    promptHash,
     model: opts.model || null,
     total: cases.length,
     confusion: { tp, fp, fn, tn },
@@ -198,6 +199,7 @@ async function main() {
     maxTokens: Math.max(128, Number(arg('max-tokens', 2000)) || 2000),
     timeoutMs: Math.max(5000, Number(arg('timeout-ms', 90000)) || 90000),
     promptVersion: arg('prompt-version', DEFAULT_JUDGE.promptVersion),
+    promptHash: judgePromptHash(DEFAULT_JUDGE),
   };
   if (!fs.existsSync(goldenFile)) throw new Error(`黄金集不存在：${goldenFile}`);
   const golden = readJsonl(goldenFile);
@@ -216,7 +218,16 @@ async function main() {
   if (adapter === 'predictions') {
     const predictionFile = path.resolve(arg('predictions', ''));
     if (!predictionFile || !fs.existsSync(predictionFile)) throw new Error('--adapter predictions 需要 --predictions FILE');
-    predictions = new Map(readJsonl(predictionFile).map((row) => [row.id, row]));
+    const rows = readJsonl(predictionFile);
+    const expectedPrompt = { ...DEFAULT_JUDGE, promptVersion: opts.promptVersion };
+    for (const row of rows) {
+      if (!predictionMatchesPrompt(row, expectedPrompt)) {
+        throw new Error(
+          `predictions ${row.id || '?'}: promptVersion/promptHash 与当前 prompt 不一致（拒绝旧预测，请用 /kb/judge/eval 重新生成）`,
+        );
+      }
+    }
+    predictions = new Map(rows.map((row) => [row.id, row]));
   }
 
   const cases = [];
@@ -233,12 +244,12 @@ async function main() {
     cases.push({ case: caseRow, prompt, predicted });
   }
 
-  const result = summarize(cases, opts.promptVersion, opts);
+  const result = summarize(cases, opts.promptVersion, opts.promptHash, opts);
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, `${JSON.stringify({ ...result, cases }, null, 2)}\n`, 'utf8');
 
   const m = result.metrics;
-  console.log(`golden=${result.total} adapter=${adapter} prompt=${result.promptVersion}`);
+  console.log(`golden=${result.total} adapter=${adapter} prompt=${result.promptVersion} hash=${result.promptHash}`);
   console.log(`precision=${m.precision.toFixed(3)} recall=${m.recall.toFixed(3)} f1=${m.f1.toFixed(3)} accuracy=${m.accuracy.toFixed(3)} typeAcc=${m.typeAccuracy.toFixed(3)}`);
   console.log(`confusion tp=${result.confusion.tp} fp=${result.confusion.fp} fn=${result.confusion.fn} tn=${result.confusion.tn}`);
   if (result.falsePositive.length) console.log(`false-positive: ${result.falsePositive.join(', ')}`);

@@ -14,6 +14,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { redactSecrets } from './redact.js';
 
 const DEFAULT_JUDGE = {
@@ -80,6 +81,27 @@ export function buildJudgeSystem(cfg = DEFAULT_JUDGE) {
 
 export const JUDGE_SYSTEM = buildJudgeSystem(DEFAULT_JUDGE);
 export { DEFAULT_JUDGE };
+
+/**
+ * Content fingerprint of the rendered system prompt. `promptVersion` is a human
+ * label and is deliberately NOT included in the prompt body; the hash is the
+ * authoritative check that a prediction file was produced by the same prompt.
+ * Any wording/contract change changes this hash even when someone forgets to
+ * bump the label, so stale predictions cannot silently pass the eval gate.
+ */
+export function judgePromptHash(cfg = DEFAULT_JUDGE) {
+  return createHash('sha256').update(buildJudgeSystem(cfg), 'utf8').digest('hex').slice(0, 16);
+}
+
+/** True only when a prediction row was produced by this exact prompt version. */
+export function predictionMatchesPrompt(row, cfg = DEFAULT_JUDGE) {
+  return Boolean(
+    row &&
+      typeof row === 'object' &&
+      row.promptVersion === cfg.promptVersion &&
+      row.promptHash === judgePromptHash(cfg),
+  );
+}
 
 function readText(file) {
   try {
@@ -527,6 +549,7 @@ export function createJudgeWorker(deps = {}) {
       raw: job.raw,
       mode: cfg.mode,
       promptVersion: cfg.promptVersion,
+      promptHash: judgePromptHash(cfg),
       verdict,
     };
 
@@ -716,6 +739,7 @@ export function createJudgeWorker(deps = {}) {
           type: verdict.atoms?.[0]?.type || null,
           reason: verdict.reason || '',
           promptVersion: cfg.promptVersion,
+          promptHash: judgePromptHash(cfg),
         });
       } catch (error) {
         rows.push({ id: job.id, error: String(error && error.message ? error.message : error) });
@@ -756,6 +780,7 @@ export function createJudgeWorker(deps = {}) {
         breakerUntil: state.breakerUntil,
         breakerOpen: Boolean(state.breakerUntil && Date.parse(state.breakerUntil) > Date.now()),
         promptVersion: settings().promptVersion,
+        promptHash: judgePromptHash(settings()),
         queue: {
           pending: queue.filter((job) => job.status === 'pending').length,
           rejected: queue.filter((job) => job.status === 'rejected').length,

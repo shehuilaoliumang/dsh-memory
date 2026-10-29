@@ -21,7 +21,7 @@
 - 抽取由静默窗口触发，语义裁判（deepseek-flash 直调）判定后经 `kb.mjs add-atom` 写入 `20_Digest/atoms/`。
 - **知识库建设窗口默认冻结**：待抽取窗口命中 `extract.meta_keywords` 达到阈值时不进裁判队列（施工日志不是记忆，见 2026-10-20-a-0016）；原文照常落 `10_Raw/`。
 - **裁判写入默认 `status: inbox`，不会进入对话**；必须显式确认（`set-status --status active`）才可能被注入。
-- **裁判质量**：`_meta/rules/golden.jsonl` 是 100 条人工黄金集，`eval-judge.mjs` 跑 precision 回归（当前 1.000，目标 ≥0.8）；确认/拒绝会写 `_meta/state/judge-feedback.jsonl` 作为标签。连续失败 3 次熔断 1 小时；队列满丢新 job、pending 超限保留最近，均只记 warning，不阻塞后续窗口。
+- **裁判质量**：`_meta/rules/golden.jsonl` 是 100 条人工黄金集，`eval-judge.mjs` 跑 precision 回归（当前 1.000，目标 ≥0.8）；确认/拒绝会写 `_meta/state/judge-feedback.jsonl` 作为标签。预测文件每行必须带 `promptVersion` + `promptHash`（hash 由 `buildJudgeSystem()` 内容派生），版本或提示词变化后旧预测会拒绝加载。连续失败 3 次熔断 1 小时；队列满丢新 job、pending 超限保留最近，均只记 warning，不阻塞后续窗口。
 - 原子应带 `scope`：`global`（跨项目适用）/ `project:<slug>` / `system`（知识库自身建设）/ `unclassified`（判不准）；**缺失 scope = 永不注入（fail closed）**，手工“取消范围”会产生这种条目。
 - **新结论取代旧结论**：新原子带 `subject`（稳定主题 slug）和 `supersedes: ["[[旧id]]"]`；新条默认 `inbox`，此时只是 pending 取代边，**旧条继续有效**；确认新条 `active` 时 `add-atom`/`set-status` 才把旧条置 `superseded`（正文保留、永不注入）。`validate` 只要求 active 的新条不得指向仍 active 的旧条；不能靠热度让旧结论自然退场。
 - **工作页**（`type: work`，一个 scope 一页，`validate` 强制唯一 active）只写项目状态（阶段/在办/未决/下一步）；操作指令只进原文层，不进工作页。新建用 `kb.mjs work-new`，正文由人确认后覆写；归档用「归档 / 恢复为活跃」。

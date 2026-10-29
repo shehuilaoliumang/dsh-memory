@@ -1,6 +1,6 @@
 {
   "name": "@local/kb-panel",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "private": true,
   "type": "module",
   "description": "Knowledge base page and in-vault memory chip, session-scoped core-memory prompt injection, and the schema §5 pipeline trigger (step 1 transcript append + step 2 extraction schedule).",

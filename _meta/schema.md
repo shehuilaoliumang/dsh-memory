@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.9
+title: 知识库规范 v1.9.1
 status: canon
 updated: 2026-10-29
 ---
 
-# 知识库规范 v1.9
+# 知识库规范 v1.9.1
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -18,7 +18,6 @@ updated: 2026-10-29
 
 | 路径 | 中文名 | 层级 | 可变性 | 说明 |
 |---|---|---|---|---|
-| `00_Inbox/` | 收件箱 | 入口 | 当天清空 | 未判断层级的临时存放，不长期放东西 |
 | `10_Raw/sessions/` | 对话记录 | 原文 | 只追加 | `<年>/<月>/<YYYY-MM-DD>-<slug>.md`，一会话一文件，按年月分片 |
 | `10_Raw/clippings/` | 剪藏 | 原文 | 只追加 | 网页、文档导入 |
 | `20_Digest/atoms/` | 原子记忆 | 摘要 | 改状态不改正文 | 一条一文件 |
@@ -27,13 +26,14 @@ updated: 2026-10-29
 | `30_Canon/principles/` | 方法论 | 结论 | 少改 | 稳定结论、可复用方法 |
 | `30_Canon/decisions/` | 决策 | 结论 | 少改 | 一条决策一文件（含理由与放弃的替代方案） |
 | `30_Canon/core.md` | 核心记忆 | 结论 | 手工 | 称谓/助手名/硬偏好/禁区，每轮常驻 |
-| `90_Archive/` | 归档 | 出口 | 手工 | 默认不使用（归档在索引层，见 §8） |
 | `_meta/` | 元数据 | 元层 | 脚本 | 索引、日志、映射、样例 |
 | `_meta/scripts/` | 规则层 | 元层 | 可改 | 管线规则脚本（`kb.mjs`）与参数（`config.json`），见 §11 |
 | `_meta/plugin/` | 界面层 | 元层 | 可改 | DSH 插件源码（`kb-panel`：记忆 chip + 面板 + 核心记忆注入），见 §12 |
 | `_meta/templates/` | 模板 | 元层 | 可改 | 手工新建笔记的参考骨架（工作页等）；脚本 `work-new` 另有同一套节名，改任一处要同步 |
 
 **硬规则：文件出生在哪层，就永远待在哪层。不做物理移动。**
+
+> `kb init` 只创建实际使用的目录：`10_Raw/sessions`、`10_Raw/clippings`、`20_Digest/atoms`、`20_Digest/topics`、`20_Digest/work`、`30_Canon/principles`、`30_Canon/decisions`；不自动创建其他顶层目录。
 
 ## 2. 状态（frontmatter.status）
 
@@ -200,7 +200,8 @@ updated: 2026-10-20
 | `consolidate_daily` | 03:30 | 每日整理 |
 | `truth_shadow_mode` | true | `consolidate` 是否对比“当前排序 vs 衰减排序”；线上注入自 v1.8 起直接用衰减排序，本参数只保留报告与审计 |
 | `truth_heat_half_life_days` | 30 | 召回热度指数衰减半衰期（天） |
-| `judge.promptVersion` | `2026-10-29.1` | 裁判提示词版本；每次改提示词递增，队列记录该版本 |
+| `judge.promptVersion` | `2026-10-29.1` | 裁判提示词版本标签；每次改提示词递增，队列记录该版本 |
+| `judge.promptHash` | 自动派生 | `buildJudgeSystem()` 的 sha256 前 16 位；预测文件每行必须带该 hash，版本/提示词变化会拒绝旧预测 |
 | `judge.breakerThreshold` | 3 | 连续失败多少次打开熔断 |
 | `judge.breakerCooldownMs` | 3600000 | 熔断冷却 1 小时 |
 | `auto_commit` | — | git 批量提交（未实现，参数未外置） |
@@ -386,7 +387,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：折叠时显示篇数/索引数，展开显示分层、状态、最近更新、核心记忆摘要 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
-| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard,redact,shared-frontmatter}.test.mjs`（共 99 条） |
+| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard,redact,shared-frontmatter}.test.mjs`（共 101 条） |
 
 已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板 UI 只读（自动写入在 Host 侧触发器，不在面板操作里）。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
 
@@ -414,7 +415,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | `rebuild` | 4 | 从笔记重建 `catalog*.jsonl`（索引禁止手改） |
 | `consolidate` | 5 | review 到期、stale 候选（跳过工作页）、未归主题（跳过 archived/promoted/页面）、重复 summary；另报 `truth`：同 subject 冲突、孤儿 superseded、待确认取代、缺 subject、current vs shadow 排序对比 |
 | `stats` / `id-next` / `log` | — | 统计、id 生成、变更日志 |
-| `version` / `init` | — | 打印 `VERSION`；幂等创建知识库目录骨架（v1.9） |
+| `version` / `init` | — | 打印 `VERSION`；幂等创建知识库目录骨架（v1.9.1） |
 
 验收（每次改协议或索引后必跑）：
 
@@ -423,7 +424,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v1.9）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
+已知限制（v1.9.1）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -520,12 +521,12 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 ```powershell
 node _meta/scripts/kb.mjs search --query "界面 中文" --limit 5
 node _meta/plugin/kb-panel/test/redact.test.mjs
-node _meta/scripts/smoke.ps1   # 冒烟 80/80；插件 99/99
+node _meta/scripts/smoke.ps1   # 冒烟 81/81；插件 101/101
 ```
 
 非目标（v1.8 明确不做）：多用户/公网部署、进程级认证、密钥保险库、自动语义检索、对已提交 git 历史的清洗。
 
-## 16. 可维护性与减债（v1.9 新增）
+## 16. 可维护性与减债（v1.9 新增，v1.9.1 维护）
 
 | 项 | 约定 |
 |---|---|
@@ -539,4 +540,4 @@ node _meta/scripts/smoke.ps1   # 冒烟 80/80；插件 99/99
 | 配置缓存 | 插件读 `_meta/config.json` 按 `mtimeMs` 缓存；改配置无需重载插件 |
 | 简化 ingest | 先测量接管/自检/去重故障率再删代码；保留 raw 追加这一最小路径，不盲删 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 1.9.0；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条测试通过；冒烟 80/80、插件 99/99。
+验收：`node _meta/scripts/kb.mjs version` 输出 1.9.1；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条测试通过；冒烟 81/81、插件 101/101。

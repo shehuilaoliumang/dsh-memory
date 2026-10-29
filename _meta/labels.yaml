@@ -6,7 +6,6 @@
 version: 1
 
 dirs:
-  "00_Inbox": 收件箱
   "10_Raw": 原文层
   "10_Raw/sessions": 对话记录
   "10_Raw/clippings": 剪藏
@@ -17,7 +16,6 @@ dirs:
   "30_Canon": 结论层
   "30_Canon/principles": 方法论
   "30_Canon/decisions": 决策
-  "90_Archive": 归档
   "_meta": 元数据
   "_meta/templates": 模板
 

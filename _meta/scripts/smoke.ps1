@@ -189,6 +189,21 @@ try {
     $ErrorActionPreference = $previous
   }
   Check '黄金集 precision 仍 ≥0.8' ($evalCode -eq 0 -and (($evalOut -join "`n") -match 'precision=([0-9.]+)')) (($evalOut -join "`n") -split "`n" | Select-Object -First 2 | Out-String)
+
+  # A stale prediction file must fail closed: promptVersion alone is a label,
+  # promptHash is the content fingerprint, so mutate the label and require
+  # rejection rather than silently reusing old predictions.
+  $stalePredictions = Join-Path $stateDir 'judge-predictions-stale.jsonl'
+  (Get-Content $predictionFile -Raw -Encoding UTF8) -replace '"promptVersion":"[^"]+"', '"promptVersion":"stale"' | Set-Content -NoNewline -Encoding UTF8 $stalePredictions
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $staleOut = & node $evalScript --golden $goldenFile --adapter predictions --predictions $stalePredictions --min-cases 100 --fail-below 0.8 2>&1
+    $staleCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previous
+  }
+  Check '预测版本不符时评估失败' ($staleCode -ne 0 -and (($staleOut -join "`n") -match 'promptVersion|promptHash|不一致')) (($staleOut -join "`n") -split "`n" | Select-Object -First 2 | Out-String)
   $oldText = Get-Content (Join-Path (Join-Path $base '20_Digest\atoms') ($oldId + '.md')) -Raw -Encoding UTF8
   Check '旧结论变为 superseded' ($oldText -match '(?m)^status: superseded$') $oldText
   Check '退场后 validate 通过' ((Kb @('validate')).code -eq 0)

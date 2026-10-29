@@ -69,3 +69,6 @@
 2026-10-29 09:50 | extract | session-8c78f45e-d410-44e2-8d36-9c6ca997755c 候选 20 条 → judge 队列（catch-up）
 2026-10-29 09:52 | status | 2026-10-29-a-0002 → archived
 2026-10-29 11:25 | work | Phase 1 当前真相：subject/supersedes/superseded、pending 取代边、consolidate truth、shadow 排序；7 篇存量原子补 subject
+2026-10-29 11:54 | phase2 | Phase 2: golden set 100, precision 1.000, promptVersion/breaker/feedback, tests 88/88, smoke 69/69
+2026-10-29 12:05 | phase3 | Phase 3: search/BM25, rankMemories live, untrusted-memory, redaction, CSRF token, c-0010 threat model; tests 95/95, smoke 76/76
+2026-10-29 12:12 | phase4 | Phase 4 减债：共享 parser/节名、append-session JSON、scope 回落、session id 去重、access 轮转、VERSION/CHANGELOG/init；测试 99/99、冒烟 80/80

@@ -1,0 +1,100 @@
+{"id":"g-001","shouldRecord":true,"type":"preference","reason":"用户明确表达长期界面语言偏好，跨项目通用","promptVersion":"2026-10-29.1"}
+{"id":"g-002","shouldRecord":true,"type":"preference","reason":"用户明确的长期协作偏好，跨项目适用","promptVersion":"2026-10-29.1"}
+{"id":"g-003","shouldRecord":true,"type":"preference","reason":"用户明确表达的长期回复偏好","promptVersion":"2026-10-29.1"}
+{"id":"g-004","shouldRecord":true,"type":"preference","reason":"用户明确表达的长期格式偏好，跨项目通用","promptVersion":"2026-10-29.1"}
+{"id":"g-005","shouldRecord":true,"type":"preference","reason":"用户明确要求记住的个人时间习惯，长期有效","promptVersion":"2026-10-29.1"}
+{"id":"g-006","shouldRecord":true,"type":"preference","reason":"用户明确表达的格式偏好，跨项目长期有效","promptVersion":"2026-10-29.1"}
+{"id":"g-007","shouldRecord":true,"type":"preference","reason":"用户明确表达的跨项目代码书写偏好，长期有效","promptVersion":"2026-10-29.1"}
+{"id":"g-008","shouldRecord":true,"type":"preference","reason":"这是一条可复用的命名约定偏好，属于用户习惯，并非一次性任务指令","promptVersion":"2026-10-29.1"}
+{"id":"g-009","shouldRecord":true,"type":"preference","reason":"用户对报告结构的明确偏好，跨项目长期有效","promptVersion":"2026-10-29.1"}
+{"id":"g-010","shouldRecord":true,"type":"preference","reason":"用户明确指定的称呼方式，属于长期个人偏好","promptVersion":"2026-10-29.1"}
+{"id":"g-011","shouldRecord":true,"type":"preference","reason":"用户明确表达的交互格式偏好，跨任务长期有效","promptVersion":"2026-10-29.1"}
+{"id":"g-012","shouldRecord":true,"type":"preference","reason":"用户明确表达的通用操作偏好，长期有效","promptVersion":"2026-10-29.1"}
+{"id":"g-013","shouldRecord":true,"type":"preference","reason":"用户明确表达了对比较类内容的格式偏好，可跨项目复用","promptVersion":"2026-10-29.1"}
+{"id":"g-014","shouldRecord":true,"type":"preference","reason":"用户明确表达的长期协作偏好：改动代码前要先讲方案与影响并得到同意，可跨项目复用","promptVersion":"2026-10-29.1"}
+{"id":"g-015","shouldRecord":true,"type":"preference","reason":"用户对界面标签样式的长期偏好，跨项目适用","promptVersion":"2026-10-29.1"}
+{"id":"g-016","shouldRecord":true,"type":"preference","reason":"用户对版本号命名方式的长期偏好，跨任务可复用","promptVersion":"2026-10-29.1"}
+{"id":"g-017","shouldRecord":true,"type":"preference","reason":"公开仓库不得含对话原文，属长期可复用的隐私约束","promptVersion":"2026-10-29.1"}
+{"id":"g-018","shouldRecord":true,"type":"preference","reason":"这是用户对助手输出准确性的长期偏好，可以跨任务复用，并不是临时任务指令","promptVersion":"2026-10-29.1"}
+{"id":"g-019","shouldRecord":true,"type":"preference","reason":"用户对知识库条目提出可追溯、保留原始来源链接的硬性偏好","promptVersion":"2026-10-29.1"}
+{"id":"g-020","shouldRecord":true,"type":"preference","reason":"用户对文档格式的明确偏好，属于可长期复用的写作规范","promptVersion":"2026-10-29.1"}
+{"id":"g-021","shouldRecord":true,"type":"decision","reason":"用户定下的命名/显示约定，跨项目可复用","promptVersion":"2026-10-29.1"}
+{"id":"g-022","shouldRecord":false,"type":null,"reason":"这是知识库内部记忆预算与简报生成机制的实现细节，属于施工日志，不构成可复用的用户知识","promptVersion":"2026-10-29.1"}
+{"id":"g-023","shouldRecord":false,"type":null,"reason":"这是任务执行顺序的指令（先做 A 再做 B），属于操作指令和短期进度安排，一年后无复用价值。","promptVersion":"2026-10-29.1"}
+{"id":"g-024","shouldRecord":false,"type":null,"reason":"这是检索实现的技术选型细节，属于知识库系统自身施工过程，一年后维护之外无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-025","shouldRecord":false,"type":null,"reason":"知识库排序切换的执行安排，属系统实现细节与进行中进度，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-026","shouldRecord":true,"type":"decision","reason":"这是知识库长期生效的删除安全策略，属于必须遵守的硬约束而非施工日志。","promptVersion":"2026-10-29.1"}
+{"id":"g-027","shouldRecord":false,"type":null,"reason":"该句描述的是知识库公开快照机制自身的实现性质，属于系统施工细节而非可复用知识，仅对维护知识库本身有用","promptVersion":"2026-10-29.1"}
+{"id":"g-028","shouldRecord":true,"type":"decision","reason":"这是知识库的隐私边界约定，属于必须遵守的硬约束，并非一次性的操作指令","promptVersion":"2026-10-29.1"}
+{"id":"g-029","shouldRecord":false,"type":null,"reason":"仅是知识库 catalog 收录范围的实现细节，属于施工规则，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-030","shouldRecord":false,"type":null,"reason":"这是知识库 supersede 注入机制的内部实现细节，只对维护知识库本身有用，属于施工日志而非可复用知识。","promptVersion":"2026-10-29.1"}
+{"id":"g-031","shouldRecord":false,"type":null,"reason":"知识库裁判/状态流转的实现细节，属施工日志，对维护系统以外无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-032","shouldRecord":false,"type":null,"reason":"这是知识库系统自身的检索与注入实现约束，只用于维护知识库本身，不属于跨任务可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-033","shouldRecord":false,"type":null,"reason":"知识库 schema 版本与字段变动属系统实现细节，对维护以外的任务无用","promptVersion":"2026-10-29.1"}
+{"id":"g-034","shouldRecord":false,"type":null,"reason":"属于流程性操作指令（阶段结束时补记录），只对当时任务有效，非可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-035","shouldRecord":false,"type":null,"reason":"这是知识库自身的注入条数参数调整，属于实现细节，而非可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-036","shouldRecord":false,"type":null,"reason":"裁判熔断机制属于知识库系统自身实现细节，是施工日志而非可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-037","shouldRecord":false,"type":null,"reason":"知识库裁判队列内部实现细节，属施工日志，对维护以外无用","promptVersion":"2026-10-29.1"}
+{"id":"g-038","shouldRecord":false,"type":null,"reason":"这是知识库裁判写入状态的实现细节，属于施工日志，对维护知识库以外的事无用","promptVersion":"2026-10-29.1"}
+{"id":"g-039","shouldRecord":true,"type":"principle","reason":"这是公开内容前必须执行的安全硬约束，属于可复用的原则","promptVersion":"2026-10-29.1"}
+{"id":"g-040","shouldRecord":false,"type":null,"reason":"这是知识库自身抽取机制的实现细节，属于建设日志，不是可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-041","shouldRecord":false,"type":null,"reason":"仅是当天修复 UI 按钮样式的过程叙述，无长期复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-042","shouldRecord":false,"type":null,"reason":"测试通过条数属于一次性验证结果，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-043","shouldRecord":false,"type":null,"reason":"仅是当时的进度状态描述（正在写评估脚本），一年后已失效，不属于长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-044","shouldRecord":false,"type":null,"reason":"仅是一次提交的过程性记录，无长期复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-045","shouldRecord":false,"type":null,"reason":"仅是当时的进度/待办描述，没有长期价值，且已过期","promptVersion":"2026-10-29.1"}
+{"id":"g-046","shouldRecord":false,"type":null,"reason":"仅是临时进度与待办安排，一年后无意义","promptVersion":"2026-10-29.1"}
+{"id":"g-047","shouldRecord":false,"type":null,"reason":"临时承诺与进度安排，仅对当时有效，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-048","shouldRecord":false,"type":null,"reason":"仅为两天内到期的一次性任务期限，一年后已失效，无长期价值","promptVersion":"2026-10-29.1"}
+{"id":"g-049","shouldRecord":false,"type":null,"reason":"仅是一次具体会议时间安排，属临时性日程，过后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-050","shouldRecord":false,"type":null,"reason":"这是对助手的一次性任务指令和临时期限，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-051","shouldRecord":false,"type":null,"reason":"仅有「月底前」这一短期期限，缺少项目与对象上下文；该期限早已过期，一年后没有复用价值。","promptVersion":"2026-10-29.1"}
+{"id":"g-052","shouldRecord":false,"type":null,"reason":"这是一条只与当时情境有关的未来计划，即『下个月开始做备份』；一年后它早已过期，而且缺少项目或对象上下文，因此不应记录。","promptVersion":"2026-10-29.1"}
+{"id":"g-053","shouldRecord":false,"type":null,"reason":"只是本次调试的临时进度陈述，无长期价值","promptVersion":"2026-10-29.1"}
+{"id":"g-054","shouldRecord":false,"type":null,"reason":"仅是当下测试进度的临时状态描述，一年后无价值","promptVersion":"2026-10-29.1"}
+{"id":"g-055","shouldRecord":false,"type":null,"reason":"仅为临时进度寒暄，无长期价值","promptVersion":"2026-10-29.1"}
+{"id":"g-056","shouldRecord":false,"type":null,"reason":"仅描述当时 CI 运行中的临时状态，无长期价值","promptVersion":"2026-10-29.1"}
+{"id":"g-057","shouldRecord":false,"type":null,"reason":"仅为临时进度表态，无长期有用信息","promptVersion":"2026-10-29.1"}
+{"id":"g-058","shouldRecord":false,"type":null,"reason":"仅描述某次开发进度（Phase 1 已完成），属过程性叙述，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-059","shouldRecord":false,"type":null,"reason":"仅描述某次上传的完成状态，属临时进度信息，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-060","shouldRecord":false,"type":null,"reason":"仅描述下一步计划的临时进度，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-061","shouldRecord":false,"type":null,"reason":"对助手发出的操作指令，不属于用户偏好或长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-062","shouldRecord":false,"type":null,"reason":"这是对AI助手输出格式的任务指令，不是关于用户本人或项目的长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-063","shouldRecord":false,"type":null,"reason":"这是对 AI 助手的执行顺序指令，属于任务指令而非长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-064","shouldRecord":false,"type":null,"reason":"这是对助手的操作指令，只对当时任务有效，不属于可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-065","shouldRecord":false,"type":null,"reason":"临时任务指令，无长期记忆价值","promptVersion":"2026-10-29.1"}
+{"id":"g-066","shouldRecord":false,"type":null,"reason":"这是针对当时任务的操作指令，未体现可长期复用的用户偏好或项目决策","promptVersion":"2026-10-29.1"}
+{"id":"g-067","shouldRecord":false,"type":null,"reason":"这是对助手的操作指令且含具体文件路径，属于任务指令与工具细节，不具备长期记忆价值","promptVersion":"2026-10-29.1"}
+{"id":"g-068","shouldRecord":false,"type":null,"reason":"重启插件的操作指令，属于任务执行细节，无长期记忆价值","promptVersion":"2026-10-29.1"}
+{"id":"g-069","shouldRecord":false,"type":null,"reason":"这是对助手的操作指令，不是可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-070","shouldRecord":false,"type":null,"reason":"提交前先看 git status 属于操作指令与工具用法，不构成长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-071","shouldRecord":false,"type":null,"reason":"这是对助手的一次性操作指令（不要提交某路径），属于任务约束而非长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-072","shouldRecord":false,"type":null,"reason":"对助手的临时操作指令，无长期复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-073","shouldRecord":false,"type":null,"reason":"这是对助手的操作指令，属于本次任务指令而非可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-074","shouldRecord":false,"type":null,"reason":"对助手的一次性操作指令，不构成长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-075","shouldRecord":false,"type":null,"reason":"属于操作步骤指令，不构成用户偏好或长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-076","shouldRecord":false,"type":null,"reason":"仅是本次执行的临时操作指令，无长期复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-077","shouldRecord":false,"type":null,"reason":"这是对助手的操作指令，不是长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-078","shouldRecord":false,"type":null,"reason":"这是对助手的操作指令，不是用户知识或长期约束","promptVersion":"2026-10-29.1"}
+{"id":"g-079","shouldRecord":false,"type":null,"reason":"这是对助手的操作指令（开端口），属临时任务动作，非长期知识","promptVersion":"2026-10-29.1"}
+{"id":"g-080","shouldRecord":false,"type":null,"reason":"候选句是对助手的操作指令，没有可复用的知识内容","promptVersion":"2026-10-29.1"}
+{"id":"g-081","shouldRecord":false,"type":null,"reason":"知识库自身代码改动属施工日志，对维护以外无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-082","shouldRecord":false,"type":null,"reason":"插件测试通过条数属于本次开发过程状态，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-083","shouldRecord":false,"type":null,"reason":"仅为一次 CI 运行通过的临时进度状态，一年后无价值","promptVersion":"2026-10-29.1"}
+{"id":"g-084","shouldRecord":false,"type":null,"reason":"公开快照的 blob 数量是瞬时状态描述，一年后无意义","promptVersion":"2026-10-29.1"}
+{"id":"g-085","shouldRecord":false,"type":null,"reason":"仅为知识库配置的新增字段与阈值调整，属于系统实现细节和施工日志，对维护之外无长期价值","promptVersion":"2026-10-29.1"}
+{"id":"g-086","shouldRecord":false,"type":null,"reason":"知识库 schema 的内部字段改动属施工日志，对维护以外无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-087","shouldRecord":false,"type":null,"reason":"smoke 脚本补 BOM 只是一次性的开发改动记录，属于调试/施工日志，没有长期复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-088","shouldRecord":false,"type":null,"reason":"知识库裁判机制内部实现细节，属施工日志，对别的任务无用","promptVersion":"2026-10-29.1"}
+{"id":"g-089","shouldRecord":false,"type":null,"reason":"这是本次修复过程的一句记录，属于调试施工日志，对一年后没有复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-090","shouldRecord":false,"type":null,"reason":"这是接口实现细节（端点返回码），属于技术细节而非长期知识，且缺少项目上下文","promptVersion":"2026-10-29.1"}
+{"id":"g-091","shouldRecord":false,"type":null,"reason":"仅描述导出脚本的实现行为，属于工具/代码细节，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-092","shouldRecord":false,"type":null,"reason":"队列剩余任务数是转瞬即逝的临时状态，一年后回看没有价值","promptVersion":"2026-10-29.1"}
+{"id":"g-093","shouldRecord":false,"type":null,"reason":"知识库校验篇数属于过程进度与系统内部状态，一年后无用","promptVersion":"2026-10-29.1"}
+{"id":"g-094","shouldRecord":false,"type":null,"reason":"仅描述重载插件的操作过程，属临时施工状态，无长期价值","promptVersion":"2026-10-29.1"}
+{"id":"g-095","shouldRecord":false,"type":null,"reason":"这是当时的临时状态描述，一年后已无意义","promptVersion":"2026-10-29.1"}
+{"id":"g-096","shouldRecord":false,"type":null,"reason":"本地提交哈希属于一次性过程状态，无长期复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-097","shouldRecord":false,"type":null,"reason":"仅是某次提交哈希的临时状态，无长期复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-098","shouldRecord":false,"type":null,"reason":"冒烟测试通过数量属于本次开发验证的过程结果，一年后无复用价值","promptVersion":"2026-10-29.1"}
+{"id":"g-099","shouldRecord":false,"type":null,"reason":"凭据读取方式属于工具用法与实现细节，不构成可复用知识","promptVersion":"2026-10-29.1"}
+{"id":"g-100","shouldRecord":false,"type":null,"reason":"知识库自身目录布局的实现细节，属于施工日志，不含可复用知识","promptVersion":"2026-10-29.1"}

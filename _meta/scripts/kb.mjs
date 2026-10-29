@@ -23,6 +23,9 @@ import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { briefText, isInjectable, rankMemories } from '../plugin/kb-panel/work-brief.js';
+import { redactSecrets } from '../plugin/kb-panel/redact.js';
+import { parseFrontmatter } from '../plugin/kb-panel/shared/frontmatter.mjs';
+import { WORK_SECTIONS } from '../plugin/kb-panel/shared/work-sections.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CONFIG = JSON.parse(readText(path.join(ROOT, '_meta', 'config.json')));
@@ -44,7 +47,7 @@ const STATUSES = ['inbox', 'active', 'review', 'stale', 'promoted', 'archived', 
 const CANON_NOTE_ID = /^\d{4}-\d{2}-\d{2}-[atcw]-\d{4}$/;
 const WORK_SCOPE = /^(global|project:[a-z0-9][a-z0-9-]*)$/;
 const WORK_DIR = '20_Digest/work';
-const SESSION_ID = /^\d{4}-\d{2}-\d{2}-\d{4}$/;
+const SESSION_ID = /^\d{4}-\d{2}-\d{2}-\d{4}(?:-\d+)?$/;
 const DATE_STRING = /^\d{4}-\d{2}-\d{2}$/;
 const SUBJECT_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 
@@ -124,57 +127,8 @@ function todayPlus(days) {
 }
 
 // ------------------------------------------------------- frontmatter 解析
+// 单一实现：`_meta/plugin/kb-panel/shared/frontmatter.mjs`。本文件只导入，不再维护第二份。
 
-function splitInlineArray(s) {
-  const out = [];
-  let cur = '';
-  let quote = null;
-  for (const ch of s) {
-    if (quote) {
-      cur += ch;
-      if (ch === quote) quote = null;
-    } else if (ch === '"' || ch === "'") {
-      quote = ch;
-      cur += ch;
-    } else if (ch === ',') {
-      out.push(cur);
-      cur = '';
-    } else {
-      cur += ch;
-    }
-  }
-  if (cur.trim() !== '') out.push(cur);
-  return out.map((x) => x.trim()).filter(Boolean);
-}
-
-function parseScalar(raw) {
-  const v = raw.trim();
-  if (v === '') return '';
-  if ((v.startsWith('"') && v.endsWith('"') && v.length > 1) || (v.startsWith("'") && v.endsWith("'") && v.length > 1)) {
-    return v.slice(1, -1);
-  }
-  if (v.startsWith('[') && v.endsWith(']')) {
-    return splitInlineArray(v.slice(1, -1)).map(parseScalar);
-  }
-  if (/^(true|false)$/i.test(v)) return v.toLowerCase() === 'true';
-  if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
-  return v;
-}
-
-function parseFrontmatter(text) {
-  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!m) return { data: null, body: text };
-  const data = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    if (!line.trim() || line.trim().startsWith('#')) continue;
-    const i = line.indexOf(':');
-    if (i <= 0) continue;
-    const key = line.slice(0, i).trim();
-    if (!key || key.startsWith('-')) continue;
-    data[key] = parseScalar(line.slice(i + 1));
-  }
-  return { data, body: text.slice(m[0].length) };
-}
 
 function splitLinks(value) {
   if (value == null) return [];
@@ -409,6 +363,19 @@ function cmdValidate(opts) {
     warnings.push(`索引总行数 ${catalog.length + archive.length} 超过 ${CONFIG.limits.catalog_max_rows}，该考虑归档了`);
   }
 
+  // The work template and the code share one section contract. If the template
+  // is edited without updating WORK_SECTIONS (or vice versa) the brief silently
+  // stops rendering, so validate must notice.
+  const workTemplate = path.join(ROOT, '_meta', 'templates', 'work.md');
+  if (fs.existsSync(workTemplate)) {
+    const headings = [...readText(workTemplate).matchAll(/^##\s+(.+?)\s*$/gm)].map((m) => m[1]);
+    if (JSON.stringify(headings) !== JSON.stringify([...WORK_SECTIONS])) {
+      warnings.push(`_meta/templates/work.md 的节名与 WORK_SECTIONS 不一致：${headings.join(' / ')}`);
+    }
+  } else {
+    warnings.push('缺少 _meta/templates/work.md');
+  }
+
   const result = { ok: errors.length === 0, notes: notes.length, catalog: catalog.length, archive: archive.length, errors, warnings };
   if (opts.json) {
     out(JSON.stringify(result, null, 2));
@@ -436,6 +403,39 @@ function appendChangeLog(action, note) {
   const line = `${localDate()} ${localTime()} | ${action} | ${note}\n`;
   const text = readText(P.changeLog);
   fs.appendFileSync(P.changeLog, (text.endsWith('\n') ? '' : '\n') + line, 'utf8');
+}
+
+function stateDirPath() {
+  return path.join(ROOT, CONFIG.ingest?.stateDir || '_meta/state');
+}
+
+/**
+ * Record the human decision on a judge-created atom as an evaluation label.
+ * `_meta/state` is runtime state (gitignored), so this telemetry never becomes
+ * part of the curated knowledge base; the queue row supplies the prompt version.
+ */
+function recordJudgeFeedback(id, from, to) {
+  try {
+    if (!id || !from || from === to) return;
+    const queue = readJsonl(path.join(stateDirPath(), 'judge-queue.jsonl'));
+    const job = [...queue].reverse().find((row) => Array.isArray(row && row.ids) && row.ids.includes(id));
+    if (!job) return;
+    const file = path.join(stateDirPath(), 'judge-feedback.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const row = {
+      at: new Date().toISOString(),
+      atomId: id,
+      jobId: job.id,
+      sessionId: job.sessionId,
+      promptVersion: job.promptVersion || null,
+      from,
+      to,
+      accepted: to === 'active',
+    };
+    fs.appendFileSync(file, `${JSON.stringify(row)}\n`, 'utf8');
+  } catch {
+    // Telemetry must never block a lifecycle transition.
+  }
 }
 
 function compareCatalog(expected, actual, label, errors, warnings) {
@@ -526,6 +526,110 @@ function cmdStats(opts) {
   out(`分层：${Object.entries(byLevel).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
   out(`状态：${Object.entries(byStatus).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
   out(`类型：${Object.entries(byType).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
+}
+
+// ---------------------------------------------------------------- 只读检索
+//
+// P3.1: a read-only lexical search over digest/canon notes. It is deliberately
+// dependency-free and local: no embedding service, no network, no writes. The
+// tokenizer treats each CJK bigram as a term (Chinese has no spaces) and keeps
+// ASCII words; BM25 is enough to make the existing 40-char summaries searchable
+// without changing the five-slot injection budget.
+function tokenizeSearch(text) {
+  const normalized = String(text || '').toLowerCase().normalize('NFKC');
+  const tokens = [];
+  for (const hit of normalized.matchAll(/[a-z0-9][a-z0-9._-]*/g)) {
+    if (hit[0].length > 1) tokens.push(hit[0]);
+  }
+  for (const hit of normalized.matchAll(/[\u3400-\u9fff]+/g)) {
+    const chars = [...hit[0]];
+    // Bigrams only: single CJK chars (了/的/是) are too common to be useful and
+    // produced false positives for every query. Keep a lone char as a term.
+    if (chars.length === 1) tokens.push(chars[0]);
+    for (let i = 0; i + 1 < chars.length; i++) tokens.push(chars[i] + chars[i + 1]);
+  }
+  return tokens;
+}
+
+function bm25Rank(docs, query, limit = 5) {
+  const terms = [...new Set(tokenizeSearch(query))];
+  if (!terms.length || !docs.length) return { total: 0, results: [] };
+  // BM25 alone is OR-like: a nonsense query matched every doc through one
+  // common bigram. Require at least 60% of the query terms (and both terms
+  // for a two-term query) so results are actually about the query.
+  const requiredMatches = terms.length <= 1 ? 1 : Math.max(2, Math.ceil(terms.length * 0.6));
+  const docTokens = docs.map((doc) => tokenizeSearch(doc.text));
+  const avgdl = docTokens.reduce((sum, tokens) => sum + tokens.length, 0) / Math.max(1, docTokens.length);
+  const df = new Map();
+  for (const tokens of docTokens) {
+    for (const term of new Set(tokens)) df.set(term, (df.get(term) || 0) + 1);
+  }
+  const N = docs.length;
+  const k1 = 1.2;
+  const b = 0.75;
+  const scored = docs.map((doc, i) => {
+    const tokens = docTokens[i];
+    const tf = new Map();
+    for (const token of tokens) tf.set(token, (tf.get(token) || 0) + 1);
+    let score = 0;
+    let matched = 0;
+    for (const term of terms) {
+      const freq = tf.get(term) || 0;
+      if (!freq) continue;
+      matched += 1;
+      const idf = Math.log(1 + (N - df.get(term) + 0.5) / (df.get(term) + 0.5));
+      score += idf * ((freq * (k1 + 1)) / (freq + k1 * (1 - b + b * (tokens.length / Math.max(1, avgdl)))));
+    }
+    return { ...doc, score, matched };
+  }).filter((doc) => doc.score > 0 && doc.matched >= requiredMatches);
+  scored.sort((a, b) => b.score - a.score || String(b.updated || '').localeCompare(String(a.updated || '')) || a.id.localeCompare(b.id));
+  return { total: scored.length, results: scored.slice(0, limit) };
+}
+
+function cmdSearch(opts) {
+  const query = typeof opts.query === 'string' ? opts.query.trim() : '';
+  if (!query) throw new Error('search 需要 --query');
+  const requested = Number(opts.limit || 5);
+  const limit = Math.max(1, Math.min(20, Number.isFinite(requested) ? Math.trunc(requested) : 5));
+  const notes = loadNotes().filter((n) => {
+    const d = n.data;
+    return d && d.id && !n.fixed && (d.level === 'digest' || d.level === 'canon')
+      && d.status !== 'archived' && d.type !== 'work' && d.type !== 'session';
+  });
+  const docs = notes.map((n) => {
+    const d = n.data;
+    const { body } = parseFrontmatter(readText(n.file));
+    const tags = Array.isArray(d.tags) ? d.tags.join(' ') : (d.tags || '');
+    return {
+      id: d.id,
+      title: String(d.title || ''),
+      level: d.level,
+      type: d.type,
+      status: d.status,
+      scope: typeof d.scope === 'string' ? d.scope : '',
+      summary: String(d.summary || ''),
+      updated: d.updated,
+      path: n.rel,
+      text: [d.title, d.title, d.summary, tags, d.scope, body].filter(Boolean).join('\n'),
+    };
+  });
+  const { total, results } = bm25Rank(docs, query, limit);
+  const payload = {
+    query,
+    limit,
+    total,
+    results: results.map(({ id, title, level, type, status, scope, summary, updated, path, score }) => ({
+      id, title, level, type, status, scope, summary, updated, path, score: Number(score.toFixed(4)),
+    })),
+  };
+  if (opts.json) return out(JSON.stringify(payload, null, 2));
+  if (!results.length) return out(`没有匹配：「${query}」`);
+  out(`检索「${query}」：${total} 条命中，显示前 ${results.length} 条`);
+  for (const [i, row] of results.entries()) {
+    out(`${i + 1}. [${row.id}] ${row.title}（${row.score.toFixed(2)}）`);
+    if (row.summary) out(`   ${row.summary}`);
+    out(`   ${row.path}`);
+  }
 }
 
 // -------------------------------------------------------------- id 生成
@@ -756,6 +860,7 @@ function cmdSetStatus(opts) {
     writeText(note.file, text);
     rebuildIndexes();
     appendChangeLog('status', `${id} → ${status}${opts.clearScope ? '（清除 scope）' : scope ? ` scope=${scope}` : ''}`);
+    recordJudgeFeedback(id, String(note.data.status || ''), status);
   }
   // Confirming a replacement is the moment the old claim actually retires.
   const retired = status === 'active'
@@ -819,7 +924,9 @@ function findSessionFile(sessionId) {
 }
 
 function cmdAppendSession(opts) {
-  const text = opts.textFile ? readText(path.resolve(opts.textFile)) : opts.text || '';
+  const rawText = opts.textFile ? readText(path.resolve(opts.textFile)) : opts.text || '';
+  // P3.5: raw is append-only, so secrets must be stripped before the append.
+  const text = redactSecrets(rawText);
   const role = opts.role || 'user';
   if (!['user', 'assistant'].includes(role)) throw new Error('--role 只能是 user / assistant');
   const sessionId = opts.sessionId || process.env.DSH_SESSION_ID || '';
@@ -828,11 +935,22 @@ function cmdAppendSession(opts) {
   if (!file) {
     const date = localDate();
     const slug = (opts.slug || 'session').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'session';
-    const id = `${date}-${localTime().replace(':', '')}`;
-    const title = opts.title || `会话 ${date}`;
-    const summary = (opts.summary || `会话：${title}`).slice(0, CONFIG.limits.summary_max_chars);
+    const baseId = `${date}-${localTime().replace(':', '')}`;
+    // Two sessions can start in the same minute. Both the filename and the
+    // frontmatter `id` must be unique, so bump a suffix until both are free.
+    const usedSessionIds = new Set(
+      loadNotes().filter((note) => note.data?.type === 'session').map((note) => note.data.id),
+    );
+    let id = baseId;
+    let suffix = 2;
     file = path.join(P.sessions, String(new Date().getFullYear()), pad(new Date().getMonth() + 1), `${id}-${slug}.md`);
-    if (fs.existsSync(file)) throw new Error(`会话文件已存在：${relPath(file)}`);
+    while (fs.existsSync(file) || usedSessionIds.has(id)) {
+      id = `${baseId}-${suffix}`;
+      suffix += 1;
+      file = path.join(P.sessions, String(new Date().getFullYear()), pad(new Date().getMonth() + 1), `${id}-${slug}.md`);
+    }
+    const title = redactSecrets(opts.title || `会话 ${date}`);
+    const summary = redactSecrets(opts.summary || `会话：${title}`).slice(0, CONFIG.limits.summary_max_chars);
     const fm = [
       '---',
       `id: ${id}`,
@@ -860,6 +978,12 @@ function cmdAppendSession(opts) {
   const content = readText(file);
   const refreshed = content.replace(/^(updated: )\d{4}-\d{2}-\d{2}$/m, `$1${localDate()}`);
   if (refreshed !== content) fs.writeFileSync(file, refreshed, 'utf8');
+  if (opts.json) {
+    // Machine-readable contract for the Host trigger (`ingest.js`): a path in
+    // stdout is not stable across locales, a JSON object is.
+    out(JSON.stringify({ ok: true, created, action: created ? 'created' : 'appended', role, file: relPath(file) }));
+    return;
+  }
   out(`${created ? '已新建并写入' : '已追加到'} ${relPath(file)}（${role}）`);
 }
 
@@ -967,23 +1091,23 @@ function cmdWorkNew(opts) {
   const summary = oneLine(opts.summary, CONFIG.limits.summary_max_chars) || (scope === 'global' ? '当前焦点与下一步' : '项目阶段与下一步');
   const id = computeNextId('w');
   const body = [
-    '## 当前阶段',
+    `## ${WORK_SECTIONS[0]}`,
     '',
     '（做到哪一步，一句话）',
     '',
-    '## 在办',
+    `## ${WORK_SECTIONS[1]}`,
     '',
     '- ',
     '',
-    '## 未决',
+    `## ${WORK_SECTIONS[2]}`,
     '',
     '- ',
     '',
-    '## 下一步',
+    `## ${WORK_SECTIONS[3]}`,
     '',
     '- ',
     '',
-    '## 关联',
+    `## ${WORK_SECTIONS[4]}`,
     '',
     '（关键决策 / 原子 / 原文链接）',
     '',
@@ -1296,6 +1420,7 @@ function cmdBatchStatus(opts) {
   if (changedIds.length) {
     rebuildIndexes();
     appendChangeLog('status', `${changedIds.join(', ')} → ${status}${scope ? ` scope=${scope}` : ''}`);
+    for (const plan of plans) recordJudgeFeedback(plan.id, String(plan.note.data.status || ''), status);
   }
   // A batch confirmation can also retire the claims those atoms supersede.
   // Skip ids changed in this same batch: otherwise a confirm+retire request
@@ -1492,6 +1617,33 @@ function cmdDelete(opts) {
 // ------------------------------------------------------------ 召回日志
 
 /**
+ * Telemetry rotation: keep `access.jsonl` small without deleting history. The
+ * rotated file is still a plain jsonl in `_meta/`; `readAccess` only reads the
+ * live name, which is fine because heat decays over 30 days.
+ */
+function rotateAccessIfNeeded() {
+  if (!fs.existsSync(P.access)) return;
+  const maxLines = Math.max(1, Number(CONFIG.limits.access_max_lines) || 50000);
+  const maxBytes = Math.max(1024, Number(CONFIG.limits.access_max_bytes) || 5 * 1024 * 1024);
+  let needsRotation = fs.statSync(P.access).size >= maxBytes;
+  if (!needsRotation) {
+    const lines = readText(P.access).split(/\r?\n/).filter(Boolean).length;
+    needsRotation = lines >= maxLines;
+  }
+  if (!needsRotation) return;
+  const stamp = `${localDate().replace(/-/g, '')}-${localTime().replace(':', '')}`;
+  const dir = path.dirname(P.access);
+  let target = path.join(dir, `access-${stamp}.jsonl`);
+  let suffix = 2;
+  while (fs.existsSync(target)) {
+    target = path.join(dir, `access-${stamp}-${suffix}.jsonl`);
+    suffix += 1;
+  }
+  fs.renameSync(P.access, target);
+  process.stderr.write(`[kb] access.jsonl 已轮转：${relPath(target)}\n`);
+}
+
+/**
  * Append one recall record. `access.jsonl` is telemetry, not a note: it is the
  * only source of heat, and it is append-only by definition (schema §7).
  */
@@ -1504,6 +1656,7 @@ function cmdAccess(opts) {
   if (opts.score !== undefined && Number.isFinite(Number(opts.score))) row.score = Number(opts.score);
   if (opts.provenance) row.provenance = oneLine(opts.provenance, 120);
   fs.mkdirSync(path.dirname(P.access), { recursive: true });
+  rotateAccessIfNeeded();
   fs.appendFileSync(P.access, `${JSON.stringify(row)}\n`, 'utf8');
   out(opts.json ? JSON.stringify({ ok: true, ...row }) : `已记录召回：${id}（${how}）`);
 }
@@ -1514,6 +1667,25 @@ function cmdLog(opts) {
   if (!opts.action || !opts.note) throw new Error('log 需要 --action 与 --note');
   appendChangeLog(opts.action, opts.note);
   out(`已记录：${localDate()} ${localTime()} | ${opts.action} | ${opts.note}`);
+}
+
+function cmdVersion() {
+  out(readText(path.join(ROOT, 'VERSION')).trim());
+}
+
+/** Idempotent scaffold check: never overwrites an existing note/config. */
+function cmdInit() {
+  const dirs = [
+    '10_Raw/sessions',
+    '20_Digest/atoms',
+    '20_Digest/topics',
+    '20_Digest/work',
+    '30_Canon/decisions',
+    '_meta/state',
+    '_meta/templates',
+  ];
+  for (const dir of dirs) fs.mkdirSync(path.join(ROOT, dir), { recursive: true });
+  out(`知识库目录已就绪（${dirs.length} 个目录）；版本 ${readText(path.join(ROOT, 'VERSION')).trim()}`);
 }
 
 // ---------------------------------------------------------------- 入口
@@ -1566,12 +1738,16 @@ const HELP = `kb.mjs — 知识库规则层
                                       追加一条召回记录（热度的唯一来源）
   delete-request --ids A,B [--json]   生成一次性删除票据与随机密钥（唯一物理删除入口的第一步）
   delete --ticket T --key K [--json]  凭票据+密钥物理删除（校验过期与密钥哈希，清理悬空链接）
-  append-session --slug S --title T [--role user|assistant] [--text ...|--text-file F]
-                                      追加本轮原文（同 session_id 续写、否则新建）
+  append-session --slug S --title T [--role user|assistant] [--text ...|--text-file F] [--json]
+                                      追加本轮原文（同 session_id 续写、否则新建；--json 返回文件路径）
   candidates [--file F|--text ...] [--json]
                                       门控 + 候选提取（喂给子代理裁判）
   consolidate [--json]                每日整理：stale / review / 未归主题 / 重复
-  log --action X --note Y             追加 _meta/log.md`;
+  search --query Q [--limit N] [--json]
+                                      只读检索 digest/canon（BM25 + 中文 bigram）
+  log --action X --note Y             追加 _meta/log.md
+  version                             打印项目版本（VERSION）
+  init                                幂等创建知识库目录骨架`;
 
 function main() {
   const { command, opts } = parseArgs(process.argv.slice(2));
@@ -1593,7 +1769,10 @@ function main() {
     'append-session': cmdAppendSession,
     candidates: cmdCandidates,
     consolidate: cmdConsolidate,
+    search: cmdSearch,
     log: cmdLog,
+    version: cmdVersion,
+    init: cmdInit,
   };
   const fn = table[command];
   if (!fn) {

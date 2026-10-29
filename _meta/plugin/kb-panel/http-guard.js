@@ -44,6 +44,13 @@ export function requestRejected(req, res, options = {}) {
       reject(res, 415, 'write endpoints require application/json');
       return true;
     }
+    if (options.token) {
+      const supplied = String(req.headers['x-kb-csrf'] || '');
+      if (supplied !== options.token) {
+        reject(res, 403, 'missing or invalid CSRF token');
+        return true;
+      }
+    }
   }
   return false;
 }

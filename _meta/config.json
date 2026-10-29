@@ -40,7 +40,7 @@
     "daily": "03:30"
   },
   "truth": {
-    "note": "Phase 1 真相视图：shadow_mode 只让 consolidate 报告新旧排序差异，不切换线上注入；heat_half_life_days 控制召回热度衰减。",
+    "note": "Phase 3 起线上注入使用 rankMemories：当前真相（active）× 30 天半衰期热度 × updated × id；shadow_mode 只让 consolidate 保留新旧排序对比，供审计，不再控制是否切换。",
     "shadow_mode": true,
     "heat_half_life_days": 30
   },
@@ -51,7 +51,9 @@
     "stale_days": 180,
     "archive_days": 180,
     "review_warn_days": 0,
-    "work_stale_days": 14
+    "work_stale_days": 14,
+    "access_max_lines": 50000,
+    "access_max_bytes": 5242880
   },
   "judge": {
     "provider": "deepseek-account",
@@ -61,6 +63,9 @@
     "intervalMs": 300000,
     "batch": 3,
     "timeoutMs": 60000,
-    "note": "第 3 步语义裁判：enabled 开才运行；mode=dry 只把裁决写进 _meta/state/judge-dry-run.jsonl 供人工审阅，mode=write 才经 kb.mjs add-atom 落入 20_Digest。provider 必须与当前 profile 的 llm 路由一致（desktop 用 deepseek-account）。"
+    "promptVersion": "2026-10-29.1",
+    "breakerThreshold": 3,
+    "breakerCooldownMs": 3600000,
+    "note": "第 3 步语义裁判：enabled 开才运行；mode=dry 只把裁决写进 _meta/state/judge-dry-run.jsonl 供人工审阅，mode=write 才经 kb.mjs add-atom 落入 20_Digest。provider 必须与当前 profile 的 llm 路由一致（desktop 用 deepseek-account）。promptVersion 用于评估与反馈回归；连续 breakerThreshold 次失败后熔断 breakerCooldownMs。"
   }
 }

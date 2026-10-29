@@ -17,18 +17,18 @@ updated: 2026-10-29
 
 ## 元数据
 
-- 规范 → `_meta/schema.md`（v1.6）
+- 规范 → `_meta/schema.md`（v1.9）
 - 变更日志 → `_meta/log.md`
 - 显示名映射 → `_meta/labels.yaml`
-- 抽取样例 → `_meta/rules/samples.md`
-- 规则层 → `_meta/scripts/README.md`（`kb.mjs`：校验 / 重建索引 / 追加原文 / 候选提取 / 工作页）
-- 关键决策 → `30_Canon/decisions/`（c-0001 分层架构 · c-0002 git 权威 · c-0003 ASCII 文件名 · c-0004 flash 裁判 · c-0005 规则层脚本 · c-0006 记忆隔离 · c-0007 写入与注入分离 · c-0008 架构总览）
+- 抽取样例 → `_meta/rules/samples.md`；裁判黄金集 → `_meta/rules/golden.jsonl`（100 条）
+- 规则层 → `_meta/scripts/README.md`（`kb.mjs`：校验 / 重建索引 / 追加原文 / 候选提取 / 工作页 / 只读检索）
+- 关键决策 → `30_Canon/decisions/`（c-0001 分层架构 · c-0002 git 权威 · c-0003 ASCII 文件名 · c-0004 flash 裁判 · c-0005 规则层脚本 · c-0006 记忆隔离 · c-0007 写入与注入分离 · c-0008 架构总览 · c-0009 裁判 precision 评估 · c-0010 检索/边界/威胁模型 · c-0011 减债与共享契约）
 
 ## 当前状态
 
 - 笔记数：以 `node _meta/scripts/kb.mjs stats` 为准（分层 / 状态 / 类型）
 - 索引：`catalog.jsonl` 由 `kb.mjs rebuild` 生成，`validate` 通过（0 错误 0 警告）
-- 规则层：v1.6 已落地 —— Phase 0（元窗口冻结、索引容错与原子写、删除闸 TTY、`/kb/*` 同源防护、CI）+ Phase 1（subject/supersedes、`superseded` 终态、衰减热度 shadow、consolidate truth）；裁判仍为 deepseek-flash 直调
+- 规则层：v1.9 已落地 —— Phase 0（元窗口冻结、索引容错与原子写、删除闸 TTY、`/kb/*` 同源防护、CI）+ Phase 1（subject/supersedes、`superseded` 终态、衰减热度 shadow、consolidate truth）+ Phase 2（100 条黄金集、precision 回归、promptVersion、breaker、队列降级、反馈标签）+ Phase 3（search、线上衰减排序、`<untrusted-memory>`、redaction、CSRF、c-0010 威胁模型）+ Phase 4（共享 frontmatter/节名、append-session JSON、scope 回落、会话 id 去重、access 轮转、配置缓存、VERSION/CHANGELOG/init）；裁判仍为 deepseek-flash 直调
 - 界面：`@local/kb-panel` 已启用 —— 记忆 chip、会话菜单、知识库页（含「工作页」徽标）、安全重载
 - 未决：晋升确认界面 / 冲突裁决形态 / git 远端备份
 

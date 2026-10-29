@@ -1,0 +1,100 @@
+{"id":"g-001","text":"我偏好所有界面文案用简体中文，系统路径保持英文","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"硬偏好"}
+{"id":"g-002","text":"我不喜欢自动提交代码，改完先让我确认","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"工作方式"}
+{"id":"g-003","text":"以后回复我先给结论，再解释原因","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"沟通风格"}
+{"id":"g-004","text":"我讨厌 emoji，正式文档里不要出现","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"格式偏好"}
+{"id":"g-005","text":"记住：每周三晚上我不看论文","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"固定习惯"}
+{"id":"g-006","text":"我不喜欢长段落，能拆成要点就拆","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"格式偏好"}
+{"id":"g-007","text":"代码注释用中文，变量名保持英文","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"代码风格"}
+{"id":"g-008","text":"文件名和目录名一律用英文","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"命名偏好"}
+{"id":"g-009","text":"报告先给风险和影响，再给方案","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"沟通风格"}
+{"id":"g-010","text":"称呼我 Lu 就行，不用加“先生”","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"称谓"}
+{"id":"g-011","text":"每轮结束告诉我下一步要做什么","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"工作方式"}
+{"id":"g-012","text":"别主动删文件，删除前必须问我","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"安全边界"}
+{"id":"g-013","text":"对比方案时用表格，别写成大段文字","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"格式偏好"}
+{"id":"g-014","text":"改代码前先讲方案和影响，我同意后再动手","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"工作方式"}
+{"id":"g-015","text":"界面里不要用彩色 emoji 当标签","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"格式偏好"}
+{"id":"g-016","text":"版本号里带日期，方便我确认跑的是哪版","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"可验证性"}
+{"id":"g-017","text":"公开仓库默认不要包含对话原文","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"隐私边界"}
+{"id":"g-018","text":"不要虚构时间、路径和 id","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"真实性要求"}
+{"id":"g-019","text":"记忆条目的来源要能追溯，别丢原始链接","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"可追溯性"}
+{"id":"g-020","text":"文档标题用 H1，不要用纯文本当标题","shouldRecord":true,"type":"preference","scope":"global","category":"preference","note":"文档格式"}
+{"id":"g-021","text":"我们决定目录名用英文、界面显示中文","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"已定方案"}
+{"id":"g-022","text":"工作页不占 5 条记忆预算，只贡献一条项目简报","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"架构决策"}
+{"id":"g-023","text":"Phase 2 先做黄金集和评估，再谈简化 ingest","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"排期决策"}
+{"id":"g-024","text":"不引入 embedding，先用 BM25 加中文 bigram","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"技术选型"}
+{"id":"g-025","text":"新排序先 shadow 一周，确认无漏注入再切换","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"灰度策略"}
+{"id":"g-026","text":"默认只归档不删除，物理删除必须人工输入一次性密钥","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"治理决策"}
+{"id":"g-027","text":"公开快照是单向导出，不是完整库的备份","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"发布策略"}
+{"id":"g-028","text":"10_Raw 对话原文默认不进入公开仓库","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"隐私边界"}
+{"id":"g-029","text":"根目录 PROJECT_PLAN.md 是工程文档，不进 catalog","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"边界决策"}
+{"id":"g-030","text":"superseded 是终态，旧条目不再注入","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"真相模型"}
+{"id":"g-031","text":"裁判写入默认 status inbox，人工确认 active 后才注入","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"确认门槛"}
+{"id":"g-032","text":"检索只用只读命令，不改变注入预算","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"检索边界"}
+{"id":"g-033","text":"schema 升到 v1.6 才引入 subject 和 supersedes","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"版本决策"}
+{"id":"g-034","text":"每个阶段结束补一条 30_Canon 决策记录","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"文档纪律"}
+{"id":"g-035","text":"常驻记忆保留 5 条，不改成无限注入","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"上下文预算"}
+{"id":"g-036","text":"裁判连续失败 3 次就熔断 1 小时","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"故障策略"}
+{"id":"g-037","text":"judge 队列满时丢新 job，不阻塞 raw 追加","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"降级策略"}
+{"id":"g-038","text":"裁判新建原子默认 inbox，不直接写 active","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"安全默认"}
+{"id":"g-039","text":"公开前必须扫描本机路径和密钥模式","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"发布检查"}
+{"id":"g-040","text":"Phase 0 先冻结知识库建设会话的自动抽取","shouldRecord":true,"type":"decision","scope":"project:memory","category":"decision","note":"防污染"}
+{"id":"g-041","text":"今天修了 UI 按钮的样式","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-042","text":"测试跑过 82 条，全部通过","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-043","text":"我正在写 Phase 2 的评估脚本","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-044","text":"刚提交了 693970b 这个 commit","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-045","text":"明天继续处理剩下的页面","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-046","text":"这周还没做完，周末再补","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-047","text":"我下周一把方案发你","shouldRecord":true,"type":"task","scope":"global","category":"progress","note":"未来承诺"}
+{"id":"g-048","text":"10 月 31 日前完成黄金集标注","shouldRecord":true,"type":"task","scope":"global","category":"progress","note":"明确截止日"}
+{"id":"g-049","text":"11 月 5 日一起评审公开仓库","shouldRecord":true,"type":"task","scope":"global","category":"progress","note":"未来会议"}
+{"id":"g-050","text":"本周五前把预算表给我","shouldRecord":true,"type":"task","scope":"global","category":"progress","note":"明确截止日"}
+{"id":"g-051","text":"月底前必须迁移完旧数据","shouldRecord":true,"type":"task","scope":"global","category":"progress","note":"长期约束"}
+{"id":"g-052","text":"下个月开始做完整库备份","shouldRecord":true,"type":"task","scope":"global","category":"progress","note":"未来计划"}
+{"id":"g-053","text":"刚才那个 bug 已经修好了","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-054","text":"目前还差三个测试没写","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-055","text":"今天先到这里，明天再继续","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-056","text":"现在正在跑 CI","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-057","text":"等会儿我再看结果","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-058","text":"昨天已经完成 Phase 1","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-059","text":"公开快照已经上传过了","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-060","text":"下一步准备写文档","shouldRecord":false,"type":null,"scope":null,"category":"progress","note":""}
+{"id":"g-061","text":"不要碰 10_Raw 目录","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-062","text":"必须按六段结构写报告","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-063","text":"先做 A 再做 B，不要并行","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-064","text":"把文件移到 40_Work 目录","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-065","text":"删除临时测试数据","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-066","text":"所有路径都改用英文","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-067","text":"直接改 _meta/config.json","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-068","text":"重启 kb-panel 插件","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-069","text":"跑一下 smoke 再提交","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-070","text":"提交前先看 git status","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-071","text":"不要把 _meta/state 提交进去","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-072","text":"把删除密钥打印出来给我","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-073","text":"这次只改 schema，不要动代码","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-074","text":"跳过测试，先发版","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-075","text":"先备份再改配置","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-076","text":"用 PowerShell 5.1 跑一遍","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-077","text":"把完整日志贴给我","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-078","text":"停止自动抽取，先别写原子","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-079","text":"打开本机 9223 端口","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-080","text":"重新上传公开快照","shouldRecord":false,"type":null,"scope":null,"category":"operation","note":""}
+{"id":"g-081","text":"本轮把 kb.mjs 第 913 行的 stale 判断改了","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-082","text":"插件测试现在 86 条全部通过","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-083","text":"CI run 已经全绿","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-084","text":"公开快照现在有 53 个 blob","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-085","text":"config 新增了 meta_keywords 和阈值","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-086","text":"schema v1.6 加了 subject 字段","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-087","text":"smoke 脚本补了 UTF-8 BOM","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-088","text":"裁判加了连续失败熔断","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-089","text":"修了批处理半写的问题","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-090","text":"端点 guard 会返回 403","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-091","text":"导出脚本会扫描本机用户目录","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-092","text":"队列里还有 13 个 job，pending 是 0","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-093","text":"现在跑 validate 是 26 篇","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-094","text":"刚才重载了插件","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-095","text":"工作树现在是干净的","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-096","text":"本地提交是 b1f7997","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-097","text":"公开仓库 main 是 fc0b734","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-098","text":"冒烟现在是 67 条全过","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-099","text":"凭据是从系统钥匙串读的","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}
+{"id":"g-100","text":"运行时状态都放在 _meta/state","shouldRecord":false,"type":null,"scope":null,"category":"construction","note":""}

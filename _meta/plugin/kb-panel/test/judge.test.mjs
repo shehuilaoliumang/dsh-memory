@@ -14,6 +14,10 @@ import {
   screeningMatches,
   selectExisting,
   parseVerdict,
+  breakerOpen,
+  breakerAfterFailure,
+  breakerReset,
+  buildJudgePrompt,
 } from '../judge.js';
 
 test('clampText: short text passes through unchanged', () => {
@@ -222,4 +226,39 @@ test('JUDGE_SYSTEM is exported and states the hard exclusions', () => {
   for (const field of ['scope', 'points', 'quote', 'confidence']) {
     assert.ok(JUDGE_SYSTEM.includes(field), `missing output field: ${field}`);
   }
+});
+
+test('breaker: opens only after the configured consecutive failures', () => {
+  const now = Date.parse('2026-10-29T00:00:00Z');
+  let state = {};
+  state = breakerAfterFailure(state, { breakerThreshold: 3, breakerCooldownMs: 60_000 }, now);
+  assert.equal(state.consecutiveFailures, 1);
+  assert.equal(state.breakerUntil, null);
+  state = breakerAfterFailure(state, { breakerThreshold: 3, breakerCooldownMs: 60_000 }, now);
+  assert.equal(state.consecutiveFailures, 2);
+  assert.equal(breakerOpen(state, now), false);
+  state = breakerAfterFailure(state, { breakerThreshold: 3, breakerCooldownMs: 60_000 }, now);
+  assert.equal(state.consecutiveFailures, 3);
+  assert.equal(breakerOpen(state, now), true);
+  assert.equal(breakerOpen(state, now + 60_001), false);
+});
+
+test('breaker: reset clears both failure count and open window', () => {
+  const open = { consecutiveFailures: 3, breakerUntil: '2026-10-29T01:00:00.000Z' };
+  assert.deepEqual(breakerReset(), { consecutiveFailures: 0, breakerUntil: null });
+  assert.equal(breakerOpen(open, Date.parse('2026-10-29T00:30:00Z')), true);
+  assert.equal(breakerOpen({}, Date.parse('2026-10-29T00:30:00Z')), false);
+});
+
+test('prompt redacts secrets before they reach the model', () => {
+  const fakeSk = 'sk-' + 'proj-abcdefghijklmnopqrstuvwx';
+  const prompt = buildJudgePrompt({
+    sessionId: 's',
+    raw: 'api_key = "abcdEFGH12345678"',
+    candidates: [{ text: `token ${fakeSk}` }],
+  }, [{ id: 'x', summary: 'password: hunter2long' }]);
+  assert.doesNotMatch(prompt, /abcdEFGH12345678/);
+  assert.equal(prompt.includes(fakeSk), false);
+  assert.doesNotMatch(prompt, /hunter2long/);
+  assert.match(prompt, /\[REDACTED/);
 });

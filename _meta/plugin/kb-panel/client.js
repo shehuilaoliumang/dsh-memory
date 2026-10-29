@@ -24,6 +24,26 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback, useMemo } = React;
 
     const LAYER_LABEL = { raw: '原文', digest: '摘要', canon: '结论' };
+    // P3.3: the Host rotates a per-process CSRF token; the panel snapshot is
+    // the only same-origin place to read it. Every `/kb/*` POST echoes it.
+    let kbCsrfToken = '';
+    const nativeFetch = typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : null;
+    function rememberCsrf(data) {
+      if (data && data.csrfToken) kbCsrfToken = String(data.csrfToken);
+      return data;
+    }
+    if (nativeFetch) {
+      window.fetch = (input, init = {}) => {
+        const url = typeof input === 'string' ? input : String((input && input.url) || '');
+        const method = String((init && init.method) || 'GET').toUpperCase();
+        if (url.startsWith('/kb/') && method === 'POST' && kbCsrfToken) {
+          const headers = new Headers(init.headers || {});
+          headers.set('x-kb-csrf', kbCsrfToken);
+          init = { ...init, headers };
+        }
+        return nativeFetch(input, init);
+      };
+    }
     /** Only pages that need to be told apart from atoms get an extra badge. */
     const TYPE_LABEL = { work: '工作页' };
     const STATUS_LABEL = {
@@ -435,7 +455,7 @@ window.__ModuleLoader__.load({
       const request = fetch(panelUrl(sessionId), { cache: 'no-store' })
         .then((response) => {
           if (!response.ok) throw new Error(String(response.status));
-          return response.json();
+          return response.json().then(rememberCsrf);
         })
         .finally(() => {
           sessionPanelPending.delete(sessionId);
@@ -568,7 +588,7 @@ window.__ModuleLoader__.load({
         try {
           const response = await fetch(panelUrl(sessionId), { cache: 'no-store' });
           if (!response.ok) throw new Error(String(response.status));
-          setData(await response.json());
+          setData(rememberCsrf(await response.json()));
           setFailed(false);
         } catch {
           setFailed(true);
@@ -953,7 +973,7 @@ window.__ModuleLoader__.load({
             fetch('/kb/ingest.json', { cache: 'no-store' }),
           ]);
           if (!panelResponse.ok) throw new Error(String(panelResponse.status));
-          setData(await panelResponse.json());
+          setData(rememberCsrf(await panelResponse.json()));
           if (healthResponse.ok) {
             try {
               setHealth(await healthResponse.json());

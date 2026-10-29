@@ -163,8 +163,32 @@ try {
   Check '待确认取代关系不阻塞 validate' ((Kb @('validate')).code -eq 0)
   $json = (Kb @('consolidate', '--json')).text | ConvertFrom-Json
   Check 'consolidate 报告待确认取代' (@($json.truth.pendingSupersedes) -contains $newId) ($json.truth.pendingSupersedes -join ',')
+  # Feedback telemetry: the queue row is the only source of the prompt version,
+  # so seed one before the confirmation and assert the label is appended.
+  $stateDir = Join-Path $base '_meta\state'
+  New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+  $queueRow = @{ id = 'smoke-judge-job'; sessionId = 'smoke'; promptVersion = 'smoke'; ids = @($newId) } | ConvertTo-Json -Compress
+  Set-Content (Join-Path $stateDir 'judge-queue.jsonl') $queueRow -Encoding UTF8
   $r = Kb @('set-status', '--id', $newId, '--status', 'active', '--json')
   Check '确认新结论时旧结论退场' (($r.text -match '"retired":\["') -and ($r.text -match [regex]::Escape($oldId))) $r.text
+  $feedbackFile = Join-Path $stateDir 'judge-feedback.jsonl'
+  Check '确认写入裁判反馈' ((Test-Path $feedbackFile) -and ((Get-Content $feedbackFile -Raw -Encoding UTF8) -match [regex]::Escape($newId)) -and ((Get-Content $feedbackFile -Raw -Encoding UTF8) -match '"accepted":true'))
+
+  Write-Host "`n[7.6] 裁判黄金集回归"
+  # The committed predictions are model output for the committed prompt. This
+  # check is deterministic and guards precision from prompt/config drift.
+  $evalScript = Join-Path $base '_meta\scripts\eval-judge.mjs'
+  $goldenFile = Join-Path $base '_meta\rules\golden.jsonl'
+  $predictionFile = Join-Path $base '_meta\rules\judge-predictions-2026-10-29.jsonl'
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $evalOut = & node $evalScript --golden $goldenFile --adapter predictions --predictions $predictionFile --min-cases 100 --fail-below 0.8 2>&1
+    $evalCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previous
+  }
+  Check '黄金集 precision 仍 ≥0.8' ($evalCode -eq 0 -and (($evalOut -join "`n") -match 'precision=([0-9.]+)')) (($evalOut -join "`n") -split "`n" | Select-Object -First 2 | Out-String)
   $oldText = Get-Content (Join-Path (Join-Path $base '20_Digest\atoms') ($oldId + '.md')) -Raw -Encoding UTF8
   Check '旧结论变为 superseded' ($oldText -match '(?m)^status: superseded$') $oldText
   Check '退场后 validate 通过' ((Kb @('validate')).code -eq 0)
@@ -311,6 +335,47 @@ updated: 2026-10-29
   Check '截断索引报明确错误而不是崩溃' ($r.code -ne 0 -and $r.text -match '索引损坏' -and $r.text -match '第 1 行') $r.text
   Move-Item $backup $catalog -Force
   Check '恢复索引后 validate 通过' ((Kb @('validate')).code -eq 0)
+
+  Write-Host "`n[10.5] 只读检索"
+  $r = Kb @('search', '--query', '删除 密钥', '--limit', '3', '--json')
+  $search = $r.text | ConvertFrom-Json
+  Check 'search 返回命中且首位是删除闸偏好' ($r.code -eq 0 -and @($search.results).Count -ge 1 -and $search.results[0].id -eq '2026-10-28-a-0002') $r.text
+  $r = Kb @('search', '--query', '不存在的词xyz', '--json')
+  $none = $r.text | ConvertFrom-Json
+  Check 'search 无意义查询不误命中' ($r.code -eq 0 -and $none.total -eq 0) $r.text
+  $r = Kb @('search', '--json')
+  Check 'search 缺少 query 时报错' ($r.code -ne 0 -and $r.text -match '需要 --query') $r.text
+
+  Write-Host "`n[10.6] 脱敏"
+  $fakeSk = 'sk-' + 'proj-abcdefghijklmnopqrstuvwx'
+  $secretPath = Join-Path $base 'secret.txt'
+  Set-Content $secretPath ('api_key = "abcdEFGH12345678" and token ' + $fakeSk) -Encoding UTF8
+  $r = Kb @('append-session', '--slug', 'redact-smoke', '--session-id', 'smoke-redact', '--title', '脱敏测试', '--text-file', $secretPath)
+  Check 'append-session 成功' ($r.code -eq 0) $r.text
+  $sessionFile = Get-ChildItem (Join-Path $base '10_Raw\sessions') -Recurse -Filter '*redact-smoke*' | Select-Object -First 1
+  Check 'append-session 已创建原文' ($null -ne $sessionFile)
+  if ($sessionFile) {
+    $sessionText = Get-Content $sessionFile.FullName -Raw -Encoding UTF8
+    Check 'append-session 写入前脱敏' ($sessionText -match '\[REDACTED') $sessionText
+    $fakeSkPrefix = 'sk-' + 'proj-'
+    Check 'append-session 不落盘密钥' ($sessionText -notmatch 'abcdEFGH12345678' -and $sessionText -notmatch $fakeSkPrefix) $sessionText
+  }
+  # The Host trigger rebuilds after append-session; standalone callers must do the same.
+  $null = Kb @('rebuild')
+
+  Write-Host "`n[10.7] Phase 4 契约"
+  $r = Kb @('append-session', '--slug', 'json-smoke', '--session-id', 'smoke-json-1', '--title', 'JSON 契约', '--text', '决定保持 JSON 契约', '--json')
+  $json1 = $r.text | ConvertFrom-Json
+  Check 'append-session --json 返回文件路径' ($r.code -eq 0 -and $json1.ok -eq $true -and $json1.file -match 'json-smoke') $r.text
+  $r = Kb @('append-session', '--slug', 'json-smoke', '--session-id', 'smoke-json-2', '--title', 'JSON 契约 2', '--text', '决定保持 JSON 契约 2', '--json')
+  $json2 = $r.text | ConvertFrom-Json
+  Check '同分钟新建会话不撞文件' ($r.code -eq 0 -and $json2.file -ne $json1.file) $r.text
+  $expectedVersion = (Get-Content (Join-Path $base 'VERSION') -Raw).Trim()
+  $r = Kb @('version')
+  Check 'version 返回 VERSION' ($r.code -eq 0 -and $r.text.Trim() -eq $expectedVersion) $r.text
+  $r = Kb @('init')
+  Check 'init 幂等创建目录' ($r.code -eq 0 -and $r.text -match '就绪') $r.text
+  $null = Kb @('rebuild')
 
   Write-Host "`n[11] 收尾校验"
   $r = Kb @('validate')

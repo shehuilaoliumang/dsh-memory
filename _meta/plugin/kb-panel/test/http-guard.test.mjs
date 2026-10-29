@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { requestRejected } from '../http-guard.js';
 
-function exchange(headers = {}, method = 'GET') {
+function exchange(headers = {}, method = 'GET', options = {}) {
   const res = {
     statusCode: 200,
     headers: {},
@@ -15,7 +15,7 @@ function exchange(headers = {}, method = 'GET') {
     },
   };
   const req = { method, headers };
-  const rejected = requestRejected(req, res, { write: method === 'POST' });
+  const rejected = requestRejected(req, res, { write: method === 'POST', ...options });
   return { rejected, status: res.statusCode, body: res.body };
 }
 
@@ -66,4 +66,15 @@ test('accepts a JSON write from the same origin', () => {
   );
   assert.equal(result.rejected, false);
   assert.equal(result.status, 200);
+});
+
+test('requires the CSRF token on writes when configured', () => {
+  const headers = {
+    host: '127.0.0.1:9223',
+    origin: 'http://127.0.0.1:9223',
+    'content-type': 'application/json',
+  };
+  assert.equal(exchange(headers, 'POST', { token: 'abc' }).status, 403);
+  const good = exchange({ ...headers, 'x-kb-csrf': 'abc' }, 'POST', { token: 'abc' });
+  assert.equal(good.rejected, false);
 });

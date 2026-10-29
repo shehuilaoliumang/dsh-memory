@@ -11,6 +11,7 @@
  *
  * No fs, no clock, no Host APIs: testable with plain node:test.
  */
+import { WORK_SECTIONS } from './shared/work-sections.mjs';
 
 /** Collapse whitespace and clamp to `max` characters (no ellipsis). */
 export function clampText(value, max) {
@@ -64,9 +65,9 @@ export function briefText(page, body, options = {}) {
   const maxChars = Number(options.maxChars) > 0 ? Number(options.maxChars) : 420;
   const pageData = page || {};
   const parts = [`【项目简报 · ${scopeLabel(pageData.scope)}】${clampText(pageData.summary, summaryChars)}`];
-  const next = sectionItems(body, '下一步', itemsPerSection).map((item) => clampText(item, itemChars));
+  const next = sectionItems(body, WORK_SECTIONS[3], itemsPerSection).map((item) => clampText(item, itemChars));
   if (next.length) parts.push(`下一步：${next.join('；')}`);
-  const blocked = sectionItems(body, '未决', itemsPerSection).map((item) => clampText(item, itemChars));
+  const blocked = sectionItems(body, WORK_SECTIONS[2], itemsPerSection).map((item) => clampText(item, itemChars));
   if (blocked.length) parts.push(`未决：${blocked.join('；')}`);
   const text = parts.join('；');
   const chars = [...text];

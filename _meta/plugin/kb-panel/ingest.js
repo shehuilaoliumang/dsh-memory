@@ -662,6 +662,7 @@ export function createIngestor(deps) {
           chunk.role,
           '--text-file',
           textFile,
+          '--json',
         ],
         cwd: root,
         env: { ...process.env, ...node.env, DSH_SESSION_ID: sessionId },
@@ -671,9 +672,19 @@ export function createIngestor(deps) {
         throw new Error(`append-session exited ${result.code}: ${(result.stderr || result.stdout || '').trim().slice(0, 400)}`);
       }
       const line = `${result.stdout || ''}`.trim();
-      const file = line.match(/(?:已新建并写入|已追加到)\s+(\S+?\.md)/);
-      if (file) {
-        entry.sessionFile = path.join(root, file[1].split('/').join(path.sep));
+      let reported = null;
+      try {
+        const payload = JSON.parse(line);
+        if (payload && typeof payload.file === 'string' && payload.file.endsWith('.md')) reported = payload.file;
+      } catch {
+        /* Older kb.mjs / a wrapper may still print the human line. */
+      }
+      if (!reported) {
+        const match = line.match(/(?:已新建并写入|已追加到)\s+(\S+?\.md)/);
+        if (match) reported = match[1];
+      }
+      if (reported) {
+        entry.sessionFile = path.join(root, reported.split('/').join(path.sep));
         rawSessionCache.set(sessionId, entry.sessionFile);
       } else {
         // The note was written but its path could not be parsed; drop the
@@ -987,7 +998,12 @@ export function createIngestor(deps) {
       .map((chunk) => `${chunk.role === 'user' ? '## 用户' : '## 助手结论'}\n\n${chunk.text}`)
       .join('\n\n');
     let next = `${current}${current ? '\n\n' : ''}${added}`;
-    if (next.length > max) next = next.slice(next.length - max);
+    if (next.length > max) {
+      const dropped = next.length - max;
+      next = next.slice(next.length - max);
+      entry.lastWarning = `pending 窗口超限，丢弃最旧 ${dropped} 字符（保留最近 ${max}）`;
+      log(`[kb-ingest] ${sessionId} ${entry.lastWarning}`);
+    }
     fs.writeFileSync(file, next, 'utf8');
     entry.pendingChars = next.length;
   }
@@ -1225,7 +1241,12 @@ export function createIngestor(deps) {
     ensureDir(stateDir());
     const pending = readJsonl(queueFile()).filter((line) => line && line.status === 'pending').length;
     if (pending >= cfg.ingest.judgeQueueMaxPending) {
-      throw new Error(`judge 队列已有 ${pending} 条待判，先不追加`);
+      // Dropping the newest job is the recoverable direction: raw already has
+      // the text, and the next window can be re-extracted. Throwing here would
+      // requeue the same claimed window forever and block all later windows.
+      const message = `judge 队列已有 ${pending} 条待判，丢弃新 job ${job.id}（原文仍在 raw）`;
+      log(`[kb-ingest] WARN ${message}`);
+      return { ...job, dropped: true, droppedReason: message };
     }
     if (typeof deps.judge === 'function') {
       // In-process seam: a later step-3 implementation can pass a real judge.

@@ -14,6 +14,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { redactSecrets } from './redact.js';
 
 const DEFAULT_JUDGE = {
   enabled: false,
@@ -28,11 +29,20 @@ const DEFAULT_JUDGE = {
   duplicateThreshold: 0.9,
   summaryMaxChars: 40,
   dryRunFile: 'judge-dry-run.jsonl',
+  // Prompt version is stamped on every queue record and evaluation run. Bump it
+  // whenever the system prompt or output contract changes so feedback labels can
+  // be compared across regressions instead of becoming anonymous data.
+  promptVersion: '2026-10-29.1',
+  // A broken provider must not be retried forever at every interval: after this
+  // many consecutive failed jobs the worker stops touching the queue for one
+  // hour. A successful job resets both counters.
+  breakerThreshold: 3,
+  breakerCooldownMs: 3600000,
 };
 
 const TYPES = ['fact', 'preference', 'decision', 'opinion', 'question', 'task', 'definition', 'principle'];
 
-function buildJudgeSystem(cfg = DEFAULT_JUDGE) {
+export function buildJudgeSystem(cfg = DEFAULT_JUDGE) {
   return `你是知识库的抽取裁判。输入是某轮对话里被规则层挑出的候选句。
 
 判断标准只有一条：**一年后回看，这句话还有用吗？** 只对「当时那次任务」有用的，一律不记。
@@ -69,6 +79,7 @@ function buildJudgeSystem(cfg = DEFAULT_JUDGE) {
 }
 
 export const JUDGE_SYSTEM = buildJudgeSystem(DEFAULT_JUDGE);
+export { DEFAULT_JUDGE };
 
 function readText(file) {
   try {
@@ -288,21 +299,23 @@ export function parseVerdict(text, cfg = DEFAULT_JUDGE) {
   };
 }
 
-function jobPrompt(job, existing = []) {
+export function buildJudgePrompt(job, existing = []) {
+  // P3.5: even an old raw file may contain a secret that predates redaction.
+  // Redact again at the model boundary so nothing sensitive reaches the LLM.
   const lines = [
     `会话：${job.sessionId}`,
-    `原文：${job.raw || '(未记录)'}`,
+    `原文：${redactSecrets(job.raw || '(未记录)')}`,
     `采集时间：${job.createdAt || '(未知)'}`,
     `触发词：${(job.gate && job.gate.triggers ? job.gate.triggers : []).join(' / ') || '(无)'}`,
     '',
     '候选句：',
   ];
   for (const [index, candidate] of (job.candidates || []).entries()) {
-    lines.push(`${index + 1}. ${String(candidate.text || candidate).trim()}`);
+    lines.push(`${index + 1}. ${redactSecrets(String(candidate.text || candidate).trim())}`);
   }
   if (existing.length) {
     lines.push('', '知识库里已有下列条目。若你的候选与其中任一条表达同一件事，就不要输出该 atom，并在 reason 里注明 duplicate：');
-    for (const row of existing) lines.push(`- ${row.id}｜${row.summary}`);
+    for (const row of existing) lines.push(`- ${row.id}｜${redactSecrets(row.summary || '')}`);
   }
   return lines.join('\n');
 }
@@ -315,6 +328,26 @@ function jobPrompt(job, existing = []) {
  * @param deps.runCommand async (args, timeoutMs) => { code, stdout, stderr } for kb.mjs
  * @param deps.log optional line logger
  */
+export function breakerOpen(state, now = Date.now()) {
+  const until = state && state.breakerUntil ? Date.parse(state.breakerUntil) : 0;
+  return Number.isFinite(until) && until > now;
+}
+
+/** Pure transition for one failure; the caller applies it to worker state. */
+export function breakerAfterFailure(state, settings = {}, now = Date.now()) {
+  const consecutiveFailures = Math.max(0, Number(state && state.consecutiveFailures) || 0) + 1;
+  const threshold = Math.max(1, Number(settings.breakerThreshold) || 3);
+  const cooldown = Math.max(60000, Number(settings.breakerCooldownMs) || 3600000);
+  return {
+    consecutiveFailures,
+    breakerUntil: consecutiveFailures >= threshold ? new Date(now + cooldown).toISOString() : null,
+  };
+}
+
+export function breakerReset() {
+  return { consecutiveFailures: 0, breakerUntil: null };
+}
+
 export function createJudgeWorker(deps = {}) {
   const root = deps.root;
   const config = typeof deps.config === 'function' ? deps.config : () => deps.config || {};
@@ -330,16 +363,33 @@ export function createJudgeWorker(deps = {}) {
     processed: 0,
     written: 0,
     skipped: 0,
+    consecutiveFailures: 0,
+    breakerUntil: null,
   };
   let timer = null;
   let disposed = false;
+  // `_meta/config.json` is read on every settings() call otherwise; the file is
+  // small but this worker runs on every interval and per job. Cache by mtime so
+  // editing the vault config still takes effect without a plugin reload.
+  const configCache = { mtimeMs: -1, value: {} };
 
   const readVaultConfig = () => {
+    const file = path.join(root, '_meta', 'config.json');
+    let mtimeMs = -1;
     try {
-      return JSON.parse(readText(path.join(root, '_meta', 'config.json'))) || {};
+      mtimeMs = fs.statSync(file).mtimeMs;
     } catch {
-      return {};
+      mtimeMs = -1;
     }
+    if (mtimeMs !== configCache.mtimeMs) {
+      configCache.mtimeMs = mtimeMs;
+      try {
+        configCache.value = JSON.parse(readText(file)) || {};
+      } catch {
+        configCache.value = {};
+      }
+    }
+    return configCache.value;
   };
 
   const settings = () => {
@@ -453,7 +503,7 @@ export function createJudgeWorker(deps = {}) {
     const known = loadKnownSummaries();
     const probes = (job.candidates || []).map((candidate) => String(candidate.text || candidate));
     const existing = selectExisting(known, probes);
-    const text = await callModel(jobPrompt(job, existing));
+    const text = await callModel(buildJudgePrompt(job, existing));
     const verdict = parseVerdict(text, cfg);
     verdict.existing = existing.map((row) => row.id);
     // Safety net only: the model has already been shown the screened rows above.
@@ -476,6 +526,7 @@ export function createJudgeWorker(deps = {}) {
       sessionId: job.sessionId,
       raw: job.raw,
       mode: cfg.mode,
+      promptVersion: cfg.promptVersion,
       verdict,
     };
 
@@ -554,6 +605,12 @@ export function createJudgeWorker(deps = {}) {
     const cfg = settings();
     if (!cfg.enabled) return { skipped: 'disabled' };
     if (state.running) return { skipped: 'running' };
+    // The breaker is process-local and deliberately conservative: a provider
+    // outage should stop consuming quota and log once, not hammer every tick.
+    if (breakerOpen(state)) {
+      return { skipped: 'breaker', breakerUntil: state.breakerUntil, consecutiveFailures: state.consecutiveFailures };
+    }
+    if (state.breakerUntil) state.breakerUntil = null;
     state.running = true;
     state.lastRunAt = new Date().toISOString();
     const results = [];
@@ -566,9 +623,12 @@ export function createJudgeWorker(deps = {}) {
         if (disposed) break;
         try {
           results.push({ jobId: job.id, ...(await processJob(job)) });
+          Object.assign(state, breakerReset());
         } catch (error) {
           const message = String(error && error.message ? error.message : error);
           state.lastError = message;
+          const nextBreaker = breakerAfterFailure(state, cfg);
+          state.consecutiveFailures = nextBreaker.consecutiveFailures;
           updateQueue(
             new Map([
               [
@@ -582,16 +642,22 @@ export function createJudgeWorker(deps = {}) {
               ],
             ]),
           );
-          log(`[kb-judge] job ${job.id} failed: ${message}`);
+          log(`[kb-judge] job ${job.id} failed (${state.consecutiveFailures} consecutive): ${message}`);
+          if (nextBreaker.breakerUntil) {
+            state.breakerUntil = nextBreaker.breakerUntil;
+            state.lastError = `连续失败 ${state.consecutiveFailures} 次，熔断至 ${state.breakerUntil}：${message}`;
+            log(`[kb-judge] circuit breaker open until ${state.breakerUntil} (${state.consecutiveFailures} consecutive failures)`);
+            break;
+          }
         }
       }
-      if (!results.length) state.lastError = null;
+      if (!results.length && !state.breakerUntil) state.lastError = null;
     } catch (error) {
       state.lastError = String(error && error.message ? error.message : error);
     } finally {
       state.running = false;
     }
-    return { results };
+    return { results, breakerUntil: state.breakerUntil, consecutiveFailures: state.consecutiveFailures };
   }
 
   /**
@@ -620,8 +686,47 @@ export function createJudgeWorker(deps = {}) {
     return { reset, expired };
   }
 
+  /**
+   * Evaluate the live prompt against labelled cases without touching the queue.
+   * Used by the Phase 2 harness through a guarded local endpoint; it is
+   * sequential on purpose so one provider connection is reused and rate limits
+   * stay predictable.
+   */
+  async function evaluateCases(cases = []) {
+    const cfg = settings();
+    const rows = [];
+    for (const item of Array.isArray(cases) ? cases : []) {
+      const job = {
+        id: String(item.id || ''),
+        kind: 'extract-judge',
+        sessionId: 'golden-set',
+        raw: '(golden)',
+        createdAt: '2026-10-29T00:00:00+08:00',
+        cause: 'eval',
+        candidates: [{ text: String(item.text || '') }],
+        gate: { triggers: [] },
+      };
+      const prompt = buildJudgePrompt(job, []);
+      try {
+        const text = await callModel(prompt);
+        const verdict = parseVerdict(text, cfg);
+        rows.push({
+          id: job.id,
+          shouldRecord: verdict.shouldRecord === true,
+          type: verdict.atoms?.[0]?.type || null,
+          reason: verdict.reason || '',
+          promptVersion: cfg.promptVersion,
+        });
+      } catch (error) {
+        rows.push({ id: job.id, error: String(error && error.message ? error.message : error) });
+      }
+    }
+    return rows;
+  }
+
   return {
     retryErrored,
+    evaluateCases,
     start() {
       const cfg = settings();
       state.enabled = cfg.enabled === true;
@@ -647,6 +752,10 @@ export function createJudgeWorker(deps = {}) {
         lastVerdictAt: state.lastVerdictAt,
         lastVerdict: state.lastVerdict,
         counters: { processed: state.processed, written: state.written, skipped: state.skipped },
+        consecutiveFailures: state.consecutiveFailures,
+        breakerUntil: state.breakerUntil,
+        breakerOpen: Boolean(state.breakerUntil && Date.parse(state.breakerUntil) > Date.now()),
+        promptVersion: settings().promptVersion,
         queue: {
           pending: queue.filter((job) => job.status === 'pending').length,
           rejected: queue.filter((job) => job.status === 'rejected').length,

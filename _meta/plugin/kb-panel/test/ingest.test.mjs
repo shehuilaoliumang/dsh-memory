@@ -312,8 +312,10 @@ test('messageText only extracts text blocks', () => {
 
 test('session slug/title are stable ASCII-friendly values', () => {
   assert.equal(sessionSlug('session-9560413c-746c'), 'session-9560413c746c');
-  assert.equal(sessionTitle('决定：路径用英文\n第二行', new Date('2026-10-20T01:30:00+08:00')), '决定：路径用英文');
-  assert.match(sessionTitle('', new Date('2026-10-20T01:30:00+08:00')), /^会话 2026-10-20/);
+  const when = new Date('2026-10-20T01:30:00+08:00');
+  assert.equal(sessionTitle('决定：路径用英文\n第二行', when), '决定：路径用英文');
+  const localDay = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`;
+  assert.match(sessionTitle('', when), new RegExp(`^会话 ${localDay} `));
 });
 
 test('resolveNode prefers an explicit path, then a managed runtime', () => {

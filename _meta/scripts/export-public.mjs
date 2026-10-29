@@ -53,7 +53,7 @@ const TEXT_EXTENSIONS = new Set([
   '.md', '.json', '.jsonl', '.yml', '.yaml', '.mjs', '.js', '.cjs',
   '.ps1', '.txt', '.css', '.html', '.gitignore',
 ]);
-const PUBLIC_ROOT_FILES = new Set(['README.md', 'AGENTS.md', '.gitignore', 'LICENSE']);
+const PUBLIC_ROOT_FILES = new Set(['README.md', 'AGENTS.md', '.gitignore', 'LICENSE', 'VERSION', 'CHANGELOG.md']);
 
 const skipDirs = new Set(['.git', 'node_modules', '_meta/state', 'dist']);
 const skipFiles = new Set([

@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createIngestor, resolveNode, runProcess } from './ingest.js';
 import { createJudgeWorker } from './judge.js';
+import { requestRejected } from './http-guard.js';
 import { briefText, isInjectable } from './work-brief.js';
 
 export const inject = ['webServer', 'systemPrompt'];
@@ -141,6 +142,12 @@ function readJsonBody(req) {
   });
 }
 
+/**
+ * Minimal same-origin / CSRF guard for the local `/kb/*` surface. This does not
+ * authenticate a local process with a shell — it blocks a malicious web page
+ * from driving the vault through the user's browser, and makes write endpoints
+ * reject HTML form posts (`text/plain`, `application/x-www-form-urlencoded`).
+ */
 export function apply(ctx, config = {}) {
   const root = path.resolve(config.workspaceRoot || process.cwd());
   const refreshMs = Number(config.refreshMs) > 0 ? Number(config.refreshMs) : 30000;
@@ -747,6 +754,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res)) return;
         let sessionId;
         let build;
         try {
@@ -778,6 +786,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res)) return;
         let id;
         try {
           id = new URL(req.url || '/', 'http://localhost').searchParams.get('id');
@@ -822,6 +831,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -853,6 +863,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           const body = await readJsonBody(req);
           const id = bareId(body && body.session);
@@ -891,6 +902,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           const body = await readJsonBody(req);
           lastUiReport = {
@@ -918,6 +930,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -948,6 +961,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           const result = await judgeWorker.runOnce();
           sendJson(res, 200, { ok: true, ...result, worker: judgeWorker.snapshot() });
@@ -969,6 +983,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           const body = await readJsonBody(req);
           const ids = Array.isArray(body && body.ids) ? body.ids.map(String).filter((id) => /^\d{4}-\d{2}-\d{2}-[atcw]-\d{4}$/.test(id)) : [];
@@ -1018,6 +1033,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res)) return;
         try {
           let agents;
           try {
@@ -1051,6 +1067,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           const body = await readJsonBody(req);
           const id = String((body && body.id) || '').trim();
@@ -1092,6 +1109,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           const outcome = judgeWorker.retryErrored();
           sendJson(res, 200, { ok: true, ...outcome, worker: judgeWorker.snapshot() });
@@ -1111,6 +1129,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res, { write: true })) return;
         try {
           sendJson(res, 200, { ok: true, consolidate: await runConsolidate() });
         } catch (error) {
@@ -1130,6 +1149,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
+        if (requestRejected(req, res)) return;
         try {
           sendJson(res, 200, {
             ...ingestor.snapshot(),

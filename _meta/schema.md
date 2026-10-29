@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.4
+title: 知识库规范 v1.5
 status: canon
 updated: 2026-10-29
 ---
 
-# 知识库规范 v1.4
+# 知识库规范 v1.5
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -69,7 +69,7 @@ updated: 2026-10-29
 | 字段 | 说明 |
 |---|---|
 | `confidence` | 0–1，抽取置信度，冲突裁决时参考 |
-| `source` | 数组，指回原文：`["[[10_Raw/sessions/2026/10/xxx]]"]` |
+| `source` | 数组，指回原文：`[""]` |
 | `up` | 指向提炼后的上层笔记 |
 | `related` | 相关笔记链接 |
 | `supersedes` | 被本条取代的旧条目（纠正 / 推翻时用） |
@@ -90,7 +90,7 @@ scope: global
 status: active
 confidence: 0.9
 summary: 用户选定英文路径 + 中文显示名方案
-source: ["[[10_Raw/sessions/2026/10/2026-10-20-2350-obsidian-kb]]"]
+source: [""]
 tags: [知识库, 显示]
 valid_from: 2026-10-20
 review_after: 2027-01-18
@@ -189,6 +189,8 @@ updated: 2026-10-20
 | `extract_idle` | 300s | 静默这么久才抽取（最小可调单元 60s） |
 | `extract_max_delay` | 1200s | 连续对话时最长多久必抽一次 |
 | `extract_every_turns` | 20 | 或满 20 轮必抽，先到先触发 |
+| `extract_meta_keywords` | 10 个元词 | 知识库自身建设窗口的识别词（`知识库`、`kb.mjs`、`_meta/`、`catalog`、`schema.md`、`插件`、`冒烟`、`工作页`、`原子`、`裁判`） |
+| `extract_meta_threshold` | 2 | 窗口命中元词达到该数即冻结抽取，只保留原文，不写原子；改词表/阈值只改 `_meta/config.json` |
 | `consolidate_daily` | 03:30 | 每日整理 |
 | `auto_commit` | — | git 批量提交（未实现，参数未外置） |
 | `catalog_max_rows` | 3000 | 超过则考虑归档 |
@@ -204,6 +206,8 @@ updated: 2026-10-20
 触发词（命中任一才进候选）：记 / 记住 / 以后 / 不要 / 别 / 喜欢 / 讨厌 / 决定 / 改成 / 其实是 / 不对 / 每周 / 每月 / 截止 / 交付 / 我的 / 我用 / 所谓 / 定义为。
 
 完整样例见 `_meta/rules/samples.md`（20 条：该抽 13 条，该跳 7 条）。
+
+**元窗口冻结**：当待抽取窗口命中 `extract.meta_keywords` 达到 `meta_threshold` 时，第 2 步直接跳过并记录原因「知识库建设窗口」，不生成候选、不写裁判队列、不写原子。理由见 c-0006 / 2026-10-20-a-0016：知识库建设对话是施工日志，不是跨项目记忆；原文仍按第 1 步落入 `10_Raw/`，需要时人工回捞。
 
 ### 触发实现（v1.3）
 
@@ -325,12 +329,13 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 规则：
 
 - 票据与密钥哈希写在 `_meta/state/delete-ticket.json`，**10 分钟过期、一次性**；密钥只存哈希，明文不落盘。
+- `delete-request` 只在**交互终端**显示明文密钥：非 TTY 退出码非 0，`--json` 返回体也不含 key，避免 agent 从工具输出里直接拿到密钥。冒烟测试直接构造一次性票据文件来验证 `delete`，不经过 `delete-request`。
 - 只允许删除 `10_Raw/`、`20_Digest/`、`30_Canon/` 下的笔记，其他路径一律拒绝。
 - 删除后自动清理其余笔记里指向被删条目的 `related` 与正文链接，再重建索引，保证 `validate` 不红。
 - 每次删除追加一行到 `_meta/log.md`，并记 `_meta/state/delete-log.jsonl`（含票据号与被清理的笔记数）。
 - 文件仍在 git 历史中，可 `git checkout <commit> -- <path>` 找回。
 
-**agent 约束**：必须先由对话生成票据并把密钥显示给用户，用户把密钥发回后才能执行；不得自行猜测、缓存或复用密钥，也不得把密钥写进笔记。
+**agent 约束**：`delete-request` 必须由用户在交互终端运行并把密钥原样输入 `delete`；agent 不得代跑 `delete-request`、不得从任何输出猜测/缓存密钥，也不得把密钥写进笔记或命令历史。若 agent 的终端不是 TTY，命令会直接拒绝。
 
 ## 9. 治理
 
@@ -358,9 +363,11 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：折叠时显示篇数/索引数，展开显示分层、状态、最近更新、核心记忆摘要 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
-| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks}.test.mjs`（共 75 条） |
+| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard}.test.mjs`（共 82 条） |
 
 已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板 UI 只读（自动写入在 Host 侧触发器，不在面板操作里）。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
+
+`/kb/*` 只监听本机 Harness 端口。所有路由经 `http-guard.js`：带 `Origin` 时必须与 `Host` 同源，`sec-fetch-site: cross-site` 一律拒绝，写端点只接受 `content-type: application/json`。这挡浏览器跨站请求，不等于操作系统进程级鉴权——同机其它进程仍可访问端口。
 
 ## 11. 规则层（v1.1 新增）
 

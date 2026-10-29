@@ -62,3 +62,9 @@
 2026-10-29 00:55 | extract | session-8c78f45e-d410-44e2-8d36-9c6ca997755c 候选 4 条 → judge 队列（catch-up）
 2026-10-29 01:01 | work | 独立审查第 2 轮：工作页恢复冲突守卫、batch 预校验、brief 总长上限、状态变更写日志、validate 类型-id 校验、PS5.1 BOM/命令、文档一致性（id 格式/scope 口径/删除命令/模板）
 2026-10-29 01:09 | write | c-0008 架构总览：分层+五步管线+双闸门注入+工作层+单写通道，串起 c-0001~c-0007
+2026-10-29 01:15 | extract | session-8c78f45e-d410-44e2-8d36-9c6ca997755c 候选 13 条 → judge 队列（idle）
+2026-10-29 01:18 | publish | GitHub public 脱敏快照已发布：https://github.com/shehuilaoliumang/dsh-memory（51 文件，无 10_Raw/state）
+2026-10-29 01:18 | atom | 2026-10-29-a-0002（fact）知识库仓库公开前的敏感内容边界
+2026-10-29 01:23 | extract | session-8c78f45e-d410-44e2-8d36-9c6ca997755c 候选 3 条 → judge 队列（idle）
+2026-10-29 09:50 | extract | session-8c78f45e-d410-44e2-8d36-9c6ca997755c 候选 20 条 → judge 队列（catch-up）
+2026-10-29 09:52 | status | 2026-10-29-a-0002 → archived

@@ -12,13 +12,14 @@
 ## 三条硬规则
 
 1. **不搬家**：文件出生在哪层就永远待在。晋升 = 在更高层新建一篇并用 `up:` 指回低层，低层改 `status: promoted`。
-2. **不删除**：只降权、只归档，永不删。**唯一例外**：用户明确要求物理删除时，必须走两道闸——`kb.mjs delete-request --ids …` 生成一次性票据与随机密钥（密钥只显示一次、不落盘明文），再由人把密钥原样输入 `kb.mjs delete --ticket T --key K`，校验票据、哈希与 10 分钟有效期后才执行。删除会自动清理指向被删条目的悬空链接，并记入 `_meta/log.md`。**未拿到人输入的密钥，任何 agent 都不得删除。**
+2. **不删除**：只降权、只归档，永不删。**唯一例外**：用户明确要求物理删除时，必须走两道闸——由用户在**交互终端**运行 `kb.mjs delete-request --ids …` 生成一次性票据与随机密钥（密钥只显示一次、不落盘明文；非 TTY 会拒绝，`--json` 不含 key），再由人把密钥原样输入 `kb.mjs delete --ticket T --key K`，校验票据、哈希与 10 分钟有效期后才执行。删除会自动清理指向被删条目的悬空链接，并记入 `_meta/log.md`。**未拿到人输入的密钥，任何 agent 都不得删除。**
 3. **索引是派生物**：`_meta/*.jsonl` 可从笔记重建，禁止手改；冲突时以笔记为准。
 
 ## 写
 
 - 每轮对话原文由 `@local/kb-panel` 触发器在 `turn/end` **自动追加**，模型不需要手动 `append-session`（手动仅作兜底）。
 - 抽取由静默窗口触发，语义裁判（deepseek-flash 直调）判定后经 `kb.mjs add-atom` 写入 `20_Digest/atoms/`。
+- **知识库建设窗口默认冻结**：待抽取窗口命中 `extract.meta_keywords` 达到阈值时不进裁判队列（施工日志不是记忆，见 2026-10-20-a-0016）；原文照常落 `10_Raw/`。
 - **裁判写入默认 `status: inbox`，不会进入对话**；必须显式确认（`set-status --status active`）才可能被注入。
 - 原子应带 `scope`：`global`（跨项目适用）/ `project:<slug>` / `system`（知识库自身建设）/ `unclassified`（判不准）；**缺失 scope = 永不注入（fail closed）**，手工“取消范围”会产生这种条目。
 - **工作页**（`type: work`，一个 scope 一页，`validate` 强制唯一 active）只写项目状态（阶段/在办/未决/下一步）；操作指令只进原文层，不进工作页。新建用 `kb.mjs work-new`，正文由人确认后覆写；归档用「归档 / 恢复为活跃」。
@@ -48,6 +49,7 @@ node _meta/scripts/kb.mjs promote --id ID --to CANON_ID   # 加 up 回指并置 
 node _meta/scripts/kb.mjs access --id ID --how inject|read|grep|manual   # 召回日志（热度来源）
 node _meta/scripts/kb.mjs work-new --scope global|project:S   # 新建工作页（type: work，不注入）
 node _meta/scripts/kb.mjs work-brief --scope global|project:S --json   # 恢复简报（新会话接上文）
+node _meta/scripts/export-public.mjs --out D:\dsh-memory-public   # 生成脱敏公开快照（排除原文/状态，重建索引）
 ```
 
 规则层冒烟测试（把 vault 复制到临时目录跑全部命令，不碰真实库）：
@@ -67,6 +69,8 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 操作接口（POST）：`/kb/mode`（会话记忆开关）、`/kb/scope`（会话项目范围）、`/kb/extract`（立即抽窗口）、`/kb/judge`（排空裁判队列）、`/kb/judge/retry`、`/kb/consolidate`、`/kb/atom`（单条状态）、`/kb/atoms/batch`、`/kb/ui`（客户端版本自报）。
 
 改源码后：`plugin_manager set_plugin` 在 `include:kb-panel` 上禁用→启用即可热加载（**profile 全局操作**，会瞬时撤掉所有会话的 core.md 注入，需排在空档）。
+
+`/kb/*` 只监听本机 Harness 端口。所有路由经 `http-guard.js`：`Origin` 必须与 `Host` 同源，`sec-fetch-site: cross-site` 拒绝，写端点只接受 `application/json`。这挡浏览器跨站写，不是进程级鉴权。
 
 ## 写权限
 

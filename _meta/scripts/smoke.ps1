@@ -10,6 +10,14 @@
 # 行为：把 vault 复制到临时目录跑全部命令，绝不触碰真实库；结束时清理。
 
 $ErrorActionPreference = 'Stop'
+# Node writes UTF-8. Windows PowerShell 5.1 decodes native stdout with the
+# console code page (936 here), which corrupts Chinese assertions ("45/55").
+# Pin the console decoder and the native pipeline writer to UTF-8; keep the
+# file itself BOM-prefixed so Windows PowerShell reads these Chinese comments.
+$utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
+try { [Console]::OutputEncoding = $utf8 } catch { }
+try { [Console]::InputEncoding = $utf8 } catch { }
+$OutputEncoding = $utf8
 # Run from a file, or inline (`Invoke-Expression`) when the machine's execution
 # policy blocks .ps1 — in that case pass the vault root through KB_REPO.
 $repo = if ($env:KB_REPO) {
@@ -222,8 +230,28 @@ updated: 2026-10-29
   $topic = Join-Path $base '20_Digest\topics\2026-10-20-t-0001.md'
   $mixedLine = "混合行：[[2026-10-20-a-0009]] 和 [[2026-10-20-a-0011]] 都应保留后者"
   [System.IO.File]::AppendAllText($topic, "`n$mixedLine`n", [System.Text.UTF8Encoding]::new($false))
-  $req = (Kb @('delete-request', '--ids', '2026-10-20-a-0009', '--json')).text | ConvertFrom-Json
-  $null = (Kb @('delete', '--ticket', $req.ticket, '--key', $req.key, '--json')).text
+  # The real command refuses non-TTY output. The throwaway copy exercises
+  # `delete` with a synthetic ticket, so production code keeps no test bypass.
+  $r = Kb @('delete-request', '--ids', '2026-10-20-a-0009', '--json')
+  Check '非交互终端拒绝生成删除密钥' ($r.code -ne 0 -and $r.text -match '交互终端') $r.text
+  $smokeKey = 'SMOKE-DELETE-KEY'
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  try { $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($smokeKey)) } finally { $sha.Dispose() }
+  $keyHash = ([System.BitConverter]::ToString($hashBytes)).Replace('-', '').ToLowerInvariant()
+  $now = [DateTime]::UtcNow
+  $ticketId = 'del-smoke'
+  $ticketJson = @{
+    ticket = $ticketId
+    keyHash = $keyHash
+    ids = @('2026-10-20-a-0009')
+    createdAt = $now.ToString('o')
+    expiresAt = $now.AddMinutes(5).ToString('o')
+  } | ConvertTo-Json -Compress
+  $ticketFile = Join-Path $base '_meta\state\delete-ticket.json'
+  [System.IO.Directory]::CreateDirectory((Split-Path $ticketFile -Parent)) | Out-Null
+  [System.IO.File]::WriteAllText($ticketFile, $ticketJson, [System.Text.UTF8Encoding]::new($false))
+  $r = Kb @('delete', '--ticket', $ticketId, '--key', $smokeKey, '--json')
+  Check '合成票据可执行删除' ($r.code -eq 0) $r.text
   $after = [System.IO.File]::ReadAllText($topic, [System.Text.Encoding]::UTF8)
   Check '删除只移除链接、保留混合行正文' ($after -match '混合行' -and $after -match '\[\[2026-10-20-a-0011\]\]' -and $after -notmatch '\[\[2026-10-20-a-0009\]\]') $after
   Check '删除后 validate 通过' ((Kb @('validate')).code -eq 0)
@@ -236,7 +264,21 @@ updated: 2026-10-29
   $r = Kb @('validate')
   Check '移除坏笔记后 validate 恢复' ($r.code -eq 0) $r.text
 
-  Write-Host "`n[10] 收尾校验"
+  Write-Host "`n[10] 索引容错"
+  # A truncated catalog line must produce a clean, actionable error, not a stack.
+  $catalog = Join-Path $base '_meta\catalog.jsonl'
+  $backup = "$catalog.bak"
+  Copy-Item $catalog $backup -Force
+  $raw = [System.IO.File]::ReadAllText($catalog, [System.Text.Encoding]::UTF8)
+  $newline = $raw.IndexOf("`n")
+  $truncated = '{"broken":' + $(if ($newline -ge 0) { $raw.Substring($newline) } else { '' })
+  [System.IO.File]::WriteAllText($catalog, $truncated, [System.Text.UTF8Encoding]::new($false))
+  $r = Kb @('validate')
+  Check '截断索引报明确错误而不是崩溃' ($r.code -ne 0 -and $r.text -match '索引损坏' -and $r.text -match '第 1 行') $r.text
+  Move-Item $backup $catalog -Force
+  Check '恢复索引后 validate 通过' ((Kb @('validate')).code -eq 0)
+
+  Write-Host "`n[11] 收尾校验"
   $r = Kb @('validate')
   Check '全部操作后 validate 仍通过' ($r.code -eq 0) $r.text
 }

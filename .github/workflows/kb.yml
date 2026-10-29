@@ -1,0 +1,55 @@
+name: kb
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate notes and indexes
+        shell: pwsh
+        run: node _meta/scripts/kb.mjs validate
+
+      - name: Plugin unit tests
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem _meta/plugin/kb-panel/test/*.test.mjs | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Smoke (Windows PowerShell 5.1)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File _meta/scripts/smoke.ps1
+
+      - name: Smoke (PowerShell 7)
+        shell: pwsh
+        run: pwsh -NoProfile -File _meta/scripts/smoke.ps1
+
+      - name: Build sanitized public snapshot
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'public-snapshot'
+          node _meta/scripts/export-public.mjs --out $out
+          Push-Location $out
+          node _meta/scripts/kb.mjs rebuild
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          node _meta/scripts/kb.mjs validate
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $leak = Get-ChildItem $out -Recurse -File | Select-String -Pattern 'C:\\Users\\' -List
+          if ($leak) {
+            $leak | ForEach-Object { Write-Error "public snapshot leaks a local path: $($_.Path)" }
+            exit 1
+          }
+          Pop-Location

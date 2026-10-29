@@ -54,16 +54,45 @@ function readText(file) {
 
 function writeText(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, text, 'utf8');
+  // Atomic replace: write a sibling temp file, then rename over the target.
+  // A crash mid-write can leave the old index intact instead of a half line.
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text, 'utf8');
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* best effort */
+    }
+    throw error;
+  }
 }
 
-function readJsonl(file) {
+function readJsonl(file, options = {}) {
   if (!fs.existsSync(file)) return [];
-  return readText(file)
+  const strict = options.strict === true;
+  const rows = [];
+  const bad = [];
+  readText(file)
     .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
+    .forEach((line, index) => {
+      const text = line.trim();
+      if (!text) return;
+      try {
+        rows.push(JSON.parse(text));
+      } catch (error) {
+        bad.push(`第 ${index + 1} 行：${error.message}`);
+      }
+    });
+  if (bad.length) {
+    const where = relPath(file);
+    const message = `索引损坏 ${where}，${bad.length} 行不是合法 JSON（${bad.slice(0, 3).join('；')}）。请运行 rebuild 重建。`;
+    if (strict) throw new Error(message);
+    console.error(`[kb] WARN ${message}`);
+  }
+  return rows;
 }
 
 function writeJsonl(file, rows) {
@@ -236,8 +265,8 @@ function fitRow(row, maxBytes) {
 
 function cmdValidate(opts) {
   const notes = loadNotes();
-  const catalog = readJsonl(P.catalog);
-  const archive = readJsonl(P.archive);
+  const catalog = readJsonl(P.catalog, { strict: true });
+  const archive = readJsonl(P.archive, { strict: true });
   const errors = [];
   const warnings = [];
   const seen = new Set();
@@ -884,7 +913,6 @@ function cmdConsolidate(opts) {
   const notes = loadNotes().filter((n) => !n.fixed && n.data);
   const today = localDate();
   const access = readJsonl(P.access);
-  const accessed = new Set(access.map((r) => r.id));
   // Heat: how often each note was actually recalled, and when it last was.
   const heat = new Map();
   for (const row of access) {
@@ -910,7 +938,9 @@ function cmdConsolidate(opts) {
     // A recent recall delays "stale" even when the note itself was not edited.
     const lastTouched = recall && recall.lastAt && recall.lastAt > String(d.updated) ? recall.lastAt.slice(0, 10) : String(d.updated);
     const idle = daysBetween(lastTouched, today);
-    if (['active', 'promoted', 'canon'].includes(d.status) && d.type !== 'work' && idle > CONFIG.limits.stale_days && !accessed.has(d.id)) {
+    // "Stale" is about time since the last meaningful touch, not whether the
+    // note was ever recalled: a single read years ago must not exempt it.
+    if (['active', 'promoted', 'canon'].includes(d.status) && d.type !== 'work' && idle > CONFIG.limits.stale_days) {
       stale.push({ id: d.id, updated: d.updated, age });
     }
     if (d.review_after && String(d.review_after) <= today) review.push({ id: d.id, review_after: d.review_after });
@@ -1100,6 +1130,12 @@ function cmdDeleteRequest(opts) {
   const missing = ids.filter((id) => !notes.some((n) => !n.fixed && n.data?.id === id));
   if (missing.length) throw new Error(`delete-request: 找不到 ${missing.join(', ')}`);
 
+  // The key is a human confirmation, not a secret the agent may read back:
+  // refuse to mint a ticket outside an interactive terminal. Smoke tests
+  // construct a synthetic ticket directly and exercise `delete` instead.
+  if (!process.stdout.isTTY) {
+    throw new Error('delete-request 必须在交互终端运行：密钥只显示给人，不进入工具输出');
+  }
   const key = makeKey();
   const ticket = `del-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`;
   const now = Date.now();
@@ -1117,13 +1153,17 @@ function cmdDeleteRequest(opts) {
       2,
     ),
   );
-  const payload = { ok: true, ticket, key, ids, expiresAt: new Date(now + TICKET_TTL_MS).toISOString() };
-  if (opts.json) return out(JSON.stringify(payload));
+  const payload = { ok: true, ticket, ids, expiresAt: new Date(now + TICKET_TTL_MS).toISOString() };
+  if (opts.json) {
+    out(JSON.stringify(payload));
+    process.stderr.write(`一次性密钥：${key}\n`);
+    return;
+  }
   out(`删除票据：${ticket}`);
   out(`一次性密钥：${key}`);
   out(`涉及 ${ids.length} 篇：${ids.join(', ')}`);
   out(`有效期 ${Math.round(TICKET_TTL_MS / 60000)} 分钟。确认后执行：`);
-  out(`  node _meta/scripts/kb.mjs delete --ticket ${ticket} --key ${key}`);
+  out(`  node _meta/scripts/kb.mjs delete --ticket ${ticket} --key <密钥>`);
 }
 
 /**
@@ -1137,10 +1177,13 @@ function stripLinks(text, ids) {
   for (const id of ids) {
     const token = `[[${id}]]`;
     if (!out.includes(token)) continue;
+    // Ticket ids are normally validated note ids, but never interpolate an
+    // arbitrary string into a RegExp: escape it first.
+    const escaped = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Quoted frontmatter array elements, with their delimiters.
-    out = out.replace(new RegExp(`"\\[\\[${id}\\]\\]"\\s*,\\s*`, 'g'), '');
-    out = out.replace(new RegExp(`,\\s*"\\[\\[${id}\\]\\]"`, 'g'), '');
-    out = out.replace(new RegExp(`"\\[\\[${id}\\]\\]"`, 'g'), '');
+    out = out.replace(new RegExp(`"\\[\\[${escaped}\\]\\]"\\s*,\\s*`, 'g'), '');
+    out = out.replace(new RegExp(`,\\s*"\\[\\[${escaped}\\]\\]"`, 'g'), '');
+    out = out.replace(new RegExp(`"\\[\\[${escaped}\\]\\]"`, 'g'), '');
     // Inline occurrences: strip the token in place; drop only link-only lines.
     const kept = [];
     for (const line of out.split(/\r?\n/)) {
@@ -1332,7 +1375,14 @@ function main() {
     process.exitCode = 2;
     return;
   }
-  fn(opts);
+  try {
+    fn(opts);
+  } catch (error) {
+    // Expected rule failures (corrupt index, invalid transition) must be a
+    // clean message and exit 1, not an uncaught stack trace.
+    console.error(`[kb] ${error && error.message ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
 }
 
 main();

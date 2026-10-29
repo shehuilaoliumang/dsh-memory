@@ -442,6 +442,8 @@ export function createIngestor(deps) {
         maxDelaySeconds: numberOr(extract.max_delay_seconds, 1200),
         everyTurns: numberOr(extract.every_turns, 20),
         triggerWords: Array.isArray(extract.trigger_words) ? extract.trigger_words : [],
+        metaKeywords: Array.isArray(extract.meta_keywords) ? extract.meta_keywords : [],
+        metaThreshold: numberOr(extract.meta_threshold, 2),
       },
       judge: file.judge || {},
       paths: {
@@ -454,6 +456,16 @@ export function createIngestor(deps) {
   function numberOr(value, fallback) {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? n : fallback;
+  }
+
+  /** Count distinct KB-construction keywords in one pending window. */
+  function metaKeywordHits(text, words) {
+    if (!text || !Array.isArray(words)) return 0;
+    const hits = new Set();
+    for (const word of words) {
+      if (typeof word === 'string' && word && text.includes(word)) hits.add(word);
+    }
+    return hits.size;
   }
 
   // ------------------------------------------------------ persisted state
@@ -1134,6 +1146,19 @@ export function createIngestor(deps) {
   async function extractWindow(sessionId, entry, text, cause) {
     const cfg = config();
     if (!text.trim()) return { gate: { skip: true, reason: '窗口内没有文本' } };
+
+    // Phase 0 guard: building this knowledge base is itself a construction log,
+    // not a memory to keep. Freeze extraction before any candidate/judge work;
+    // the raw transcript is still appended by step 1.
+    const metaHits = metaKeywordHits(text, cfg.extract.metaKeywords);
+    if (metaHits >= cfg.extract.metaThreshold) {
+      return {
+        gate: {
+          skip: true,
+          reason: `知识库建设窗口（命中 ${metaHits} 个元关键词，阈值 ${cfg.extract.metaThreshold}），Phase 0 冻结抽取`,
+        },
+      };
+    }
 
     // Step 2 rule layer: the gate and candidate extraction already live in
     // kb.mjs. The file form keeps the payload off the Windows command line.

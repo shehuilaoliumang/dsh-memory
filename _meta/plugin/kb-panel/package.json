@@ -1,6 +1,6 @@
 {
   "name": "@local/kb-panel",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "description": "Knowledge base page and in-vault memory chip, session-scoped core-memory prompt injection, and the schema §5 pipeline trigger (step 1 transcript append + step 2 extraction schedule).",
@@ -17,6 +17,7 @@
     "ingest.js",
     "judge.js",
     "work-brief.js",
+    "http-guard.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg"

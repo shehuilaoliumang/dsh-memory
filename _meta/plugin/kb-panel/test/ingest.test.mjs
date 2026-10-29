@@ -669,6 +669,31 @@ test('step 2 idle timer runs the gate; a skip enqueues nothing', async () => {
   assert.equal(state.sessions['session-test'].turnsSince, 0);
 });
 
+test('step 2 freezes KB-construction windows before candidates/judge', async () => {
+  const root = freshRoot({
+    extract: {
+      idle_seconds: 300,
+      max_delay_seconds: 1200,
+      every_turns: 20,
+      trigger_words: ['决定'],
+      meta_keywords: ['知识库', '插件', 'catalog'],
+      meta_threshold: 2,
+    },
+  });
+  const session = makeSession(turnEvents(1, '决定改造知识库插件和 catalog 结构', '好', 1));
+  const h = build(root);
+  await h.ingestor.handleTurnEnd(session, turnEndEvent(1));
+  h.timers.fireAll();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(h.exec.calls.filter((call) => call.command === 'candidates').length, 0);
+  assert.equal(fs.existsSync(path.join(root, QUEUE_REL)), false);
+  const state = JSON.parse(fs.readFileSync(path.join(root, STATE_REL), 'utf8'));
+  assert.equal(state.sessions['session-test'].lastGate.skip, true);
+  assert.match(state.sessions['session-test'].lastGate.reason, /知识库建设/);
+  assert.equal(state.sessions['session-test'].turnsSince, 0);
+});
+
 test('step 2 catch-up after a reload (overdue window) extracts without a turn', async () => {
   const root = freshRoot({ extract: { idle_seconds: 1, max_delay_seconds: 2, every_turns: 20, trigger_words: ['决定'] } });
   const first = build(root);

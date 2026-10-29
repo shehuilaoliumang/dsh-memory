@@ -15,7 +15,7 @@ updated: 2026-10-20
 | 3 | 记住：我每周三晚上不看论文 | 抽取 | preference | 显式记忆指令 |
 | 4 | 我不喜欢自动提交，也别给我加 emoji | 抽取 | preference | 一句里两条偏好，拆成两条 |
 | 5 | 我们决定目录用英文、界面显示中文 | 抽取 | decision | 决策词命中 |
-| 6 | 我的 Obsidian Vault 在 C:\Users\Lu\Documents\Obsidian Vault | 抽取 | fact | 路径类事实 |
+| 6 | 我的 Obsidian Vault 在 <vault> | 抽取 | fact | 路径类事实 |
 | 7 | 以后不要用中文文件名 | 抽取 | preference | 「以后/不要」命中，review_after 90 天 |
 | 8 | 明年三月前要完成答辩 | 抽取 | task | 带截止日期 |
 | 9 | 今天好累啊 | 跳过 | — | 情绪闲聊，无长期价值 |

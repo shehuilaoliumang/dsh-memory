@@ -58,9 +58,14 @@ node _meta/plugin/kb-panel/test/ingest.test.mjs
 node _meta/plugin/kb-panel/test/judge.test.mjs
 node _meta/plugin/kb-panel/test/transcript-chunks.test.mjs
 node _meta/plugin/kb-panel/test/work-brief.test.mjs
+node _meta/plugin/kb-panel/test/http-guard.test.mjs
 ```
 
-当前：冒烟 55 条、插件单测 75 条全过。
+当前：冒烟 59 条、插件单测 82 条全过。
+
+## 本地接口
+
+`@local/kb-panel` 的 `/kb/*` 只监听本机 Harness 端口，不对外网开放。写接口要求同源 `Origin`、拒绝 `sec-fetch-site: cross-site`，且只接受 `content-type: application/json`——这挡住恶意网页借浏览器跨站写库，但不等于操作系统的进程级鉴权；本机其它进程仍可访问该端口。
 
 ## 隐私说明
 

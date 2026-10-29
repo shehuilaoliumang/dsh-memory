@@ -55,7 +55,9 @@ function buildJudgeSystem(cfg = DEFAULT_JUDGE) {
 - 寒暄、过程叙述、临时状态、与已有条目重复的内容
 
 输出严格 JSON，不要解释、不要代码块：
-{"shouldRecord":true|false,"reason":"一句话","atoms":[{"title":"中文标题","type":"${TYPES.join('|')}","scope":"global|system|project:<slug>","summary":"不超过 ${cfg.summaryMaxChars} 字","points":["要点"],"tags":["标签"],"quote":"候选原文片段","confidence":0.0}]}
+{"shouldRecord":true|false,"reason":"一句话","atoms":[{"title":"中文标题","type":"${TYPES.join('|')}","scope":"global|system|project:<slug>","subject":"可选小写主题 slug","supersedes":["被取代的旧条目 id"],"summary":"不超过 ${cfg.summaryMaxChars} 字","points":["要点"],"tags":["标签"],"quote":"候选原文片段","confidence":0.0}]}
+
+若新陈述明确纠正/取代已有条目：subject 用稳定的 2–64 位小写字母/数字/连字符主题（同一主题的版本共用它）；supersedes 只填上面「已有条目」里真实出现、且确实被这句话取代的 id。只是措辞不同、补充细节或不确定时，省略这两个字段，绝不为了合并而乱填 supersedes。
 
 每条 atom 必须给出 scope，它决定这条记忆会不会自动进入对话：
 - global —— 跨项目通用的用户偏好、习惯、原则（只有这一档会自动注入）
@@ -265,6 +267,14 @@ export function parseVerdict(text, cfg = DEFAULT_JUDGE) {
         scope: /^(global|system|unclassified|project:[a-z0-9][a-z0-9-]*)$/.test(String(atom.scope || ''))
           ? String(atom.scope)
           : 'unclassified',
+        subject: /^[a-z0-9][a-z0-9-]{1,63}$/.test(String(atom.subject || ''))
+          ? String(atom.subject)
+          : '',
+        supersedes: [...new Set(
+          (Array.isArray(atom.supersedes) ? atom.supersedes : atom.supersedes ? [atom.supersedes] : [])
+            .map((id) => String(id || '').replace(/^\[\[|\]\]$/g, '').trim())
+            .filter((id) => /^\d{4}-\d{2}-\d{2}-[atw]-\d{4}$/.test(id)),
+        )].slice(0, 3),
         summary: clampText(atom.summary, cfg.summaryMaxChars),
         points: (Array.isArray(atom.points) ? atom.points : []).map((p) => clampText(p, 120)).filter(Boolean).slice(0, 8),
         tags: (Array.isArray(atom.tags) ? atom.tags : []).map((t) => String(t).trim()).filter(Boolean).slice(0, 6),
@@ -450,6 +460,13 @@ export function createJudgeWorker(deps = {}) {
     const deduped = dedupeAtoms(verdict.atoms, known, Number(cfg.duplicateThreshold) || 0.9);
     verdict.atoms = deduped.atoms;
     verdict.dropped = deduped.dropped;
+    // The judge may only supersede rows it was actually shown. A hallucinated
+    // id is dropped here instead of asking add-atom to touch an unseen note.
+    const shownIds = new Set(existing.filter((row) => row.level === 'digest').map((row) => row.id));
+    verdict.atoms = verdict.atoms.map((atom) => ({
+      ...atom,
+      supersedes: (atom.supersedes || []).filter((id) => shownIds.has(id)),
+    }));
     state.lastVerdictAt = new Date().toISOString();
     state.lastVerdict = { jobId: job.id, ...verdict };
 
@@ -478,6 +495,8 @@ export function createJudgeWorker(deps = {}) {
         title: atom.title,
         type: atom.type,
         scope: atom.scope,
+        subject: atom.subject,
+        supersedes: atom.supersedes,
         summary: atom.summary,
         points: atom.points,
         tags: atom.tags,

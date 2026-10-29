@@ -22,6 +22,7 @@
 - **知识库建设窗口默认冻结**：待抽取窗口命中 `extract.meta_keywords` 达到阈值时不进裁判队列（施工日志不是记忆，见 2026-10-20-a-0016）；原文照常落 `10_Raw/`。
 - **裁判写入默认 `status: inbox`，不会进入对话**；必须显式确认（`set-status --status active`）才可能被注入。
 - 原子应带 `scope`：`global`（跨项目适用）/ `project:<slug>` / `system`（知识库自身建设）/ `unclassified`（判不准）；**缺失 scope = 永不注入（fail closed）**，手工“取消范围”会产生这种条目。
+- **新结论取代旧结论**：新原子带 `subject`（稳定主题 slug）和 `supersedes: ["[[旧id]]"]`；新条默认 `inbox`，此时只是 pending 取代边，**旧条继续有效**；确认新条 `active` 时 `add-atom`/`set-status` 才把旧条置 `superseded`（正文保留、永不注入）。`validate` 只要求 active 的新条不得指向仍 active 的旧条；不能靠热度让旧结论自然退场。
 - **工作页**（`type: work`，一个 scope 一页，`validate` 强制唯一 active）只写项目状态（阶段/在办/未决/下一步）；操作指令只进原文层，不进工作页。新建用 `kb.mjs work-new`，正文由人确认后覆写；归档用「归档 / 恢复为活跃」。
 - 参数与五步管线见 `_meta/schema.md#写入管线`。
 
@@ -30,7 +31,7 @@
 1. `grep` `_meta/catalog.jsonl` 找候选（一行一篇），**不要递归扫目录**。
 2. 命中后只读 3–5 篇正文，先看 `summary` 和「要点」。
 3. `status: archived` 默认不读；翻旧账查 `_meta/catalog.archive.jsonl`。
-4. **自动注入的只有**：`30_Canon/core.md` + `status=active` 且 `scope ∈ {global, 本会话选定的 project}` 且 `type ∉ {topic, work, session}` 的摘要（最多 5 条，按召回热度排序）。`inbox` / `system` / `unclassified` 一律不进上下文——这是代码强制的，不是提示词约定。
+4. **自动注入的只有**：`30_Canon/core.md` + `status=active` 且 `scope ∈ {global, 本会话选定的 project}` 且 `type ∉ {topic, work, session}` 的摘要（最多 5 条，按召回热度排序）。`inbox` / `system` / `unclassified` / `superseded` 一律不进上下文——这是代码强制的，不是提示词约定。
 5. **项目范围**：显式选择优先；库外会话未选择时按工作目录名自动推断 `project:<dir-slug>`，vault 内会话恒为 `global`。
 6. **工作页**（`20_Digest/work/`，`type: work`）不是记忆：它永不进那 5 条预算，只在新会话里贡献一条「项目简报」（summary + 下一步/未决各最多 3 项）。工作指令只留在原文层，被抽取门控与裁判明确排除。
 
@@ -41,12 +42,14 @@
 ```powershell
 node _meta/scripts/kb.mjs validate              # 改协议/索引后必跑
 node _meta/scripts/kb.mjs rebuild               # 索引禁止手改，只能重建
-node _meta/scripts/kb.mjs consolidate --json    # 每日整理：review/stale/未归主题/重复/热度
+node _meta/scripts/kb.mjs consolidate --json    # 每日整理：review/stale/未归主题/重复/热度/truth
 node _meta/scripts/kb.mjs add-atom --json-file F --json   # 唯一原子写入通道
 node _meta/scripts/kb.mjs set-status --id ID --status S [--scope SC|--clear-scope]
 node _meta/scripts/kb.mjs batch-status --ids A,B --status S [--scope SC]
 node _meta/scripts/kb.mjs promote --id ID --to CANON_ID   # 加 up 回指并置 promoted，文件不动
 node _meta/scripts/kb.mjs access --id ID --how inject|read|grep|manual   # 召回日志（热度来源）
+node _meta/scripts/kb.mjs delete-request --ids A,B   # 物理删除第一步：仅交互终端，生成票据+一次性密钥
+node _meta/scripts/kb.mjs delete --ticket T --key K  # 人工输入密钥后才执行（§8.1）
 node _meta/scripts/kb.mjs work-new --scope global|project:S   # 新建工作页（type: work，不注入）
 node _meta/scripts/kb.mjs work-brief --scope global|project:S --json   # 恢复简报（新会话接上文）
 node _meta/scripts/export-public.mjs --out D:\dsh-memory-public   # 生成脱敏公开快照（排除原文/状态，重建索引）

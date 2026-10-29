@@ -68,3 +68,4 @@
 2026-10-29 01:23 | extract | session-8c78f45e-d410-44e2-8d36-9c6ca997755c 候选 3 条 → judge 队列（idle）
 2026-10-29 09:50 | extract | session-8c78f45e-d410-44e2-8d36-9c6ca997755c 候选 20 条 → judge 队列（catch-up）
 2026-10-29 09:52 | status | 2026-10-29-a-0002 → archived
+2026-10-29 11:25 | work | Phase 1 当前真相：subject/supersedes/superseded、pending 取代边、consolidate truth、shadow 排序；7 篇存量原子补 subject

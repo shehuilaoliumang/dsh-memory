@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.5
+title: 知识库规范 v1.6
 status: canon
 updated: 2026-10-29
 ---
 
-# 知识库规范 v1.5
+# 知识库规范 v1.6
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -46,6 +46,9 @@ updated: 2026-10-29
 | `promoted` | 已向上层提炼 | 更高层新建了引用它的笔记 | 脚本 |
 | `archived` | 归档 | stale 后 180 天未召回 + 人确认 | 人 |
 | `canon` | 结论层定稿 | 晋升到 `30_Canon/` 或规范/核心记忆本身 | 人 |
+| `superseded` | 已被新陈述取代 | 新原子用 `supersedes` 指向它；新条确认 active 时脚本置位 | 脚本（`add-atom` / `set-status`）+ 人 |
+
+`superseded` 是**终态**：正文保留、文件不移动，但永不注入；旧条目退场靠它，不靠热度。`inbox` / `review` 的待确认取代边允许指向仍 active 的旧条（确认前旧条继续有效）；新条变成 `active` 时，`add-atom`/`set-status` 才把旧条置 `superseded`——既不开「新结论已落盘、旧结论仍在注入」的窗口，也不让未确认的候选提前删掉真相。
 
 迁移**只改字段，不搬文件**。
 
@@ -72,9 +75,10 @@ updated: 2026-10-29
 | `source` | 数组，指回原文：`[""]` |
 | `up` | 指向提炼后的上层笔记 |
 | `related` | 相关笔记链接 |
-| `supersedes` | 被本条取代的旧条目（纠正 / 推翻时用） |
+| `subject` | 稳定主题 slug（2–64 位小写字母/数字/连字符）；同一主题的多个版本共用，用于发现冲突与取代关系 |
+| `supersedes` | 被本条取代的旧条目链接数组 `["[[id]]"]`；新条 active 时旧条目自动置 `superseded`，旧正文保留；inbox 时只记录 pending 边 |
 | `tags` | 标签数组 |
-| `valid_from` / `review_after` | 有效期与复查日 |
+| `valid_from` / `valid_to` / `review_after` | 生效日 / 失效日 / 复查日，均 `YYYY-MM-DD`；`valid_to` 不得早于 `valid_from` |
 
 `type` 取值：`fact` 事实、`preference` 偏好、`decision` 决策、`opinion` 观点、`question` 未决问题、`task` 待办、`definition` 术语定义、`topic` 主题页、`work` 工作页、`principle` 原则、`session` 会话原文。
 
@@ -87,6 +91,7 @@ title: 目录用英文路径，界面显示中文
 level: digest
 type: preference
 scope: global
+subject: ui-language-paths
 status: active
 confidence: 0.9
 summary: 用户选定英文路径 + 中文显示名方案
@@ -192,6 +197,8 @@ updated: 2026-10-20
 | `extract_meta_keywords` | 10 个元词 | 知识库自身建设窗口的识别词（`知识库`、`kb.mjs`、`_meta/`、`catalog`、`schema.md`、`插件`、`冒烟`、`工作页`、`原子`、`裁判`） |
 | `extract_meta_threshold` | 2 | 窗口命中元词达到该数即冻结抽取，只保留原文，不写原子；改词表/阈值只改 `_meta/config.json` |
 | `consolidate_daily` | 03:30 | 每日整理 |
+| `truth_shadow_mode` | true | 新真相排序只写进 `consolidate` 报告，不切换线上注入；观察一周无漏注入再关 |
+| `truth_heat_half_life_days` | 30 | 召回热度指数衰减半衰期（天） |
 | `auto_commit` | — | git 批量提交（未实现，参数未外置） |
 | `catalog_max_rows` | 3000 | 超过则考虑归档 |
 | `stale_days` | 180 | 未引用多久转 stale |
@@ -259,7 +266,8 @@ updated: 2026-10-20
 注入 = core.md（全局硬约束）
      + level=digest 且 status=active 且 type ∉ {topic, work, session}
        且 scope ∈ {global, 本会话选定的 project:<slug>} 的条目（最多 5 条）
-       排序：召回热度（access.jsonl 计数）优先，其次 updated，再次 id 序号
+       排序（当前线上）：召回热度（access.jsonl 计数）优先，其次 updated，再次 id 序号
+       shadow 排序（仅报告，P1.5）：衰减热度 × updated × id 序号；一周无漏注入后切换
      + 工作页简报（§13，每节最多 3 项、单项 60 字、总长 ≤420 字，不占上面 5 条预算）
 ```
 
@@ -276,6 +284,7 @@ updated: 2026-10-20
 | `status: active` | ✅ | 已确认 |
 | `status: inbox` | ❌ | 裁判刚写入、**未经确认**，默认值 |
 | `status: review` | ❌ | 待人工复查（含过期待办） |
+| `status: superseded` | ❌ | 已被新条目取代；正文保留，但永不与取代者竞争 |
 | 其他状态 | ❌ | 见 §2 |
 
 **为什么这样设计**：`scope` 挡住「知识库建设日志污染对话」，`status` 挡住「裁判误判直接进上下文」。两者都是代码规则，不依赖模型是否听话。写入侧（裁判提示词）只负责分类，不做最终裁决。
@@ -363,7 +372,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：折叠时显示篇数/索引数，展开显示分层、状态、最近更新、核心记忆摘要 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
-| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard}.test.mjs`（共 82 条） |
+| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard}.test.mjs`（共 86 条） |
 
 已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板 UI 只读（自动写入在 Host 侧触发器，不在面板操作里）。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
 
@@ -388,7 +397,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | `work-brief` | — | 生成一条「项目简报」供注入，不占记忆预算（§13） |
 | `validate` | 4 | schema / id 唯一 / 链接可解析 / 索引一致性 |
 | `rebuild` | 4 | 从笔记重建 `catalog*.jsonl`（索引禁止手改） |
-| `consolidate` | 5 | review 到期、stale 候选（跳过工作页）、未归主题（跳过 archived/promoted/页面）、重复 summary |
+| `consolidate` | 5 | review 到期、stale 候选（跳过工作页）、未归主题（跳过 archived/promoted/页面）、重复 summary；另报 `truth`：同 subject 冲突、孤儿 superseded、待确认取代、缺 subject、current vs shadow 排序对比 |
 | `stats` / `id-next` / `log` | — | 统计、id 生成、变更日志 |
 
 验收（每次改协议或索引后必跑）：
@@ -437,4 +446,28 @@ node _meta/scripts/kb.mjs rebuild --dry-run
 node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs work-new --scope project:my-app --json
 node _meta/scripts/kb.mjs work-brief --scope project:my-app --json
+```
+
+## 14. 当前真相（subject / supersedes，v1.6 新增）
+
+**问题**：append-only 库能保住历史，却不能自动回答「现在哪条有效」。两条相反的记忆都 `active` 时，注入只能按热度/时间碰运气，旧结论可能压过新结论。
+
+**规则**：
+
+| 项 | 约定 |
+|---|---|
+| `subject` | 同一个稳定主题的版本共用 slug；同 subject 可以有多个历史版本，但同一时刻只应有一个当前版本 |
+| `supersedes` | 新原子指向旧原子；新条为 `inbox`/`review` 时是 pending 边，确认 `active` 后才把旧条置 `superseded`（只改 status/updated，正文不动） |
+| `status: superseded` | 终态；注入谓词只看 `active`，因此自动退出 5 条预算；可在归档索引里查到 |
+| 校验 | 目标必须存在、不能指向自己；新条为 `active` 时目标必须是 `superseded`/`archived`，pending 边允许目标仍 active；`superseded` 条目必须有 `subject`，否则只警告 |
+| 冲突 | `consolidate --json` 的 `truth.conflicts` 报同 subject 下多于一个 live 条目的组；`truth.pendingSupersedes` 报还没确认的取代边；只报告，不自动改正文 |
+| shadow | `truth.shadow_mode=true` 时，`consolidate` 只比较「当前热度排序」与「衰减热度排序」，不切换线上注入；观察一周无漏注入后再把排序实现切到 `rankMemories` |
+
+**迁移**：存量原子只补 `subject` 字段，不改正文、不删除；判不准主题的保持无 subject，整理时再补。发布快照导出会保留这些字段，不含原文。
+
+**验收**：
+
+```powershell
+node _meta/scripts/kb.mjs validate
+node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 ```

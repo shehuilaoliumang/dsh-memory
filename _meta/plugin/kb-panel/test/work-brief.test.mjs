@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { briefText, clampText, isInjectable, scopeLabel, sectionItems } from '../work-brief.js';
+import { briefText, clampText, heatWeight, isInjectable, rankMemories, scopeLabel, sectionItems } from '../work-brief.js';
 
 const atom = (over = {}) => ({ level: 'digest', status: 'active', type: 'preference', scope: 'global', ...over });
 
@@ -16,6 +16,25 @@ test('isInjectable: confirmed global memory is visible', () => {
 
 test('isInjectable: inbox is never injected', () => {
   assert.equal(isInjectable(atom({ status: 'inbox' }), 'global'), false);
+});
+
+test('isInjectable: superseded truth is never injected', () => {
+  assert.equal(isInjectable(atom({ status: 'superseded', subject: 'ui-language' }), 'global'), false);
+});
+
+test('heatWeight: recent recall outranks a much older hot note', () => {
+  const now = Date.parse('2026-10-29T00:00:00Z');
+  assert.ok(heatWeight(2, '2026-10-28T00:00:00Z', now, 30) > heatWeight(5, '2026-06-01T00:00:00Z', now, 30));
+  assert.equal(heatWeight(0, '2026-10-28T00:00:00Z', now), 0);
+});
+
+test('rankMemories: superseded notes are excluded before ranking', () => {
+  const notes = [
+    atom({ id: '2026-10-20-a-0001', status: 'active', summary: 'old claim' }),
+    atom({ id: '2026-10-29-a-0002', status: 'superseded', summary: 'new claim' }),
+  ];
+  const ranked = rankMemories(notes, [], 'global');
+  assert.deepEqual(ranked.map((note) => note.id), ['2026-10-20-a-0001']);
 });
 
 test('isInjectable: system scope never enters a global session', () => {

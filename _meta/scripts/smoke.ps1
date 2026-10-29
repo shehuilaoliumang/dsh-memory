@@ -135,6 +135,40 @@ try {
   $currentText = (@($json.uncoveredAtoms | Sort-Object) -join ',')
   Check 'uncovered 与基线一致（无新增）' ($baselineText -eq $currentText) "baseline=$baselineText now=$currentText"
 
+  Write-Host "`n[7.5] 当前真相（supersedes）"
+  # A pending replacement may point at a live claim, but must not retire it
+  # before confirmation. Once confirmed, the old claim becomes superseded and
+  # stops being injectable; both bodies stay on disk.
+  $oldSpec = Join-Path $base 'spec-old.json'
+  @{
+    title = '冒烟旧结论'; type = 'fact'; scope = 'global'
+    summary = '冒烟旧结论：只在副本里'; points = @('旧结论'); tags = @('测试')
+    subject = 'smoke-truth'
+  } | ConvertTo-Json -Depth 4 | Set-Content $oldSpec -Encoding UTF8
+  $r = Kb @('add-atom', '--json-file', $oldSpec, '--json')
+  $oldId = ([regex]::Match($r.text, '"id":"([^"]+)"')).Groups[1].Value
+  $r = Kb @('set-status', '--id', $oldId, '--status', 'active', '--json')
+  Check '旧结论已确认 active' ($r.text -match '"changed":true') $r.text
+  $newSpec = Join-Path $base 'spec-new.json'
+  @{
+    title = '冒烟新结论'; type = 'fact'; scope = 'global'
+    summary = '冒烟新结论：取代旧结论'; points = @('新结论'); tags = @('测试')
+    subject = 'smoke-truth'; supersedes = @("[[$oldId]]")
+  } | ConvertTo-Json -Depth 4 | Set-Content $newSpec -Encoding UTF8
+  $r = Kb @('add-atom', '--json-file', $newSpec, '--json')
+  $newId = ([regex]::Match($r.text, '"id":"([^"]+)"')).Groups[1].Value
+  Check '新结论默认 inbox 写入' ($r.text -match '"ok":true') $r.text
+  $oldText = Get-Content (Join-Path (Join-Path $base '20_Digest\atoms') ($oldId + '.md')) -Raw -Encoding UTF8
+  Check '确认前旧结论仍 active' ($oldText -match '(?m)^status: active$') $oldText
+  Check '待确认取代关系不阻塞 validate' ((Kb @('validate')).code -eq 0)
+  $json = (Kb @('consolidate', '--json')).text | ConvertFrom-Json
+  Check 'consolidate 报告待确认取代' (@($json.truth.pendingSupersedes) -contains $newId) ($json.truth.pendingSupersedes -join ',')
+  $r = Kb @('set-status', '--id', $newId, '--status', 'active', '--json')
+  Check '确认新结论时旧结论退场' (($r.text -match '"retired":\["') -and ($r.text -match [regex]::Escape($oldId))) $r.text
+  $oldText = Get-Content (Join-Path (Join-Path $base '20_Digest\atoms') ($oldId + '.md')) -Raw -Encoding UTF8
+  Check '旧结论变为 superseded' ($oldText -match '(?m)^status: superseded$') $oldText
+  Check '退场后 validate 通过' ((Kb @('validate')).code -eq 0)
+
   Write-Host "`n[8] 工作页（工作层）"
   $r = Kb @('work-new', '--scope', 'project:smoke-app', '--json')
   Check 'work-new 返回 ok' ($r.text -match '"ok":true') $r.text

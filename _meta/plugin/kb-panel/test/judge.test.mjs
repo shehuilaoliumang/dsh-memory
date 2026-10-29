@@ -168,6 +168,28 @@ test('parseVerdict: normalizes atoms and drops unusable ones', () => {
   assert.equal(verdict.atoms[1].title, 'A');
 });
 
+test('parseVerdict: keeps valid subject/supersedes and drops malformed ones', () => {
+  const verdict = parseVerdict(
+    JSON.stringify({
+      shouldRecord: true,
+      atoms: [
+        {
+          title: '新结论',
+          summary: '取代旧结论',
+          type: 'fact',
+          points: ['要点'],
+          subject: 'ui-language-paths',
+          supersedes: ['[[2026-10-20-a-0009]]', 'not-an-id'],
+        },
+        { title: '坏主题', summary: '主题格式不对', type: 'fact', points: ['要点'], subject: 'BAD Subject' },
+      ],
+    }),
+  );
+  assert.equal(verdict.atoms[0].subject, 'ui-language-paths');
+  assert.deepEqual(verdict.atoms[0].supersedes, ['2026-10-20-a-0009']);
+  assert.equal(verdict.atoms[1].subject, '');
+});
+
 test('parseVerdict: clamps summary length and caps atom count', () => {
   const atoms = Array.from({ length: 6 }, (_, i) => ({
     title: `t${i}`,

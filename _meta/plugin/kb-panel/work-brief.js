@@ -82,8 +82,68 @@ export function briefText(page, body, options = {}) {
  */
 export function isInjectable(note, sessionScope) {
   if (!note) return false;
+  // `superseded` is a terminal truth state: the old claim may stay on disk for
+  // history, but it must never compete with the note that replaced it.
   if (note.level !== 'digest' || note.status !== 'active') return false;
   if (note.type === 'session' || note.type === 'work' || note.type === 'topic') return false;
   if (note.scope === 'global') return true;
   return Boolean(sessionScope) && sessionScope !== 'global' && note.scope === sessionScope;
+}
+
+/**
+ * Decayed recall heat. A memory read 30 days ago counts half as much as one
+ * read today, so an old hot note eventually yields to a fresh, relevant one.
+ * `lastAt` is an ISO timestamp; invalid/missing timestamps fall back to zero age
+ * rather than inventing recency.
+ */
+export function heatWeight(count, lastAt, now = Date.now(), halfLifeDays = 30) {
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const halfLife = Number(halfLifeDays) > 0 ? Number(halfLifeDays) : 30;
+  const at = Date.parse(String(lastAt || ''));
+  const ageDays = Number.isFinite(at) ? Math.max(0, (now - at) / 86400000) : 0;
+  return n * Math.pow(0.5, ageDays / halfLife);
+}
+
+/**
+ * Rank injectable memories for the shadow comparison in `consolidate`:
+ * current truth (already filtered by `isInjectable`) × decayed heat × recency.
+ * This function is pure so the report can be tested without a vault or clock.
+ */
+export function rankMemories(notes, accessRows = [], sessionScope = 'global', options = {}) {
+  const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
+  const halfLifeDays = Number(options.halfLifeDays) > 0 ? Number(options.halfLifeDays) : 30;
+  const limit = Number(options.limit) > 0 ? Number(options.limit) : 5;
+  const heat = new Map();
+  for (const row of accessRows) {
+    if (!row || !row.id) continue;
+    const prev = heat.get(row.id) || { count: 0, lastAt: '' };
+    prev.count += 1;
+    if (String(row.t || '') > prev.lastAt) prev.lastAt = String(row.t || '');
+    heat.set(row.id, prev);
+  }
+  const sequence = (id) => {
+    const match = /^(\d{4}-\d{2}-\d{2})-[atcw]-(\d{4})$/.exec(String(id || ''));
+    return match ? { date: match[1], seq: Number(match[2]) } : { date: '', seq: 0 };
+  };
+  return notes
+    .filter((note) => isInjectable(note, sessionScope))
+    .map((note) => {
+      const recalled = heat.get(note.id);
+      return {
+        note,
+        heat: recalled ? heatWeight(recalled.count, recalled.lastAt, now, halfLifeDays) : 0,
+        order: sequence(note.id),
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.heat - a.heat ||
+        String(b.note.updated || '').localeCompare(String(a.note.updated || '')) ||
+        b.order.date.localeCompare(a.order.date) ||
+        b.order.seq - a.order.seq ||
+        String(b.note.id).localeCompare(String(a.note.id)),
+    )
+    .slice(0, limit)
+    .map((entry) => entry.note);
 }

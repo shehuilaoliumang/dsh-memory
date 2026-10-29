@@ -39,6 +39,11 @@
   "consolidate": {
     "daily": "03:30"
   },
+  "truth": {
+    "note": "Phase 1 真相视图：shadow_mode 只让 consolidate 报告新旧排序差异，不切换线上注入；heat_half_life_days 控制召回热度衰减。",
+    "shadow_mode": true,
+    "heat_half_life_days": 30
+  },
   "limits": {
     "catalog_max_rows": 3000,
     "catalog_max_bytes": 300,

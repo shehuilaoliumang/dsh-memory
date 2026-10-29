@@ -30,11 +30,11 @@ Obsidian Vault/memory
 
 ```
 注入 = core.md
-     + active 且 scope ∈ {global, 本会话项目} 且 type ∉ {topic, work, session} 的摘要（最多 5 条）
+     + active 且 scope ∈ {global, 本会话项目} 且 type ∉ {topic, work, session} 的摘要（最多 5 条；superseded 永不注入）
      + 工作页的一条「项目简报」（≤3 项/节、总长 ≤420 字，不占 5 条预算）
 ```
 
-**关键不变量**：不搬家、不删除（唯一例外需票据 + 人工密钥）、索引是派生物、页面不是记忆、一个 scope 一个 active 工作页、生命周期变更写日志。
+**关键不变量**：不搬家、不删除（唯一例外需票据 + 人工密钥）、索引是派生物、页面不是记忆、一个 scope 一个 active 工作页、旧结论由 `superseded` 退场而不是靠热度、生命周期变更写日志。
 
 ## 目录里有什么
 
@@ -61,7 +61,7 @@ node _meta/plugin/kb-panel/test/work-brief.test.mjs
 node _meta/plugin/kb-panel/test/http-guard.test.mjs
 ```
 
-当前：冒烟 59 条、插件单测 82 条全过。
+当前：冒烟 67 条、插件单测 86 条全过。
 
 ## 本地接口
 

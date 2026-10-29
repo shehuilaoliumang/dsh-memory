@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { briefText } from '../plugin/kb-panel/work-brief.js';
+import { briefText, isInjectable, rankMemories } from '../plugin/kb-panel/work-brief.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CONFIG = JSON.parse(readText(path.join(ROOT, '_meta', 'config.json')));
@@ -40,11 +40,13 @@ const LAYERS = [
   { level: 'canon', dir: '30_Canon' },
 ];
 const TYPES = ['fact', 'preference', 'decision', 'opinion', 'question', 'task', 'definition', 'topic', 'work', 'principle', 'session'];
-const STATUSES = ['inbox', 'active', 'review', 'stale', 'promoted', 'archived', 'canon'];
+const STATUSES = ['inbox', 'active', 'review', 'stale', 'promoted', 'archived', 'canon', 'superseded'];
 const CANON_NOTE_ID = /^\d{4}-\d{2}-\d{2}-[atcw]-\d{4}$/;
 const WORK_SCOPE = /^(global|project:[a-z0-9][a-z0-9-]*)$/;
 const WORK_DIR = '20_Digest/work';
 const SESSION_ID = /^\d{4}-\d{2}-\d{2}-\d{4}$/;
+const DATE_STRING = /^\d{4}-\d{2}-\d{2}$/;
+const SUBJECT_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 
 // ---------------------------------------------------------------- 基础 I/O
 
@@ -272,6 +274,7 @@ function cmdValidate(opts) {
   const seen = new Set();
   const byId = idIndex(notes);
   const knownIds = new Set([...byId.keys()]);
+  const supersededTargets = new Set();
 
   for (const n of notes) {
     const where = n.rel;
@@ -331,15 +334,50 @@ function cmdValidate(opts) {
     } else if (typeof d.id === 'string' && base !== `${d.id}.md`) {
       errors.push(`${where}: 文件名应为 <id>.md`);
     }
+    if (d.subject !== undefined && d.subject !== '' && !SUBJECT_PATTERN.test(String(d.subject))) {
+      errors.push(`${where}: subject 必须是 2–64 位小写字母/数字/连字符 (${d.subject})`);
+    }
+    for (const field of ['valid_from', 'valid_to']) {
+      if (d[field] && !DATE_STRING.test(String(d[field]))) {
+        errors.push(`${where}: ${field} 不是 YYYY-MM-DD`);
+      }
+    }
+    if (d.valid_from && d.valid_to && String(d.valid_to) < String(d.valid_from)) {
+      errors.push(`${where}: valid_to 不能早于 valid_from`);
+    }
+    if (d.status === 'superseded' && !d.subject) {
+      warnings.push(`${where}: superseded 但没有 subject，整理时无法归组`);
+    }
     for (const field of ['source', 'related', 'up', 'supersedes']) {
       for (const target of splitLinks(d[field])) {
         if (!resolveTarget(target, knownIds)) {
           errors.push(`${where}: ${field} 链接无法解析 → [[${target}]]`);
+          continue;
+        }
+        if (field !== 'supersedes') continue;
+        const targetId = target.replace(/\.md$/, '').split('/').pop();
+        supersededTargets.add(targetId);
+        if (targetId === d.id) errors.push(`${where}: supersedes 不能指向自己`);
+        const old = byId.get(targetId);
+        if (old && !['superseded', 'archived'].includes(String(old.data?.status))) {
+          // A pending claim (inbox/review) may point at a live claim without
+          // retiring it yet: confirmation is what makes the replacement real.
+          // An active claim, however, must not leave two truths injectable.
+          if (String(d.status) === 'active') {
+            errors.push(`${where}: supersedes 指向 ${targetId}，但它的 status=${old.data?.status}；先置 superseded`);
+          }
         }
       }
     }
-    if (d.review_after && !/^\d{4}-\d{2}-\d{2}$/.test(String(d.review_after))) {
+    if (d.review_after && !DATE_STRING.test(String(d.review_after))) {
       errors.push(`${where}: review_after 不是 YYYY-MM-DD`);
+    }
+  }
+
+  for (const n of notes) {
+    if (n.fixed || !n.data || n.data.status !== 'superseded') continue;
+    if (!supersededTargets.has(String(n.data.id))) {
+      warnings.push(`${n.rel}: status=superseded，但没有任何笔记的 supersedes 指向它`);
     }
   }
 
@@ -518,7 +556,7 @@ function cmdIdNext(opts) {
 //     quote?: string, confidence?: number, status?: string, reviewAfter?: string }
 const ATOM_STATUSES = ['active', 'inbox', 'review'];
 const SCOPE_PATTERN = /^(system|global|project:[a-z0-9][a-z0-9-]*|unclassified)$/;
-const STATUS_LIFECYCLE = ['inbox', 'active', 'review', 'stale', 'promoted', 'canon', 'archived'];
+const STATUS_LIFECYCLE = ['inbox', 'active', 'review', 'stale', 'promoted', 'canon', 'archived', 'superseded'];
 const ATOM_TYPES = TYPES.filter((t) => t !== 'session' && t !== 'topic' && t !== 'work');
 
 function oneLine(value, max) {
@@ -564,13 +602,39 @@ function cmdAddAtom(opts) {
   const tags = (Array.isArray(spec.tags) ? spec.tags : []).map((t) => oneLine(t, 20)).filter(Boolean);
   const confidence = Number.isFinite(Number(spec.confidence)) ? Math.min(1, Math.max(0, Number(spec.confidence))) : null;
   const reviewAfter = /^\d{4}-\d{2}-\d{2}$/.test(String(spec.reviewAfter || '')) ? String(spec.reviewAfter) : null;
+  const subject = oneLine(spec.subject, 64).toLowerCase() || null;
+  if (subject && !SUBJECT_PATTERN.test(subject)) {
+    throw new Error('add-atom: subject 必须是 2–64 位小写字母/数字/连字符');
+  }
+  const supersedes = (Array.isArray(spec.supersedes) ? spec.supersedes : spec.supersedes ? [spec.supersedes] : [])
+    .map((raw) => String(raw || ''))
+    .map((raw) => {
+      const linked = raw.match(/\[\[([^\]]+)\]\]/);
+      return (linked ? linked[1] : raw).replace(/\.md$/, '').split('/').pop().trim();
+    })
+    .filter(Boolean);
   const quote = String(spec.quote || '').trim();
   const date = localDate();
   const id = computeNextId('a', date);
 
+  // A new claim may replace old claims, but it must never silently replace a
+  // note it cannot name. Validate every target before writing the new atom.
+  const allNotes = loadNotes();
+  for (const targetId of supersedes) {
+    if (targetId === id) throw new Error('add-atom: supersedes 不能指向自己');
+    const old = allNotes.find((n) => !n.fixed && n.data?.id === targetId);
+    if (!old) throw new Error(`add-atom: supersedes 找不到 ${targetId}`);
+    if (old.data.level !== 'digest' || ['work', 'topic', 'session'].includes(String(old.data.type))) {
+      throw new Error(`add-atom: supersedes 目标 ${targetId} 不是可被取代的原子`);
+    }
+    if (!['active', 'inbox', 'review', 'stale', 'promoted', 'canon', 'archived', 'superseded'].includes(String(old.data.status))) {
+      throw new Error(`add-atom: supersedes 目标 ${targetId} 的 status=${old.data.status}`);
+    }
+  }
+
   // Duplicate guard: the schema derives identity from summary, so an identical
   // summary within the same type is treated as the same memory.
-  const dup = loadNotes().find((n) => !n.fixed && n.data?.type === type && n.data?.summary === summary);
+  const dup = allNotes.find((n) => !n.fixed && n.data?.type === type && n.data?.summary === summary);
   if (dup) {
     const payload = { ok: true, id: dup.data.id, file: relPath(dup.file), duplicate: true, rebuilt: false };
     if (opts.json) return out(JSON.stringify(payload));
@@ -584,9 +648,11 @@ function cmdAddAtom(opts) {
     ['type', type],
     ['scope', scope],
     ['status', status],
+    ['subject', subject],
     ['confidence', confidence],
     ['summary', summary],
     ['source', inlineList(sources, true)],
+    ['supersedes', inlineList(supersedes.map((sid) => `[[${sid}]]`), true)],
     ['tags', tags.length ? `[${tags.join(', ')}]` : null],
     ['valid_from', date],
     ['review_after', reviewAfter],
@@ -604,15 +670,45 @@ function cmdAddAtom(opts) {
   }
 
   writeText(file, note);
+  // A supersedes edge is a promise, not an immediate rewrite: the old claim
+  // stays active until the new atom is confirmed active. This preserves the
+  // `inbox` gate (the judge must not silently retire a truth) while still
+  // letting a human confirmation retire it atomically.
+  const retired = status === 'active' ? retireSupersededTargets({ file, data: { ...spec, id, supersedes } }, allNotes) : [];
   const counts = rebuildIndexes();
   try {
     appendChangeLog('atom', `${id}（${type}）${title}`);
+    if (retired.length) appendChangeLog('supersede', `${retired.join(', ')} → ${id}`);
   } catch {
     /* the change log is advisory; a failure must not lose the atom */
   }
   const payload = { ok: true, id, file: relPath(file), duplicate: false, rebuilt: true, index: counts };
   if (opts.json) return out(JSON.stringify(payload));
   out(`已写入 ${payload.file}\n主索引 ${counts.active} 行，归档 ${counts.archived} 行`);
+}
+
+/**
+ * Retire every live claim named by `supersedes`. Called only when the new note
+ * becomes `active` (or was added directly as active): an inbox candidate must
+ * not silently remove a truth the user has not confirmed yet. The old body is
+ * preserved; only status/updated change.
+ */
+function retireSupersededTargets(note, notes, skipIds = new Set()) {
+  const retired = [];
+  for (const link of splitLinks(note?.data?.supersedes)) {
+    const targetId = link.replace(/\.md$/, '').split('/').pop();
+    if (!targetId || targetId === note.data?.id || skipIds.has(targetId)) continue;
+    const old = notes.find((n) => !n.fixed && n.data?.id === targetId);
+    if (!old || ['superseded', 'archived'].includes(String(old.data?.status))) continue;
+    const before = readText(old.file);
+    let text = before.replace(/^(status:)\s*.*$/m, '$1 superseded');
+    text = text.replace(/^(updated:)\s*.*$/m, `$1 ${localDate()}`);
+    if (text !== before) {
+      writeText(old.file, text);
+      retired.push(targetId);
+    }
+  }
+  return retired;
 }
 
 /**
@@ -661,10 +757,19 @@ function cmdSetStatus(opts) {
     rebuildIndexes();
     appendChangeLog('status', `${id} → ${status}${opts.clearScope ? '（清除 scope）' : scope ? ` scope=${scope}` : ''}`);
   }
-  const payload = { ok: true, id, status, scope: opts.clearScope ? null : scope, cleared: opts.clearScope === true, changed };
+  // Confirming a replacement is the moment the old claim actually retires.
+  const retired = status === 'active'
+    ? retireSupersededTargets({ file: note.file, data: { ...note.data, status } }, notes)
+    : [];
+  if (retired.length) {
+    rebuildIndexes();
+    appendChangeLog('supersede', `${retired.join(', ')} → ${id}`);
+  }
+  const payload = { ok: true, id, status, scope: opts.clearScope ? null : scope, cleared: opts.clearScope === true, changed, retired };
   if (opts.json) return out(JSON.stringify(payload));
   const label = opts.clearScope ? '（已清除 scope）' : scope ? ` scope=${scope}` : '';
   out(changed ? `已更新 ${id} → status=${status}${label}` : `未变更：${id}`);
+  if (retired.length) out(`已退场：${retired.join(', ')}`);
 }
 
 /**
@@ -994,6 +1099,98 @@ function cmdConsolidate(opts) {
       .filter((scope) => !workScopes.has(scope))
       .sort(),
   };
+  // Phase 1 truth report: subjects make replacement visible, and the shadow
+  // ranking compares the old (raw recall count) order with the decayed heat
+  // order. Nothing here changes injection; a week of clean comparisons is the
+  // gate before the live ordering is switched.
+  const truthConfig = CONFIG.truth || {};
+  const halfLifeDays = Number(truthConfig.heat_half_life_days) > 0 ? Number(truthConfig.heat_half_life_days) : 30;
+  const shadowMode = truthConfig.shadow_mode !== false;
+  const digestAtoms = notes.filter(
+    (n) => n.data.level === 'digest' && !['work', 'topic', 'session'].includes(String(n.data.type)),
+  );
+  const digestById = new Map(digestAtoms.map((n) => [String(n.data.id), n]));
+  const incomingSupersedes = new Set();
+  for (const n of digestAtoms) {
+    for (const link of splitLinks(n.data.supersedes)) {
+      incomingSupersedes.add(link.replace(/\.md$/, '').split('/').pop());
+    }
+  }
+  // A candidate may name the claim it would replace; the edge is pending until
+  // the candidate becomes active. Report it so a forgotten confirmation is visible.
+  const pendingSupersedes = digestAtoms
+    .filter((n) => !['active', 'archived', 'superseded'].includes(String(n.data.status)))
+    .filter((n) =>
+      splitLinks(n.data.supersedes).some((link) => {
+        const target = digestById.get(link.replace(/\.md$/, '').split('/').pop());
+        return target && !['superseded', 'archived'].includes(String(target.data.status));
+      }),
+    )
+    .map((n) => n.data.id)
+    .sort();
+  const subjectGroups = new Map();
+  for (const n of digestAtoms) {
+    const subject = String(n.data.subject || '').trim();
+    if (!subject) continue;
+    const group = subjectGroups.get(subject) || [];
+    group.push(n);
+    subjectGroups.set(subject, group);
+  }
+  const subjects = [...subjectGroups.entries()]
+    .map(([subject, group]) => ({
+      subject,
+      ids: group.map((n) => ({ id: n.data.id, status: n.data.status })),
+      live: group.filter((n) => !['archived', 'superseded'].includes(String(n.data.status))).length,
+    }))
+    .sort((a, b) => a.subject.localeCompare(b.subject));
+  const conflicts = subjects.filter((s) => s.live > 1);
+  const orphanSuperseded = digestAtoms
+    .filter((n) => n.data.status === 'superseded' && !incomingSupersedes.has(String(n.data.id)))
+    .map((n) => n.data.id);
+  const withoutSubject = digestAtoms
+    .filter((n) => ['active', 'promoted', 'canon'].includes(String(n.data.status)) && !String(n.data.subject || '').trim())
+    .map((n) => n.data.id)
+    .sort();
+  const scopes = [...new Set(
+    digestAtoms
+      .filter((n) => isInjectable(n.data, 'global') || String(n.data.scope || '').startsWith('project:'))
+      .map((n) => String(n.data.scope || '')),
+  )].filter((scope) => scope === 'global' || scope.startsWith('project:'));
+  const shadow = scopes
+    .map((scope) => {
+      const candidates = digestAtoms.filter((n) => isInjectable(n.data, scope));
+      const current = candidates
+        .slice()
+        .sort(
+          (a, b) =>
+            (heat.get(b.data.id)?.count || 0) - (heat.get(a.data.id)?.count || 0) ||
+            String(b.data.updated || '').localeCompare(String(a.data.updated || '')) ||
+            String(b.data.id).localeCompare(String(a.data.id)),
+        )
+        .slice(0, 5)
+        .map((n) => n.data.id);
+      const shadowRanked = rankMemories(digestAtoms.map((n) => n.data), access, scope, {
+        limit: 5,
+        halfLifeDays,
+      }).map((n) => n.id);
+      return {
+        scope,
+        current,
+        shadow: shadowRanked,
+        changed: JSON.stringify(current) !== JSON.stringify(shadowRanked),
+      };
+    })
+    .filter((entry) => entry.current.length || entry.shadow.length);
+  const truth = {
+    shadowMode,
+    heatHalfLifeDays: halfLifeDays,
+    subjects,
+    conflicts,
+    orphanSuperseded,
+    pendingSupersedes,
+    withoutSubject,
+    shadow,
+  };
   const payload = {
     date: today,
     total: notes.length,
@@ -1007,6 +1204,7 @@ function cmdConsolidate(opts) {
     hot,
     readCandidates,
     work,
+    truth,
   };
   if (opts.json) return out(JSON.stringify(payload, null, 2));
   out(`# 每日整理 ${today}`);
@@ -1027,6 +1225,17 @@ function cmdConsolidate(opts) {
   work.pages.forEach((p) => out(`- ${p.id}（${p.scope}，updated ${p.updated}）`));
   work.stale.forEach((p) => out(`- 过期：${p.id}（${p.scope}，${p.age} 天未更新）`));
   work.missing.forEach((scope) => out(`- 缺页：${scope} 已有记忆但没有工作页`));
+  out(`\n## 当前真相（subject 冲突 ${conflicts.length} · 被取代 ${orphanSuperseded.length} · 待确认取代 ${pendingSupersedes.length} · 缺 subject ${withoutSubject.length}）`);
+  conflicts.forEach((c) => out(`- 冲突 ${c.subject}：${c.ids.map((x) => `${x.id}(${x.status})`).join(', ')}`));
+  if (orphanSuperseded.length) out(`- 无代替者：${orphanSuperseded.join(', ')}`);
+  if (pendingSupersedes.length) out(`- 待确认取代：${pendingSupersedes.slice(0, 20).join(', ')}${pendingSupersedes.length > 20 ? ' …' : ''}`);
+  if (withoutSubject.length) out(`- 缺 subject（已确认）：${withoutSubject.slice(0, 20).join(', ')}${withoutSubject.length > 20 ? ' …' : ''}`);
+  out(`\n## 真相排序 shadow（${shadowMode ? '仅报告，不切换' : '已关闭'}，半衰期 ${halfLifeDays} 天）`);
+  if (!shadow.length) out('- 无可注入记忆');
+  shadow.forEach((s) => out(`- ${s.scope}：current ${s.current.join(', ') || '—'}${s.changed ? ' → shadow 有差异' : '（无差异）'}`));
+  if (shadowMode && shadow.some((s) => s.changed)) {
+    shadow.filter((s) => s.changed).forEach((s) => out(`  - ${s.scope} shadow：${s.shadow.join(', ')}`));
+  }
   if (access.length === 0) out('\n> access.jsonl 还是空的：热度只来自真实召回，暂不据此判降权。');
   process.exitCode = 0;
 }
@@ -1088,7 +1297,24 @@ function cmdBatchStatus(opts) {
     rebuildIndexes();
     appendChangeLog('status', `${changedIds.join(', ')} → ${status}${scope ? ` scope=${scope}` : ''}`);
   }
-  const payload = { ok: true, requested: ids.length, changed: changedIds.length, ids: changedIds };
+  // A batch confirmation can also retire the claims those atoms supersede.
+  // Skip ids changed in this same batch: otherwise a confirm+retire request
+  // would silently override one of its own explicit transitions.
+  const retired = [];
+  if (status === 'active') {
+    const skip = new Set(changedIds);
+    for (const id of ids) {
+      const note = notes.find((n) => !n.fixed && n.data?.id === id);
+      if (!note) continue;
+      retired.push(...retireSupersededTargets({ file: note.file, data: { ...note.data, status } }, notes, skip));
+    }
+  }
+  const retiredIds = [...new Set(retired)];
+  if (retiredIds.length) {
+    rebuildIndexes();
+    appendChangeLog('supersede', `${retiredIds.join(', ')} → ${changedIds.join(', ') || ids.join(', ')}`);
+  }
+  const payload = { ok: true, requested: ids.length, changed: changedIds.length, ids: changedIds, retired: retiredIds };
   if (opts.json) return out(JSON.stringify(payload));
   out(`批量更新 ${payload.changed}/${payload.requested} 条 → status=${status}${scope ? ` scope=${scope}` : ''}`);
 }

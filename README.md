@@ -89,3 +89,9 @@ node _meta/scripts/eval-judge.mjs --golden _meta/rules/golden.jsonl `
 ## 隐私说明
 
 公开快照只含摘要、结论、工作页、规则与插件代码，不含对话原文、运行时状态、召回遥测。`source` 指向原文的链接已在快照中移除，因此少数笔记的溯源信息不完整——完整库在本地。写入原文与裁判 prompt 前会经 `redact.js` 脱敏（`sk-*`、GitHub/Slack/AWS token、Bearer、`api_key=…`、PEM 私钥）；这是模式匹配，不保证覆盖所有密钥形态。
+
+## 许可证
+
+- **代码**：MIT，见 [LICENSE](LICENSE)；覆盖 `_meta/plugin/`、`_meta/scripts/`、`.github/` 及插件配置代码。
+- **笔记与文档**：CC BY 4.0，见 [LICENSE-CONTENT](LICENSE-CONTENT)；覆盖 `20_Digest/`、`30_Canon/`、`_meta/schema.md`、README 等非代码内容。转载需署名 **Lu (shehuilaoliumang)**、附许可证链接并注明是否修改；允许商用。
+- **例外**：`10_Raw/` 原文与 `_meta/state/` 不进入公开快照，不随本仓库授权；完整库中的原文保留所有权利。

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.2 — 2026-10-29
+
+- 许可证拆分：代码采用 MIT（`LICENSE`），笔记与文档采用 CC BY 4.0（`LICENSE-CONTENT`）；`10_Raw/` 与 `_meta/state/` 不在公开快照、不随仓库授权。README 增加许可证边界说明。
+
 ## 1.9.1 — 2026-10-29
 
 - 裁判评估门禁：`predictions` 每行必须带 `promptVersion` 与 `promptHash`；`promptHash` 由 `buildJudgeSystem()` 的 sha256 前 16 位派生，版本标签或提示词变化都会让旧预测在加载时失败。新增单测与冒烟负向断言。

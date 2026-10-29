@@ -12,4 +12,4 @@
 {"id":"2026-10-28-a-0001","path":"20_Digest/atoms/2026-10-28-a-0001.md","level":"digest","type":"principle","status":"active","tags":["知识库","治理","删除策略"],"summary":"用户协议写死：笔记不删除，只降权或归档，且此规则常驻核心记忆","updated":"2026-10-29"}
 {"id":"2026-10-28-a-0002","path":"20_Digest/atoms/2026-10-28-a-0002.md","level":"digest","type":"decision","status":"active","tags":["知识库","治理","安全"],"summary":"执行删除的唯一流程：生成票据→给人密钥→人输入→才执行","updated":"2026-10-29"}
 {"id":"2026-10-29-c-0008","path":"30_Canon/decisions/2026-10-29-c-0008.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"分层+五步管线+双闸门注入+工作层+单写通道","updated":"2026-10-29"}
-{"id":"2026-10-29-w-0001","path":"20_Digest/work/2026-10-29-w-0001.md","level":"digest","type":"work","status":"active","tags":[],"summary":"Phase 0 完成：测试、CI、索引韧性、删除闸、端点防护","updated":"2026-10-29"}
+{"id":"2026-10-29-w-0001","path":"20_Digest/work/2026-10-29-w-0001.md","level":"digest","type":"work","status":"active","tags":[],"summary":"Phase 0 完成：CI 通过、公开快照已更新、测试 82/82","updated":"2026-10-29"}

@@ -596,6 +596,41 @@ test('lost cursor state plus an existing note writes nothing from history', asyn
   assert.equal(fs.readFileSync(rawFile, 'utf8').split('手工一轮').length - 1, 1);
 });
 
+// Fault injection: the runtime state directory is gitignored and can be
+// reverted/truncated. This is the "corrupt state" case, distinct from a clean
+// lost state: takeover must still find the note's last structural block by
+// role + exact text and append only the post-boot turn. If takeover were
+// removed, this test would duplicate 历史一 instead of resuming after it.
+test('corrupt state falls back to structural takeover and never replays history', async () => {
+  const root = freshRoot();
+  const rawFile = path.join(root, '10_Raw', 'sessions', '2026', '10', '2026-10-20-0100-corrupt.md');
+  fs.mkdirSync(path.dirname(rawFile), { recursive: true });
+  fs.writeFileSync(
+    rawFile,
+    '---\nid: 2026-10-20-0100\ntype: session\nsession_id: session-test\n---\n\n## 用户\n\n历史一\n\n## 助手结论\n\n回复一\n',
+    'utf8',
+  );
+  const stateFile = path.join(root, STATE_REL);
+  fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+  fs.writeFileSync(stateFile, '{ this is not valid JSON', 'utf8');
+  const boot = Date.parse('2026-10-20T01:00:00+08:00');
+  const oldTurn = turnEvents(1, '历史一', '回复一', 1, boot - 60000);
+  const newTurn = turnEvents(2, '决定现在', '回复二', 5, boot + 5000);
+  const session = makeSession([...oldTurn, ...newTurn]);
+  const h = build(root, { startAt: boot });
+
+  await h.ingestor.handleTurnEnd(session, turnEndEvent(2));
+
+  const appendCalls = h.exec.calls.filter((call) => call.command === 'append-session');
+  assert.equal(appendCalls.length, 2, 'only the post-boot turn is appended');
+  const text = fs.readFileSync(rawFile, 'utf8');
+  assert.equal(text.split('历史一').length - 1, 1, 'history must not be duplicated');
+  assert.ok(text.includes('决定现在'));
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  assert.equal(state.sessions['session-test'].cursor, session.seq);
+  assert.ok(state.sessions['session-test'].lastError === null || state.sessions['session-test'].lastError === undefined);
+});
+
 test('step 1 skips subagent sessions and non-vault sessions', async () => {
   const root = freshRoot();
   const session = makeSession(turnEvents(1, '决定 X', '好', 1), { origin: 'subagent' });

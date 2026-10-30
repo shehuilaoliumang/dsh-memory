@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { requestRejected } from '../http-guard.js';
+import { isLoopbackAddress, requestRejected } from '../http-guard.js';
 
-function exchange(headers = {}, method = 'GET', options = {}) {
+function exchange(headers = {}, method = 'GET', options = {}, socket) {
   const res = {
     statusCode: 200,
     headers: {},
@@ -14,7 +14,7 @@ function exchange(headers = {}, method = 'GET', options = {}) {
       this.body = body;
     },
   };
-  const req = { method, headers };
+  const req = { method, headers, ...(socket ? { socket } : {}) };
   const rejected = requestRejected(req, res, { write: method === 'POST', ...options });
   return { rejected, status: res.statusCode, body: res.body };
 }
@@ -77,4 +77,50 @@ test('requires the CSRF token on writes when configured', () => {
   assert.equal(exchange(headers, 'POST', { token: 'abc' }).status, 403);
   const good = exchange({ ...headers, 'x-kb-csrf': 'abc' }, 'POST', { token: 'abc' });
   assert.equal(good.rejected, false);
+});
+
+test('reports loopback and non-loopback addresses honestly', () => {
+  assert.equal(isLoopbackAddress('127.0.0.1'), true);
+  assert.equal(isLoopbackAddress('::1'), true);
+  assert.equal(isLoopbackAddress('::ffff:127.0.0.1'), true);
+  assert.equal(isLoopbackAddress('192.168.1.20'), false);
+  assert.equal(isLoopbackAddress(''), false);
+});
+
+test('rejects a non-loopback connection before any other check', () => {
+  const result = exchange({}, 'GET', {}, { localAddress: '192.168.1.20' });
+  assert.equal(result.rejected, true);
+  assert.equal(result.status, 403);
+  assert.match(result.body, /non-loopback/);
+});
+
+test('non-browser writes must present the per-boot local token', () => {
+  const headers = {
+    host: '127.0.0.1:9223',
+    origin: 'http://127.0.0.1:9223',
+    'content-type': 'application/json',
+    'x-kb-csrf': 'csrf',
+  };
+  assert.equal(exchange(headers, 'POST', { token: 'csrf', localToken: 'local' }).status, 403);
+  const good = exchange(
+    { ...headers, 'x-kb-local-token': 'local' },
+    'POST',
+    { token: 'csrf', localToken: 'local' },
+  );
+  assert.equal(good.rejected, false);
+});
+
+test('a browser same-origin write only needs the CSRF token', () => {
+  const result = exchange(
+    {
+      host: '127.0.0.1:9223',
+      origin: 'http://127.0.0.1:9223',
+      'content-type': 'application/json',
+      'x-kb-csrf': 'csrf',
+      'sec-fetch-site': 'same-origin',
+    },
+    'POST',
+    { token: 'csrf', localToken: 'local' },
+  );
+  assert.equal(result.rejected, false);
 });

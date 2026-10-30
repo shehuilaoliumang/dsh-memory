@@ -61,7 +61,7 @@ node _meta/scripts/kb.mjs init                  # 幂等创建目录骨架
 node _meta/scripts/export-public.mjs --out D:\dsh-memory-public   # 生成脱敏公开快照（排除原文/状态，重建索引）
 ```
 
-同一个 `session_id` 续写同一篇原文；同一分钟新建多个会话时 `id`/文件名加 `-2`/`-3` 后缀，`validate` 同时检查 id 唯一。frontmatter 解析统一用 `_meta/plugin/kb-panel/shared/frontmatter.mjs`，CLI 与插件不得各自维护；工作页节名以 `shared/work-sections.mjs` 为准。`access.jsonl` 超阈值自动轮转为 `access-<stamp>.jsonl`，不删除遥测。
+同一个 `session_id` 续写同一篇原文；同一分钟新建多个会话时 `id`/文件名加 `-2`/`-3` 后缀，`validate` 同时检查 id 唯一。frontmatter 解析统一用 `_meta/plugin/kb-panel/shared/frontmatter.mjs`，CLI 与插件不得各自维护；工作页节名以 `shared/work-sections.mjs` 为准。`access.jsonl` 超阈值自动轮转为 `access-<stamp>.jsonl`，不删除遥测。ingest 的接管/去重/自检/失败窗口机制见 `_meta/plugin/kb-panel/test/FAULT-INJECTION.md`，删减前先跑对应故障注入测试。
 
 规则层冒烟测试（把 vault 复制到临时目录跑全部命令，不碰真实库）：
 
@@ -81,7 +81,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 改源码后：`plugin_manager set_plugin` 在 `include:kb-panel` 上禁用→启用即可热加载（**profile 全局操作**，会瞬时撤掉所有会话的 core.md 注入，需排在空档）。
 
-`/kb/*` 只监听本机 Harness 端口。所有路由经 `http-guard.js`：`Origin` 必须与 `Host` 同源，`sec-fetch-site: cross-site` 拒绝，写端点只接受 `application/json` 并校验 `/kb/panel.json` 下发的 `x-kb-csrf` token（`/kb/ui` 免 token）。这挡浏览器跨站写，不是进程级鉴权；同机进程仍可访问端口。
+`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 非 127.0.0.1/::1 即 403），但监听地址仍由 DSH Host 决定。所有路由经 `http-guard.js`：`Origin` 必须与 `Host` 同源，`sec-fetch-site: cross-site` 拒绝，写端点只接受 `application/json` 并校验 `/kb/panel.json` 下发的 `x-kb-csrf` token（`/kb/ui` 免 token）；非浏览器写请求还必须带 `_meta/state/http-token`（0600）里的 `x-kb-local-token`。这挡浏览器跨站写，也让未读 token 文件的普通脚本不能直接写；同用户进程仍可伪造浏览器头或读 token 文件，因此不是操作系统进程级鉴权。
 
 **脱敏**：`redact.js` 在 `append-session` 写 raw 与裁判 prompt 前替换常见 token/密钥（`sk-*`、GitHub/Slack/AWS、Bearer、`password=…`、PEM 私钥）；这是模式匹配，不保证覆盖所有形态，已落盘的原文与 git 历史不会被追改。
 

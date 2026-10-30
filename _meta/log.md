@@ -72,3 +72,4 @@
 2026-10-29 11:54 | phase2 | Phase 2: golden set 100, precision 1.000, promptVersion/breaker/feedback, tests 88/88, smoke 69/69
 2026-10-29 12:05 | phase3 | Phase 3: search/BM25, rankMemories live, untrusted-memory, redaction, CSRF token, c-0010 threat model; tests 95/95, smoke 76/76
 2026-10-29 12:12 | phase4 | Phase 4 减债：共享 parser/节名、append-session JSON、scope 回落、session id 去重、access 轮转、VERSION/CHANGELOG/init；测试 99/99、冒烟 80/80
+2026-10-30 14:04 | recheck | 第三轮复审加固：loopback 拒绝、http-token 本机令牌、ingest 故障注入、22 条 FN 复核；测试 106/106、冒烟 81/81、v1.9.3

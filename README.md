@@ -41,13 +41,13 @@ Obsidian Vault/memory
 
 ## 目录里有什么
 
-- `30_Canon/decisions/`：c-0001 ~ c-0011，记录分层、git、ASCII id、flash 裁判、规则层、记忆隔离、写入/注入分离、架构总览、裁判评估、检索与威胁模型、减债与共享契约。
+- `30_Canon/decisions/`：c-0001 ~ c-0012，记录分层、git、ASCII id、flash 裁判、规则层、记忆隔离、写入/注入分离、架构总览、裁判评估、检索与威胁模型、减债与共享契约、本机端口加固。
 - `30_Canon/core.md`：每轮常驻的称谓、硬偏好、禁区。
 - `20_Digest/atoms/`：用户偏好、决策、原则等原子记忆。
 - `20_Digest/topics/`：主题页（汇总 + 争点 + 待办）。
 - `20_Digest/work/`：工作页（项目状态：阶段 / 在办 / 未决 / 下一步）。
 - `_meta/scripts/kb.mjs`：零依赖 Node 规则层（校验、索引重建、写入、整理、工作页、只读检索、删除闸门）。
-- `_meta/plugin/kb-panel/`：DSH 插件（记忆 chip、知识库页、注入与入库触发器、脱敏与 HTTP 防护）。
+- `_meta/plugin/kb-panel/`：DSH 插件（记忆 chip、知识库页、注入与入库触发器、脱敏、HTTP 防护与本机令牌）。
 - `_meta/schema.md`：完整规范。
 
 ## 测试
@@ -66,11 +66,11 @@ node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 ```
 
-当前：冒烟 81 条、插件单测 101 条全过。
+当前：冒烟 81 条、插件单测 106 条全过。
 
 ## 裁判评估
 
-100 条人工标注黄金集（偏好 / 决策 / 进度 / 操作指令 / 施工日志五类）位于 `_meta/rules/golden.jsonl`；`_meta/rules/judge-predictions-2026-10-29.jsonl` 是同一 prompt 版本下的真实模型预测，提交它让回归可复现。预测每行必须绑定 `promptVersion` 与 `promptHash`（由 `buildJudgeSystem()` 内容派生）；版本或提示词变化后旧预测会被拒绝加载。
+100 条人工标注黄金集（偏好 / 决策 / 进度 / 操作指令 / 施工日志五类）位于 `_meta/rules/golden.jsonl`；`_meta/rules/judge-predictions-2026-10-29.jsonl` 是同一 prompt 版本下的真实模型预测，提交它让回归可复现。预测每行必须绑定 `promptVersion` 与 `promptHash`（由 `buildJudgeSystem()` 内容派生）；版本或提示词变化后旧预测会被拒绝加载。22 条 false-negative 的逐条复核见 `_meta/rules/golden-fn-review-2026-10-30.md`（实现类决策归入 decisions，未完成承诺待到期重评）。
 
 ```powershell
 node _meta/scripts/eval-judge.mjs --golden _meta/rules/golden.jsonl `
@@ -84,7 +84,7 @@ node _meta/scripts/eval-judge.mjs --golden _meta/rules/golden.jsonl `
 
 ## 本地接口
 
-`@local/kb-panel` 的 `/kb/*` 只监听本机 Harness 端口，不对外网开放。写接口要求同源 `Origin`、拒绝 `sec-fetch-site: cross-site`、只接受 `content-type: application/json`，并校验 Host 启动时生成、由 `/kb/panel.json` 下发的 `x-kb-csrf` token——这挡住恶意网页借浏览器跨站写库，但不等于操作系统的进程级鉴权；本机其它进程仍可访问该端口。威胁模型与残余风险见 `30_Canon/decisions/2026-10-29-c-0010.md`。
+`@local/kb-panel` 的 `/kb/*` 的 handler 拒绝非 loopback 连接，但监听地址仍由 DSH Host 决定。写接口要求同源 `Origin`、拒绝 `sec-fetch-site: cross-site`、只接受 `content-type: application/json`，并校验 Host 启动时生成、由 `/kb/panel.json` 下发的 `x-kb-csrf` token；非浏览器写请求还必须带 `_meta/state/http-token`（0600）里的 `x-kb-local-token`。这挡住恶意网页借浏览器跨站写库，也让普通脚本不能直接 POST；但本机同用户进程仍可伪造浏览器头，或读取 token 文件后访问端口。它不是操作系统的进程级鉴权。威胁模型与残余风险见 `30_Canon/decisions/2026-10-29-c-0010.md`。
 
 ## 隐私说明
 

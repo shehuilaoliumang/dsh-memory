@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.3 — 2026-10-29
+
+- 本机端口加固（N4/S5）：`/kb/*` handler 拒绝非 loopback 连接；新增每次启动生成的 local token 写 `_meta/state/http-token`（0600），非浏览器写请求需 `x-kb-local-token`；浏览器仍用 CSRF token。
+- 不盲删 ingest（N2）：新增 `_meta/plugin/kb-panel/test/FAULT-INJECTION.md`，把接管、role+seq 去重、自检、失败窗口恢复映射到故障注入测试；新增状态损坏接管测试。
+- FN 复核（S4）：新增 `_meta/rules/golden-fn-review-2026-10-30.md`，逐条解释 22 条 false-negative，不改 judge prompt 与黄金标签。
+- 测试：插件 106 条、冒烟 81 条；新增 [[2026-10-30-c-0012]] 决策记录。
+
 ## 1.9.2 — 2026-10-29
 
 - 许可证拆分：代码采用 MIT（`LICENSE`），笔记与文档采用 CC BY 4.0（`LICENSE-CONTENT`）；`10_Raw/` 与 `_meta/state/` 不在公开快照、不随仓库授权。README 增加许可证边界说明。

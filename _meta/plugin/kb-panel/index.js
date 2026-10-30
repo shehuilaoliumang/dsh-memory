@@ -127,6 +127,22 @@ export function apply(ctx, config = {}) {
   // Per-process CSRF token: the Client reads it from `/kb/panel.json` (same
   // origin) and echoes it on every write. A cross-origin page cannot read it.
   const csrfToken = randomBytes(16).toString('hex');
+  // Non-browser callers must read this per-boot file instead of relying on a
+  // browser header. Best effort: a read-only vault must not break the plugin;
+  // the missing file simply means only in-browser writes are possible.
+  const localToken = randomBytes(24).toString('hex');
+  const localTokenFile = path.join(root, '_meta', 'state', 'http-token');
+  try {
+    fs.mkdirSync(path.dirname(localTokenFile), { recursive: true });
+    fs.writeFileSync(localTokenFile, `${localToken}\n`, { encoding: 'utf8', mode: 0o600 });
+    try {
+      fs.chmodSync(localTokenFile, 0o600);
+    } catch {
+      /* Windows file modes are advisory; the file is outside git either way */
+    }
+  } catch (error) {
+    console.warn(`[kb-panel] cannot write ${localTokenFile}: ${error.message}`);
+  }
   const refreshMs = Number(config.refreshMs) > 0 ? Number(config.refreshMs) : 30000;
   const cache = new Map();
   /** Session id → true (memory forced on) | false (memory silenced). */
@@ -559,6 +575,7 @@ export function apply(ctx, config = {}) {
     return {
       workspace: root,
       csrfToken,
+      localTokenFile,
       generatedAt: new Date().toISOString(),
       refreshMs,
       total: notes.length,
@@ -779,7 +796,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -811,7 +828,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const id = bareId(body && body.session);
@@ -880,7 +897,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -911,7 +928,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const result = await judgeWorker.runOnce();
           sendJson(res, 200, { ok: true, ...result, worker: judgeWorker.snapshot() });
@@ -934,7 +951,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const offset = Math.max(0, Number(body && body.offset) || 0);
@@ -975,7 +992,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const ids = Array.isArray(body && body.ids) ? body.ids.map(String).filter((id) => /^\d{4}-\d{2}-\d{2}-[atcw]-\d{4}$/.test(id)) : [];
@@ -1059,7 +1076,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const id = String((body && body.id) || '').trim();
@@ -1101,7 +1118,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const outcome = judgeWorker.retryErrored();
           sendJson(res, 200, { ok: true, ...outcome, worker: judgeWorker.snapshot() });
@@ -1121,7 +1138,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken })) return;
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           sendJson(res, 200, { ok: true, consolidate: await runConsolidate() });
         } catch (error) {

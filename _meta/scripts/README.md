@@ -41,6 +41,7 @@ node _meta/scripts/kb.mjs rebuild --dry-run
 - **会话续写**：`append-session` 先按 `session_id` 找已有会话文件（frontmatter 字段），找不到才新建。
 - **唯一的原子写入通道**：裁判只经 `add-atom` 落盘，id 分配/去重/schema/索引都在这一个地方，避免多处实现漂移。
 - **工作页不是记忆**：`work-new` 只建骨架（`type: work`），正文由人确认后覆写；它不注入、不计入未归主题，`work-brief` 只读不写。
+- **ingest 减债先看故障注入**：接管、role+seq 去重、自检、失败窗口恢复的测试映射见 `_meta/plugin/kb-panel/test/FAULT-INJECTION.md`；没有替代实现覆盖同等故障前不删代码。
 
 ## 冒烟测试
 
@@ -67,7 +68,7 @@ node _meta/plugin/kb-panel/test/work-brief.test.mjs
 node _meta/plugin/kb-panel/test/http-guard.test.mjs
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
-# 共 101 条：ingest 32 / judge 29 / transcript 6 / work-brief 18 / http-guard 7 / redact 5 / shared-frontmatter 4
+# 共 106 条：ingest 33 / judge 29 / transcript 6 / work-brief 18 / http-guard 11 / redact 5 / shared-frontmatter 4
 ```
 
 不要用 `node --test`：沙箱不允许它用管道 stdio 再 spawn 子进程。

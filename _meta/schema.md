@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.9.1
+title: 知识库规范 v1.9.3
 status: canon
 updated: 2026-10-29
 ---
 
-# 知识库规范 v1.9.1
+# 知识库规范 v1.9.3
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -252,14 +252,15 @@ updated: 2026-10-20
 
 - **去重与审计（v1.4）**：裁判先做字符相似度筛选，再**固定附带全部 canon 摘要**给模型比对——字符相似度对中文改写不敏感（真实重复对照实测 0.06），只靠相似度会漏。队列记录保留 `existing`（给模型看过的已有条目）与 `dropped`（被精确去重网丢弃的原子），事后可审计。去重只对照主索引（canon + active 摘要）；**已归档条目视为降权，允许被重新记录**（完全相同的 summary 仍由 `add-atom` 兜住）。
 
-- **已知限制**：同一分钟内新建两个会话会撞 `id`（脚本按 `YYYY-MM-DD-HHmm` 生成）；写入发生在 `turn/end` 提交之后，但 `/kb/ingest.json` 只反映本进程看到的状态；cursor 状态目录被 clean 掉时从启动时刻重新开始（宁漏不重）；写后自检发现缺失只报错、不自动补写（补录需人工确认后追加）。
+- **已知限制**：v1.9.3 已修复同一分钟新建会话撞 `id`（同时检查文件名与 frontmatter id，冲突加数字后缀）；写入发生在 `turn/end` 提交之后，但 `/kb/ingest.json` 只反映本进程看到的状态；cursor 状态目录被 clean 掉时从启动时刻重新开始（宁漏不重）；写后自检发现缺失只报错、不自动补写（补录需人工确认后追加）。
 - **历史勘误**：v1.3 触发器首版（2026-10-20 首 10 分钟运行）曾把系统注入块当作人类输入，向 `2026-10-20-0110-kb-ui-scope.md` 与 `2026-10-20-0131-session-8f9b2dfd77e6.md` 写入共 18 处注入区块；按只增原则未删除，已在两篇文件尾部追加勘误说明，这些区块不参与抽取。
 
 ### 裁判评估与反馈（v1.7）
 
 - **黄金集**：`_meta/rules/golden.jsonl` 100 条，五类各 20 条（偏好/决策/进度/操作指令/施工日志），46 条应记、54 条不应记。标签是人工口径；提示词排除知识库自身实现细节，因此“实现类决策”被标成应记但模型判不记时，保留标签、在报告里解释，不改标签凑分。
 - **评估**：`_meta/scripts/eval-judge.mjs` 复用同一 system + candidate prompt，adapter 支持 `fixture` / `replay` / `predictions` / `http`；报告写 `_meta/state/judge-eval-*.json`，`--fail-below` 用于 CI/冒烟回归。`predictions` 适配器读取已提交的真实模型预测，不重复烧 token。
-- **当前基线**（prompt `2026-10-29.1`，n=100）：precision 1.000、recall 0.522、F1 0.686、accuracy 0.780、typeAcc 0.958；TP 24 / FP 0 / FN 22 / TN 54。precision 是安全验收指标（目标 ≥0.8），recall 缺口主要来自知识库实现决策与未来截止任务被“施工日志/未完成”规则排除。
+- **版本门禁（v1.9.2）**：预测行必须带 `promptVersion` 与 `promptHash`；`promptHash` 是 `buildJudgeSystem()` 内容 sha256 的前 16 位，prompt 文本改动会改变 hash。加载时逐行校验，不一致抛“拒绝旧预测，请用 `/kb/judge/eval` 重新生成”，避免 prompt 改动后旧预测通过 precision 门禁。
+- **当前基线**（prompt `2026-10-29.1`，n=100，hash `af1911a70a6931ad`）：precision 1.000、recall 0.522、F1 0.686、accuracy 0.780、typeAcc 0.958；TP 24 / FP 0 / FN 22 / TN 54。precision 是安全验收指标（目标 ≥0.8），recall 缺口主要来自知识库实现决策与未来截止任务被“施工日志/未完成”规则排除；22 条 FN 的逐条复核见 `_meta/rules/golden-fn-review-2026-10-30.md`。
 - **反馈标签**：`set-status` / `batch-status` 改变由裁判写入的原子状态时，若队列里能追到对应 job，就向 `_meta/state/judge-feedback.jsonl` 追加 `{atomId,jobId,sessionId,promptVersion,from,to,accepted}`；state 目录 gitignore，不进入知识库。
 - **熔断与降级**：连续失败达 `breakerThreshold` 打开 `breakerUntil`，冷却期内 `runOnce` 返回 `skipped:'breaker'`；成功清零。裁判队列满时丢弃新 job 并 `WARN`（原文仍在 raw，下个窗口可重抽），pending 窗口超限时保留最近、记录丢弃字符数。两者都不再抛错阻塞后续窗口。
 
@@ -387,11 +388,11 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：折叠时显示篇数/索引数，展开显示分层、状态、最近更新、核心记忆摘要 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
-| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard,redact,shared-frontmatter}.test.mjs`（共 101 条） |
+| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard,redact,shared-frontmatter}.test.mjs`（共 106 条） |
 
 已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板 UI 只读（自动写入在 Host 侧触发器，不在面板操作里）。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
 
-`/kb/*` 只监听本机 Harness 端口。所有路由经 `http-guard.js`：带 `Origin` 时必须与 `Host` 同源，`sec-fetch-site: cross-site` 一律拒绝，写端点只接受 `content-type: application/json` 并校验 Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；`/kb/ui` 仅收客户端版本，免 token。这挡浏览器跨站请求，不等于操作系统进程级鉴权——同机其它进程仍可访问端口（§15）。
+`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1 即 403），但监听地址本身仍由 DSH Host 配置决定。所有路由经 `http-guard.js`：带 `Origin` 时必须与 `Host` 同源，`sec-fetch-site: cross-site` 一律拒绝，写端点只接受 `content-type: application/json` 并校验 Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；非浏览器写请求还必须携带从 `_meta/state/http-token` 读取的 `x-kb-local-token`。`/kb/ui` 仅收客户端版本，免 token。这挡浏览器跨站请求和随意本机进程，不等于操作系统进程级鉴权——同机进程读文件后仍可访问端口（§15）。
 
 ## 11. 规则层（v1.1 新增）
 
@@ -415,7 +416,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | `rebuild` | 4 | 从笔记重建 `catalog*.jsonl`（索引禁止手改） |
 | `consolidate` | 5 | review 到期、stale 候选（跳过工作页）、未归主题（跳过 archived/promoted/页面）、重复 summary；另报 `truth`：同 subject 冲突、孤儿 superseded、待确认取代、缺 subject、current vs shadow 排序对比 |
 | `stats` / `id-next` / `log` | — | 统计、id 生成、变更日志 |
-| `version` / `init` | — | 打印 `VERSION`；幂等创建知识库目录骨架（v1.9.1） |
+| `version` / `init` | — | 打印 `VERSION`；幂等创建知识库目录骨架（v1.9.3） |
 
 验收（每次改协议或索引后必跑）：
 
@@ -424,7 +425,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v1.9.1）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
+已知限制（v1.9.3）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -505,13 +506,15 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 
 ### 15.4 HTTP 写入口
 
-`/kb/*` 只绑定本机 Harness 端口。写端点四道检查：Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；`Origin` 必须与 `Host` 同源；拒绝 `sec-fetch-site: cross-site`；只接受 `content-type: application/json`。`/kb/ui` 仅上报客户端版本，免 token。token 在进程内生成，重启即换；同机进程可直接读端口，因此这不是操作系统级鉴权。
+`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1 即 403），但监听地址本身仍由 DSH Host 配置决定。写端点五道检查：Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；`Origin` 必须与 `Host` 同源；拒绝 `sec-fetch-site: cross-site`；只接受 `content-type: application/json`；非浏览器写请求还要带 `x-kb-local-token`（从 `_meta/state/http-token` 读取，0600）。`/kb/ui` 仅上报客户端版本，免 token。CSRF token 在进程内生成，local token 写入 state 文件，重启即换；同机进程可读 token 文件后访问端口，因此这不是操作系统级鉴权。
 
 ### 15.5 威胁模型四类边界
 
 | 边界 | 防什么 | 不防什么 |
 |---|---|---|
 | 浏览器跨站 | 恶意网页借用户浏览器 POST `/kb/*`、CSRF、跨站表单 | 同源 XSS 读 token；浏览器扩展；本机恶意进程 |
+| 非本机连接 | 端口被转发/绑定到非 loopback 时直接拒绝 | 本机进程；用户主动改 Host 监听配置 |
+| 本机随意进程 | 非浏览器写请求必须读 `_meta/state/http-token` | 同用户/同权限进程读取 token 文件后仍可写入；进程级认证未实现 |
 | 记忆内容 | 把剪藏/对话里的指令当系统命令执行 | 模型仍可能被巧妙措辞影响；core.md 自身被错误编辑 |
 | 密钥泄露 | 常见 token 写入 raw/裁判 prompt | 自定义密钥、编码/分段密钥、已存在的 git 历史、截图/剪贴板 |
 | 公开快照 | 导出 10_Raw、state、access、原 catalog、本机路径与明文 token | 摘要/主题页里人工写入的敏感细节；公开 GitHub 的历史提交；旧快照不会自动撤回 |
@@ -521,12 +524,13 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 ```powershell
 node _meta/scripts/kb.mjs search --query "界面 中文" --limit 5
 node _meta/plugin/kb-panel/test/redact.test.mjs
-node _meta/scripts/smoke.ps1   # 冒烟 81/81；插件 101/101
+node _meta/plugin/kb-panel/test/http-guard.test.mjs
+node _meta/scripts/smoke.ps1   # 冒烟 81/81；插件 106/106
 ```
 
 非目标（v1.8 明确不做）：多用户/公网部署、进程级认证、密钥保险库、自动语义检索、对已提交 git 历史的清洗。
 
-## 16. 可维护性与减债（v1.9 新增，v1.9.1 维护）
+## 16. 可维护性与减债（v1.9 新增，v1.9.3 维护）
 
 | 项 | 约定 |
 |---|---|
@@ -538,6 +542,7 @@ node _meta/scripts/smoke.ps1   # 冒烟 81/81；插件 101/101
 | 会话 id | 同一分钟新建会话时同时检查文件名与 frontmatter id，冲突加 `-2`/`-3` 后缀；`SESSION_ID` 允许可选数字后缀 |
 | 遥测轮转 | `access.jsonl` 超行数/字节阈值时轮转到 `access-<stamp>.jsonl` 后继续写；轮转文件不提交、不删除 |
 | 配置缓存 | 插件读 `_meta/config.json` 按 `mtimeMs` 缓存；改配置无需重载插件 |
-| 简化 ingest | 先测量接管/自检/去重故障率再删代码；保留 raw 追加这一最小路径，不盲删 |
+| 简化 ingest | 先测量接管、自检、去重与失败窗口的故障率再删代码；`test/FAULT-INJECTION.md` 把每类机制映射到测试，删掉会失败；保留 raw 追加这一最小路径 |
+| HTTP 本机令牌 | `index.js` 每次启动生成 local token 写 `_meta/state/http-token`（0600）；非浏览器写请求需 `x-kb-local-token`，loopback 之外的连接一律 403 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 1.9.1；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条测试通过；冒烟 81/81、插件 101/101。
+验收：`node _meta/scripts/kb.mjs version` 输出 1.9.3；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条测试通过；冒烟 81/81、插件 106/106。

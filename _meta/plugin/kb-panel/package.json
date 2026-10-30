@@ -1,13 +1,14 @@
 {
   "name": "@local/kb-panel",
-  "version": "1.9.3",
+  "version": "1.10.0",
   "private": true,
   "type": "module",
-  "description": "Knowledge base page and in-vault memory chip, session-scoped core-memory prompt injection, and the schema §5 pipeline trigger (step 1 transcript append + step 2 extraction schedule).",
+  "description": "Knowledge base page and multi-project memory: global preference store + explicitly attached project stores, schema §5 pipeline trigger, and the local /kb/* surface.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
     "./ingest": "./ingest.js",
+    "./stores": "./stores.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
@@ -16,6 +17,7 @@
     "client.js",
     "ingest.js",
     "judge.js",
+    "stores.js",
     "work-brief.js",
     "http-guard.js",
     "redact.js",

@@ -20,6 +20,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { briefText, isInjectable, rankMemories } from '../plugin/kb-panel/work-brief.js';
@@ -27,8 +28,40 @@ import { redactSecrets } from '../plugin/kb-panel/redact.js';
 import { parseFrontmatter } from '../plugin/kb-panel/shared/frontmatter.mjs';
 import { WORK_SECTIONS } from '../plugin/kb-panel/shared/work-sections.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const CONFIG = JSON.parse(readText(path.join(ROOT, '_meta', 'config.json')));
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
+
+/**
+ * `--root` / `KB_ROOT` lets one engine serve any store. It is stripped before
+ * command parsing so every command can be used against a project or global
+ * store without changing the script's own location.
+ */
+function splitGlobalArgs(argv, fallbackRoot) {
+  let root = '';
+  const rest = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--root') {
+      root = argv[i + 1] || '';
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--root=')) {
+      root = arg.slice('--root='.length);
+      continue;
+    }
+    rest.push(arg);
+  }
+  return { root: path.resolve(root || process.env.KB_ROOT || fallbackRoot), argv: rest };
+}
+
+const GLOBAL_ARGS = splitGlobalArgs(process.argv.slice(2), DEFAULT_ROOT);
+const ROOT = GLOBAL_ARGS.root;
+const CONFIG_FILE = path.join(ROOT, '_meta', 'config.json');
+const CONFIG_EXISTS = fs.existsSync(CONFIG_FILE);
+const CONFIG = CONFIG_EXISTS
+  ? JSON.parse(readText(CONFIG_FILE))
+  : defaultConfig();
 const P = {
   catalog: path.join(ROOT, CONFIG.paths.catalog),
   archive: path.join(ROOT, CONFIG.paths.archive),
@@ -36,6 +69,69 @@ const P = {
   changeLog: path.join(ROOT, CONFIG.paths.changeLog),
   sessions: path.join(ROOT, CONFIG.paths.sessions),
 };
+
+/**
+ * Minimal store config for a freshly initialized project/global root. Ingest is
+ * opt-in for new stores: a cloned repository must never start writing on its
+ * own. Existing stores keep their own richer `_meta/config.json`.
+ */
+function defaultConfig() {
+  return {
+    version: 1,
+    note: '知识库运行参数。由 kb.mjs init 生成的默认值；按 _meta/schema.md §5 调整。',
+    paths: {
+      catalog: '_meta/catalog.jsonl',
+      archive: '_meta/catalog.archive.jsonl',
+      access: '_meta/access.jsonl',
+      changeLog: '_meta/log.md',
+      sessions: '10_Raw/sessions',
+    },
+    extract: {
+      idle_seconds: 300,
+      max_delay_seconds: 1200,
+      every_turns: 20,
+      trigger_words: ['记住', '决定', '以后', '不要', '其实'],
+      meta_keywords: ['知识库', 'kb.mjs', '_meta/', 'catalog', 'schema.md'],
+      meta_threshold: 2,
+    },
+    ingest: {
+      enabled: false,
+      nodePath: '',
+      stateDir: '_meta/state',
+      pendingMaxChars: 12000,
+      appendTimeoutMs: 8000,
+      candidatesTimeoutMs: 20000,
+      rebuildTimeoutMs: 30000,
+      skipSubagentSessions: true,
+      judgeQueueMaxPending: 200,
+      appendIndex: true,
+    },
+    consolidate: { daily: '03:30' },
+    truth: { shadow_mode: true, heat_half_life_days: 30 },
+    limits: {
+      catalog_max_rows: 3000,
+      catalog_max_bytes: 300,
+      summary_max_chars: 40,
+      stale_days: 180,
+      archive_days: 180,
+      review_warn_days: 0,
+      work_stale_days: 14,
+      access_max_lines: 50000,
+      access_max_bytes: 5242880,
+    },
+    judge: {
+      enabled: false,
+      mode: 'write',
+      intervalMs: 300000,
+      batch: 3,
+      timeoutMs: 60000,
+      promptVersion: '2026-10-29.1',
+      breakerThreshold: 3,
+      breakerCooldownMs: 3600000,
+    },
+  };
+}
+
 
 const LAYERS = [
   { level: 'raw', dir: '10_Raw' },
@@ -1673,8 +1769,57 @@ function cmdVersion() {
   out(readText(path.join(ROOT, 'VERSION')).trim());
 }
 
+/**
+ * Attach a project store to the user-level registry. The store must have a
+ * valid project.json; the plugin only discovers attached stores, so a cloned
+ * repository cannot opt itself into the model's context (schema §17).
+ */
+function cmdAttach(opts = {}) {
+  const projectFile = path.join(ROOT, 'project.json');
+  if (!fs.existsSync(projectFile)) {
+    throw new Error(`attach: 当前根不是项目库（缺少 project.json）：${ROOT}；先运行 kb init --root <项目>/.dsh-memory --slug <slug>`);
+  }
+  let meta;
+  try {
+    meta = JSON.parse(readText(projectFile).replace(/^\uFEFF/, ''));
+  } catch {
+    throw new Error(`attach: project.json 不是合法 JSON：${projectFile}`);
+  }
+  const slug = String((meta && meta.slug) || '').trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(slug)) throw new Error(`attach: project.json 的 slug 不合法：${slug || '(空)'}`);
+
+  const registryFile = path.resolve(
+    opts.registry || process.env.KB_REGISTRY || path.join(os.homedir(), '.dsh-memory', 'projects.json'),
+  );
+  let registry = { version: 1, projects: [] };
+  if (fs.existsSync(registryFile)) {
+    try {
+      const raw = JSON.parse(readText(registryFile).replace(/^\uFEFF/, ''));
+      registry = Array.isArray(raw) ? { version: 1, projects: raw } : raw;
+    } catch {
+      throw new Error(`attach: registry 不是合法 JSON：${registryFile}`);
+    }
+  }
+  const projects = Array.isArray(registry.projects) ? registry.projects : [];
+  const canonical = path.resolve(ROOT);
+  const kept = projects.filter((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const target = entry.path || entry.root;
+    return target ? path.resolve(path.dirname(registryFile), String(target)) !== canonical : true;
+  });
+  kept.push({ slug, path: canonical, attachedAt: new Date().toISOString() });
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  const tmp = `${registryFile}.${process.pid}.${Date.now()}.tmp`;
+  writeText(tmp, `${JSON.stringify({ version: 1, projects: kept }, null, 2)}\n`);
+  fs.renameSync(tmp, registryFile);
+  out(opts.json
+    ? JSON.stringify({ ok: true, slug, root: canonical, registryFile })
+    : `已接入项目库：${slug} → ${canonical}\nregistry: ${registryFile}`);
+}
+
+
 /** Idempotent scaffold check: never overwrites an existing note/config. */
-function cmdInit() {
+function cmdInit(opts = {}) {
   const dirs = [
     '10_Raw/sessions',
     '20_Digest/atoms',
@@ -1684,8 +1829,85 @@ function cmdInit() {
     '_meta/state',
     '_meta/templates',
   ];
+  fs.mkdirSync(ROOT, { recursive: true });
   for (const dir of dirs) fs.mkdirSync(path.join(ROOT, dir), { recursive: true });
-  out(`知识库目录已就绪（${dirs.length} 个目录）；版本 ${readText(path.join(ROOT, 'VERSION')).trim()}`);
+
+  if (!CONFIG_EXISTS) writeText(CONFIG_FILE, `${JSON.stringify(defaultConfig(), null, 2)}\n`);
+  const versionFile = path.join(ROOT, 'VERSION');
+  if (!fs.existsSync(versionFile)) {
+    let version = '0.0.0';
+    try {
+      version = readText(path.join(DEFAULT_ROOT, 'VERSION')).trim();
+    } catch {
+      /* no engine version available */
+    }
+    writeText(versionFile, `${version}\n`);
+  }
+  const coreFile = path.join(ROOT, '30_Canon', 'core.md');
+  if (!fs.existsSync(coreFile)) {
+    writeText(
+      coreFile,
+      [
+        '---',
+        'id: core',
+        'title: 核心记忆',
+        'level: canon',
+        'type: principle',
+        'status: canon',
+        'summary: 称谓、硬偏好、禁区；每轮常驻注入',
+        `updated: ${localDate()}`,
+        '---',
+        '',
+        '# 核心记忆',
+        '',
+        '> 常驻注入。只放称谓、硬偏好、绝对禁区；其余进 `20_Digest/`。',
+        '',
+        '## 硬偏好',
+        '',
+        '- 中文交流，结论先行。',
+        '',
+        '## 禁区',
+        '',
+        '- 不删除、不搬家、不手改 `_meta/*.jsonl`。',
+        '',
+      ].join('\n'),
+    );
+  }
+  // Copy the engine's Markdown templates so a fresh store validates cleanly.
+  const templateDir = path.join(ROOT, '_meta', 'templates');
+  const engineTemplateDir = path.join(DEFAULT_ROOT, '_meta', 'templates');
+  for (const name of ['work.md']) {
+    const dest = path.join(templateDir, name);
+    if (fs.existsSync(dest)) continue;
+    try {
+      const source = path.join(engineTemplateDir, name);
+      if (fs.existsSync(source)) writeText(dest, readText(source));
+    } catch {
+      /* templates are advisory; init still succeeds */
+    }
+  }
+
+  const slug = String(opts.slug || '').trim().toLowerCase();
+  if (slug) {
+    if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(slug)) {
+      throw new Error('init: --slug 只能是小写字母/数字/连字符，2–64 字符');
+    }
+    const projectFile = path.join(ROOT, 'project.json');
+    if (!fs.existsSync(projectFile)) {
+      const title = String(opts.title || slug).trim();
+      writeText(
+        projectFile,
+        `${JSON.stringify({ slug, title, created_at: localDate() }, null, 2)}\n`,
+      );
+    }
+  }
+
+  out(`知识库目录已就绪（${dirs.length} 个目录）；根 ${ROOT}；版本 ${readText(versionFile).trim()}`);
+  if (slug && path.basename(ROOT) !== '.dsh-memory') {
+    process.stderr.write(
+      '[kb] WARN 项目库通常位于 <project>/.dsh-memory；当前根不是 .dsh-memory，插件可能无法按约定发现它。\n',
+    );
+  }
 }
 
 // ---------------------------------------------------------------- 入口
@@ -1718,6 +1940,10 @@ function parseArgs(argv) {
 
 const HELP = `kb.mjs — 知识库规则层
 
+  全局选项：
+    --root DIR                          对指定知识库/项目库执行（默认脚本所在库）
+    环境变量 KB_ROOT 同义；命令行优先
+
   validate [--json]                   校验 schema / id / 链接 / 索引一致性
   rebuild [--dry-run]                 从笔记重建 catalog*.jsonl
   stats [--json]                      分层与状态统计
@@ -1747,10 +1973,12 @@ const HELP = `kb.mjs — 知识库规则层
                                       只读检索 digest/canon（BM25 + 中文 bigram）
   log --action X --note Y             追加 _meta/log.md
   version                             打印项目版本（VERSION）
-  init                                幂等创建知识库目录骨架`;
+  init [--root DIR] [--slug S] [--title T]
+                                      幂等创建知识库目录骨架；--slug 写 project.json（项目库标识）
+  attach [--registry F] [--json]      把当前项目库写入用户级 projects.json（显式接入）`;
 
 function main() {
-  const { command, opts } = parseArgs(process.argv.slice(2));
+  const { command, opts } = parseArgs(GLOBAL_ARGS.argv);
   if (!command || opts.help) return out(HELP);
   const table = {
     validate: cmdValidate,
@@ -1773,6 +2001,7 @@ function main() {
     log: cmdLog,
     version: cmdVersion,
     init: cmdInit,
+    attach: cmdAttach,
   };
   const fn = table[command];
   if (!fn) {
@@ -1781,6 +2010,9 @@ function main() {
     return;
   }
   try {
+    if (!CONFIG_EXISTS && command !== 'init') {
+      throw new Error(`根目录不是知识库：${ROOT}（缺少 _meta/config.json；先运行 kb init --root "${ROOT}"）`);
+    }
     fn(opts);
   } catch (error) {
     // Expected rule failures (corrupt index, invalid transition) must be a

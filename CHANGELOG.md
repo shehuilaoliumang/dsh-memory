@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.0 — 2026-10-30
+
+- Phase 5 首轮：多项目记忆库。`kb.mjs` 支持 `--root`/`KB_ROOT`，新增 `init --slug/--title` 与 `attach`（用户级 `projects.json` 登记）；新增 `stores.js` 解析全局库与最近已接入项目库，插件改为双库合并注入（全局 core+2 偏好、项目 core+3 记忆、项目简报），未接入的 `.dsh-memory/` 不加载。新增 `stores.test.mjs` 6 条与 c-0013；插件 112/112。
+- 首阶段外部项目库只读注入；raw 捕获、裁判、面板写入仍只服务 legacy vault。全局库/registry 由用户显式创建。
+
 ## 1.9.3 — 2026-10-29
 
 - 本机端口加固（N4/S5）：`/kb/*` handler 拒绝非 loopback 连接；新增每次启动生成的 local token 写 `_meta/state/http-token`（0600），非浏览器写请求需 `x-kb-local-token`；浏览器仍用 CSRF token。

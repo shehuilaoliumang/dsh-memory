@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.9.3
+title: 知识库规范 v1.10.0
 status: canon
-updated: 2026-10-29
+updated: 2026-10-30
 ---
 
-# 知识库规范 v1.9.3
+# 知识库规范 v1.10.0
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -388,7 +388,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：折叠时显示篇数/索引数，展开显示分层、状态、最近更新、核心记忆摘要 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
-| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard,redact,shared-frontmatter}.test.mjs`（共 106 条） |
+| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard,redact,shared-frontmatter,stores}.test.mjs`（共 112 条） |
 
 已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板 UI 只读（自动写入在 Host 侧触发器，不在面板操作里）。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
 
@@ -425,7 +425,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v1.9.3）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
+已知限制（v1.10.0）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -506,7 +506,9 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 
 ### 15.4 HTTP 写入口
 
-`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1 即 403），但监听地址本身仍由 DSH Host 配置决定。写端点五道检查：Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；`Origin` 必须与 `Host` 同源；拒绝 `sec-fetch-site: cross-site`；只接受 `content-type: application/json`；非浏览器写请求还要带 `x-kb-local-token`（从 `_meta/state/http-token` 读取，0600）。`/kb/ui` 仅上报客户端版本，免 token。CSRF token 在进程内生成，local token 写入 state 文件，重启即换；同机进程可读 token 文件后访问端口，因此这不是操作系统级鉴权。
+`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1/::ffff:127.0.0.1 即 403），但监听地址本身仍由 DSH Host 配置决定。写端点五道检查：Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；`Origin` 必须与 `Host` 同源；拒绝 `sec-fetch-site: cross-site`；只接受 `content-type: application/json`；非浏览器写请求还要带 `x-kb-local-token`（从 `_meta/state/http-token` 读取，0600）。`/kb/ui` 仅上报客户端版本，免 token。CSRF token 在进程内生成，local token 写入 state 文件，重启即换。
+
+**诚实边界**：能读时同用户进程可以读 token 文件；也能伪造 `sec-fetch-site: same-origin` 并先 GET `/kb/panel.json` 拿到 CSRF token。因此这提高的是“随手写”的门槛，不是进程认证，不能写成“阻止任意本机进程”。
 
 ### 15.5 威胁模型四类边界
 
@@ -514,7 +516,7 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 |---|---|---|
 | 浏览器跨站 | 恶意网页借用户浏览器 POST `/kb/*`、CSRF、跨站表单 | 同源 XSS 读 token；浏览器扩展；本机恶意进程 |
 | 非本机连接 | 端口被转发/绑定到非 loopback 时直接拒绝 | 本机进程；用户主动改 Host 监听配置 |
-| 本机随意进程 | 非浏览器写请求必须读 `_meta/state/http-token` | 同用户/同权限进程读取 token 文件后仍可写入；进程级认证未实现 |
+| 本机随意进程 | 非浏览器写请求必须读 `_meta/state/http-token` | 能读 token 或伪造 `sec-fetch-site` 并先取 panel token 的同用户进程仍可写；进程级认证未实现 |
 | 记忆内容 | 把剪藏/对话里的指令当系统命令执行 | 模型仍可能被巧妙措辞影响；core.md 自身被错误编辑 |
 | 密钥泄露 | 常见 token 写入 raw/裁判 prompt | 自定义密钥、编码/分段密钥、已存在的 git 历史、截图/剪贴板 |
 | 公开快照 | 导出 10_Raw、state、access、原 catalog、本机路径与明文 token | 摘要/主题页里人工写入的敏感细节；公开 GitHub 的历史提交；旧快照不会自动撤回 |
@@ -525,12 +527,12 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 node _meta/scripts/kb.mjs search --query "界面 中文" --limit 5
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/http-guard.test.mjs
-node _meta/scripts/smoke.ps1   # 冒烟 81/81；插件 106/106
+node _meta/scripts/smoke.ps1   # 冒烟 88/88；插件 112/112
 ```
 
 非目标（v1.8 明确不做）：多用户/公网部署、进程级认证、密钥保险库、自动语义检索、对已提交 git 历史的清洗。
 
-## 16. 可维护性与减债（v1.9 新增，v1.9.3 维护）
+## 16. 可维护性与减债（v1.9 新增，v1.10 维护）
 
 | 项 | 约定 |
 |---|---|
@@ -545,4 +547,88 @@ node _meta/scripts/smoke.ps1   # 冒烟 81/81；插件 106/106
 | 简化 ingest | 先测量接管、自检、去重与失败窗口的故障率再删代码；`test/FAULT-INJECTION.md` 把每类机制映射到测试，删掉会失败；保留 raw 追加这一最小路径 |
 | HTTP 本机令牌 | `index.js` 每次启动生成 local token 写 `_meta/state/http-token`（0600）；非浏览器写请求需 `x-kb-local-token`，loopback 之外的连接一律 403 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 1.9.3；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条测试通过；冒烟 81/81、插件 106/106。
+验收：`node _meta/scripts/kb.mjs version` 输出 1.10.0；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条、`stores` 6 条测试通过；冒烟 88/88、插件 112/112。
+
+## 17. 多项目记忆库与全局偏好（v1.10 新增）
+
+### 17.1 目标
+
+一个 DSH 安装只维护一份**全局偏好库**，每个代码项目维护自己的**项目记忆库**。会话开始时：
+
+- 全局 core + 最多 2 条 `scope: global` 偏好；
+- 当前已接入项目的最多 3 条 `project:<slug>` 记忆 + 项目 core（若有）；
+- 当前项目的工作页简报（不占记忆预算）。
+
+没有已接入的项目库时，只注入全局层；连全局库也没有时，不注入任何记忆。
+
+### 17.2 磁盘布局
+
+```
+~/.dsh-memory/
+├── global/                 # 全局偏好库，用户显式初始化
+│   ├── 30_Canon/core.md
+│   ├── 20_Digest/ ...
+│   └── _meta/
+└── projects.json           # 用户级接入登记表，不在任何仓库内
+
+<project>/.dsh-memory/      # 项目库，项目自己持有
+├── project.json            # {slug,title,created_at}；slug 是注入 scope
+├── 10_Raw/                 # 默认 gitignore
+├── 20_Digest/
+├── 30_Canon/
+└── _meta/
+```
+
+`project.json` 的 slug 必须匹配 `^[a-z0-9][a-z0-9-]{1,63}$`；没有合法 slug 的目录不是项目库。
+
+### 17.3 接入与信任
+
+- 项目库只有出现在用户级 `projects.json` 里才被加载。克隆一个带 `.dsh-memory/` 的仓库不会自动进入模型上下文。
+- `kb attach` 是显式接入：`node _meta/scripts/kb.mjs --root <project>/.dsh-memory attach [--registry F]`；`--registry` 仅供测试/多用户目录。`--root` 指向库根，不是项目目录本身。
+- 插件当前已配置的 `workspaceRoot`（本 vault）视为显式 legacy 项目库，始终信任；它不会因为目录里有未登记的 `.dsh-memory/` 而改变。
+- 全局库路径默认 `~/.dsh-memory/global`，可由插件配置 `globalRoot` 覆盖；插件不自动创建全局库。
+- 未标记/未接入的 nested `.dsh-memory/` 不遮蔽已接入的父项目库。
+
+### 17.4 引擎
+
+`kb.mjs` 支持全局参数 `--root DIR` 或环境变量 `KB_ROOT`，在命令解析前剥离；所有路径（config、catalog、access、sessions）都按该根派生。缺 `_meta/config.json` 时：
+
+- `init` 允许运行并生成默认配置（`ingest.enabled=false`，新库不自动写）；
+- 其他命令报“根目录不是知识库”并退出 1。
+
+初始化/接入：
+
+```powershell
+# 项目库（--root 指向库根 <project>/.dsh-memory；project.json 的 slug 决定注入 scope）
+node _meta/scripts/kb.mjs init --root C:\path\to\project\.dsh-memory --slug my-app --title "My App"
+
+# 全局偏好库（路径由用户决定；插件默认读 ~/.dsh-memory/global）
+node _meta/scripts/kb.mjs init --root "$HOME\.dsh-memory\global"
+
+# 显式接入项目库
+node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
+```
+
+### 17.5 注入与 scope
+
+- `scope: global` 只进全局库的 2 条预算；项目库只取 `scope: project:<slug>` 的 3 条（legacy vault 为保持旧行为取全部 5 条）。
+- `system` / `unclassified` / `inbox` / `superseded` / `topic` / `work` / `session` 仍一律不注入。
+- 项目 core 只在项目库存在且命中会话时注入；全局 core 与项目 core 都包在 `<untrusted-memory>` 边界和 core 声明里。
+- 检索/写入仍按显式 `--root` 选库；跨库晋升（项目→全局）是人工/CLI 动作，不自动发生。
+
+### 17.6 首阶段已知边界
+
+- 外部项目库当前**只读注入**：`10_Raw` 捕获、裁判队列、面板的写操作仍只服务 legacy vault；外部项目写入需用户用 CLI 或后续版本接入。
+- 面板/`snapshot` 的统计仍以 legacy vault 为主，但 session 的 `mode/scope/projectRoot/globalRoot` 已按双库解析。
+- 项目库放项目内 `.dsh-memory/`、默认只读加载是当前默认；用户可改为用户目录或开启写入，但需要显式配置。
+- 全局库与 `projects.json` 在用户目录，插件**不会**自动创建或自动登记；首次使用必须运行上面的 `init`/`attach`。
+
+### 17.7 验收
+
+```powershell
+node _meta/plugin/kb-panel/test/stores.test.mjs       # 6/6
+node _meta/plugin/kb-panel/test/work-brief.test.mjs   # 18/18
+node _meta/scripts/kb.mjs init --root <tmp>\.dsh-memory --slug demo
+node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --registry <tmp>\projects.json
+```
+

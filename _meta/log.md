@@ -73,3 +73,4 @@
 2026-10-29 12:05 | phase3 | Phase 3: search/BM25, rankMemories live, untrusted-memory, redaction, CSRF token, c-0010 threat model; tests 95/95, smoke 76/76
 2026-10-29 12:12 | phase4 | Phase 4 减债：共享 parser/节名、append-session JSON、scope 回落、session id 去重、access 轮转、VERSION/CHANGELOG/init；测试 99/99、冒烟 80/80
 2026-10-30 14:04 | recheck | 第三轮复审加固：loopback 拒绝、http-token 本机令牌、ingest 故障注入、22 条 FN 复核；测试 106/106、冒烟 81/81、v1.9.3
+2026-10-30 18:05 | phase5 | 多项目记忆库首轮：--root/KB_ROOT、init/attach、stores 双库解析与注入、stores 测试 6 条；插件 112/112、冒烟 88/88

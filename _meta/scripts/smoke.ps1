@@ -392,6 +392,28 @@ updated: 2026-10-29
   Check 'init 幂等创建目录' ($r.code -eq 0 -and $r.text -match '就绪') $r.text
   $null = Kb @('rebuild')
 
+  Write-Host "`n[10.8] Phase 5 多项目库"
+  $project = Join-Path $base 'phase5-project'
+  $store = Join-Path $project '.dsh-memory'
+  $registry = Join-Path $base 'phase5-projects.json'
+  $r = Kb @('--root', $store, 'init', '--slug', 'smoke-project', '--title', 'Smoke Project')
+  Check 'init --root 创建项目库' ($r.code -eq 0 -and (Test-Path (Join-Path $store 'project.json'))) $r.text
+  $meta = Get-Content (Join-Path $store 'project.json') -Raw | ConvertFrom-Json
+  Check 'project.json 写入 slug' ($meta.slug -eq 'smoke-project') $r.text
+  $r = Kb @('--root', $store, 'validate')
+  Check '新项目库 validate 通过' ($r.code -eq 0) $r.text
+  $r = Kb @('--root', $store, 'version')
+  Check '--root 读取项目版本' ($r.code -eq 0 -and $r.text.Trim() -eq $expectedVersion) $r.text
+  $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--json')
+  $attach = $r.text | ConvertFrom-Json
+  Check 'attach 登记项目库' ($r.code -eq 0 -and $attach.ok -eq $true -and (Test-Path $registry)) $r.text
+  $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--json')
+  $reg = Get-Content $registry -Raw | ConvertFrom-Json
+  Check 'attach 幂等且不重复登记' ($r.code -eq 0 -and @($reg.projects).Count -eq 1) $r.text
+  $missing = Join-Path $base 'not-a-store'
+  $r = Kb @('--root', $missing, 'validate')
+  Check '缺配置根报错而不是崩溃' ($r.code -ne 0 -and $r.text -match '不是知识库') $r.text
+
   Write-Host "`n[11] 收尾校验"
   $r = Kb @('validate')
   Check '全部操作后 validate 仍通过' ($r.code -eq 0) $r.text

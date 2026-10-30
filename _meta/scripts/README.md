@@ -21,7 +21,9 @@
 | `promote --id ID --to CANON_ID` | 晋升：加 `up:` 回指并置 `promoted`，**文件不移动** | 摘要层 + 日志 |
 | `access --id ID [--how inject\|read\|grep\|manual] [--score N]` | 追加召回记录；热度的唯一来源；文件超阈值自动轮转 | `access.jsonl`（遥测） |
 | `version` | 打印根目录 `VERSION`（唯一版本号） | 不写 |
-| `init` | 幂等创建知识库目录骨架 | 目录 |
+| `init [--slug S] [--title T]` | 幂等创建知识库目录骨架；带 `--slug` 时写 `project.json`，新库默认 `ingest.enabled=false` | 目录 + `project.json` |
+| `attach [--registry F]` | 把当前根的项目库登记到用户级 `projects.json`；插件只加载已登记项目 | 用户 registry |
+| `--root DIR` / `KB_ROOT` | 全局参数：所有命令对指定库根执行（必须写在子命令前） | 按子命令 |
 | `delete-request --ids A,B [--json]` | 生成一次性删除票据与随机密钥（物理删除第一步，§8.1） | `_meta/state/`（票据） |
 | `delete --ticket T --key K [--json]` | 凭票据 + 人输入的密钥删除，并清理悬空链接、记日志 | 笔记 + 索引 + 日志 |
 | `consolidate [--json]` | 每日整理：review 到期 / stale 候选 / 未归主题 / 重复 summary / 热度 Top10 / 读过的待确认 / 工作页过期或缺失 | 不写 |
@@ -31,7 +33,15 @@
 ```powershell
 node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
+node _meta/scripts/kb.mjs init --root C:\path\to\project\.dsh-memory --slug my-app --title "My App"
+node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
 ```
+
+## 多项目库
+
+- 全局偏好库默认 `~/.dsh-memory/global`；项目库默认 `<project>/.dsh-memory/`（`project.json.slug` 决定注入 scope）。
+- 项目库必须 `attach` 到用户级 `~/.dsh-memory/projects.json` 才被插件加载；克隆仓库自带的 `.dsh-memory/` 不自动信任。
+- 首阶段外部项目只读注入；raw 捕获、裁判、面板写入仍只服务 legacy vault。规则见 `_meta/schema.md` §17、决策 `2026-10-30-c-0013`。
 
 ## 设计约束
 
@@ -45,7 +55,7 @@ node _meta/scripts/kb.mjs rebuild --dry-run
 
 ## 冒烟测试
 
-`smoke.ps1` 把 vault 复制到临时目录，跑一遍 validate / rebuild / id-next / add-atom（dry-run + 真实 + 去重）/ set-status / clear-scope / batch-status / promote / access / consolidate / 当前真相（supersedes 与反馈）/ 裁判黄金集回归 / work-new / work-brief / 工作页唯一性、状态守卫、归档恢复与批量预校验 / 只读检索 / append-session 脱敏 / Phase 4 契约（JSON 输出、同分钟会话、version、init），共 81 条断言，结束清理。**不触碰真实库。**
+`smoke.ps1` 把 vault 复制到临时目录，跑一遍 validate / rebuild / id-next / add-atom（dry-run + 真实 + 去重）/ set-status / clear-scope / batch-status / promote / access / consolidate / 当前真相（supersedes 与反馈）/ 裁判黄金集回归 / work-new / work-brief / 工作页唯一性、状态守卫、归档恢复与批量预校验 / 只读检索 / append-session 脱敏 / Phase 4 契约（JSON 输出、同分钟会话、version、init）/ Phase 5 多项目库（`--root init`、project.json、attach、registry、缺配置根报错），共 88 条断言，结束清理。**不触碰真实库。**
 
 ```powershell
 # 文件是 UTF-8 BOM，PowerShell 5.1 与 pwsh 都能直接 -File；执行策略可能需 Bypass
@@ -68,7 +78,8 @@ node _meta/plugin/kb-panel/test/work-brief.test.mjs
 node _meta/plugin/kb-panel/test/http-guard.test.mjs
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
-# 共 106 条：ingest 33 / judge 29 / transcript 6 / work-brief 18 / http-guard 11 / redact 5 / shared-frontmatter 4
+node _meta/plugin/kb-panel/test/stores.test.mjs
+# 共 112 条：ingest 33 / judge 29 / transcript 6 / work-brief 18 / http-guard 11 / redact 5 / shared-frontmatter 4 / stores 6
 ```
 
 不要用 `node --test`：沙箱不允许它用管道 stdio 再 spawn 子进程。

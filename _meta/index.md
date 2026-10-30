@@ -28,7 +28,7 @@ updated: 2026-10-30
 
 - 笔记数：以 `node _meta/scripts/kb.mjs stats` 为准（分层 / 状态 / 类型）
 - 索引：`catalog.jsonl` 由 `kb.mjs rebuild` 生成，`validate` 通过（0 错误 0 警告）
-- 规则层：v1.10.0 —— Phase 0–4 与第三轮复审已完成并发布；Phase 5 多项目记忆库首轮实现中：`--root`/`KB_ROOT`、`init --slug`、`attach`、全局库+最近已接入项目库双 store 注入、`stores.js` 信任边界、c-0013；插件 112/112。首阶段外部项目只读注入，raw/裁判/面板写入仍只服务本 vault。
+- 规则层：v1.10.0 —— Phase 0–5 与第三轮复审已完成并发布；Phase 5 多项目记忆库：`--root`/`KB_ROOT`、`init --slug`、`attach`、全局库+最近已接入项目库双 store 注入、`stores.js` 信任边界、c-0013；插件 112/112、冒烟 88/88。首阶段外部项目只读注入，raw/裁判/面板写入仍只服务本 vault。
 - 界面：`@local/kb-panel` 已启用 —— 记忆 chip、会话菜单、知识库页（含「工作页」徽标）、安全重载
 - 未决：项目库位置与默认读写策略（推荐项目内 `.dsh-memory/`、默认只读）、全局库首次创建、git 远端备份
 

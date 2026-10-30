@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.1 — 2026-10-30
+
+- 双库注入去重：legacy 项目库中的 `scope: global` 偏好不再与全局库重复注入；项目注入只保留项目本地 claim（验证现场从“全局 2 / 项目 2”变为“全局 2 / 项目 0”）。
+- 全局/项目 core 拆分：全局 core 只保留跨项目称谓、硬偏好、禁区；项目 core 只保留知识库不变量，避免两次注入同一份内容。
+- 迁移落地：用户级全局库 `~/.dsh-memory/global` 与 `projects.json` 已通过 `scripts/install-global.ps1` 安装；安装器、`project.json` 和多项目文档进入公开快照。
+
 ## 1.10.0 — 2026-10-30
 
 - Phase 5 首轮：多项目记忆库。`kb.mjs` 支持 `--root`/`KB_ROOT`，新增 `init --slug/--title` 与 `attach`（用户级 `projects.json` 登记）；新增 `stores.js` 解析全局库与最近已接入项目库，插件改为双库合并注入（全局 core+2 偏好、项目 core+3 记忆、项目简报），未接入的 `.dsh-memory/` 不加载。新增 `stores.test.mjs` 6 条与 c-0013；插件 112/112。

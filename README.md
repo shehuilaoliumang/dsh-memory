@@ -49,6 +49,12 @@ Obsidian Vault/memory
 
 项目库必须**显式接入**才会加载：克隆仓库自带的 `.dsh-memory/` 不会自动进入模型上下文（防止被 PR 注入）。legacy vault 仍作为显式配置的项目库兼容旧行为。
 
+从现有库安装全局偏好库（人工执行，拒绝覆盖；可用 `-Target`/`-Registry` 指定位置）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-global.ps1
+```
+
 ```powershell
 # 新建项目库（--root 指向库根 <project>/.dsh-memory；slug 决定注入 scope）
 node _meta/scripts/kb.mjs init --root C:\path\to\project\.dsh-memory --slug my-app --title "My App"

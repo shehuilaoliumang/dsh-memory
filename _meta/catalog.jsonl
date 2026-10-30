@@ -15,6 +15,6 @@
 {"id":"2026-10-29-c-0009","path":"30_Canon/decisions/2026-10-29-c-0009.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"黄金集回归 + precision 安全指标 + 反馈标签 + 熔断","updated":"2026-10-29"}
 {"id":"2026-10-29-c-0010","path":"30_Canon/decisions/2026-10-29-c-0010.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"检索只读、注入加边界、写入口 CSRF、密钥脱敏、威胁模型四类边界","updated":"2026-10-29"}
 {"id":"2026-10-29-c-0011","path":"30_Canon/decisions/2026-10-29-c-0011.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"Phase 4 减债：共享契约、scope 回落、id 去重、遥测轮转","updated":"2026-10-29"}
-{"id":"2026-10-29-w-0001","path":"20_Digest/work/2026-10-29-w-0001.md","level":"digest","type":"work","status":"active","tags":[],"summary":"Phase 5 多项目记忆库完成并发布，测试 112/112、冒烟 88/88","updated":"2026-10-30"}
+{"id":"2026-10-29-w-0001","path":"20_Digest/work/2026-10-29-w-0001.md","level":"digest","type":"work","status":"active","tags":[],"summary":"Phase 5 完成；全局库已安装，双库注入验证通过，测试 112/112","updated":"2026-10-30"}
 {"id":"2026-10-30-c-0012","path":"30_Canon/decisions/2026-10-30-c-0012.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"第三轮复审：loopback 拒绝、本机令牌、ingest 故障注入、FN 复核","updated":"2026-10-30"}
 {"id":"2026-10-30-c-0013","path":"30_Canon/decisions/2026-10-30-c-0013.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"引擎支持可配置根；全局偏好库 + 显式接入的项目库；双库注入与信任边界","updated":"2026-10-30"}

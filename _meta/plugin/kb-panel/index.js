@@ -720,7 +720,11 @@ export function apply(ctx, config = {}) {
     if (!storeRoot || limit <= 0) return [];
     const notes = scanNotes(storeRoot);
     const picked = rankMemories(notes, accessRowsFor(storeRoot), scope, { limit: Math.max(limit * 4, limit) })
-      .filter((note) => !filterScope || note.scope === filterScope)
+      // `!global` means "keep project-local claims only": when the same
+      // preference also lives in the global store, injecting the project copy
+      // would show it twice.
+      .filter((note) => !filterScope
+        || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope))
       .slice(0, limit);
     return picked;
   };
@@ -759,7 +763,9 @@ export function apply(ctx, config = {}) {
             stores.projectRoot,
             scope,
             projectLimit,
-            stores.project && stores.project.legacy ? '' : scope,
+            stores.project && stores.project.legacy
+              ? (stores.globalRoot ? '!global' : '')
+              : scope,
           );
           if (globalPicked.length) {
             recordRecall(globalPicked.map((note) => note.id), 'inject', `session:${bareId(agent.id)}`, stores.globalRoot);

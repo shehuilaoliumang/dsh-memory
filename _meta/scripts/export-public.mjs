@@ -53,7 +53,7 @@ const TEXT_EXTENSIONS = new Set([
   '.md', '.json', '.jsonl', '.yml', '.yaml', '.mjs', '.js', '.cjs',
   '.ps1', '.txt', '.css', '.html', '.gitignore',
 ]);
-const PUBLIC_ROOT_FILES = new Set(['README.md', 'AGENTS.md', '.gitignore', 'LICENSE', 'LICENSE-CONTENT', 'VERSION', 'CHANGELOG.md']);
+const PUBLIC_ROOT_FILES = new Set(['README.md', 'AGENTS.md', '.gitignore', 'LICENSE', 'LICENSE-CONTENT', 'VERSION', 'CHANGELOG.md', 'project.json']);
 
 const skipDirs = new Set(['.git', 'node_modules', '_meta/state', 'dist']);
 const skipFiles = new Set([
@@ -87,6 +87,7 @@ function allowed(rel) {
   if (rel.startsWith('20_Digest/')) return true;
   if (rel.startsWith('30_Canon/')) return true;
   if (rel.startsWith('_meta/')) return true;
+  if (rel.startsWith('scripts/')) return true;
   if (rel === '.github/workflows/kb.yml') return true;
   return false;
 }

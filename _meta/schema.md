@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.10.0
+title: 知识库规范 v1.10.1
 status: canon
 updated: 2026-10-30
 ---
 
-# 知识库规范 v1.10.0
+# 知识库规范 v1.10.1
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -425,7 +425,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v1.10.0）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
+已知限制（v1.10.1）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -547,7 +547,7 @@ node _meta/scripts/smoke.ps1   # 冒烟 88/88；插件 112/112
 | 简化 ingest | 先测量接管、自检、去重与失败窗口的故障率再删代码；`test/FAULT-INJECTION.md` 把每类机制映射到测试，删掉会失败；保留 raw 追加这一最小路径 |
 | HTTP 本机令牌 | `index.js` 每次启动生成 local token 写 `_meta/state/http-token`（0600）；非浏览器写请求需 `x-kb-local-token`，loopback 之外的连接一律 403 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 1.10.0；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条、`stores` 6 条测试通过；冒烟 88/88、插件 112/112。
+验收：`node _meta/scripts/kb.mjs version` 输出 1.10.1；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条、`stores` 6 条测试通过；冒烟 88/88、插件 112/112。
 
 ## 17. 多项目记忆库与全局偏好（v1.10 新增）
 

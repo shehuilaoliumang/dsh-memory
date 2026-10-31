@@ -106,9 +106,49 @@ export function heatWeight(count, lastAt, now = Date.now(), halfLifeDays = 30) {
   return n * Math.pow(0.5, ageDays / halfLife);
 }
 
+function idSequence(id) {
+  const match = /^(\d{4}-\d{2}-\d{2})-[atcw]-(\d{4})$/.exec(String(id || ''));
+  return match ? { date: match[1], seq: Number(match[2]) } : { date: '', seq: 0 };
+}
+
+/** Newest current truth first: `updated`, then id order, then id text. */
+function newerTruth(a, b) {
+  const updated = String(a.updated || '').localeCompare(String(b.updated || ''));
+  if (updated) return updated;
+  const left = idSequence(a.id);
+  const right = idSequence(b.id);
+  const date = left.date.localeCompare(right.date);
+  if (date) return date;
+  const seq = left.seq - right.seq;
+  if (seq) return seq;
+  return String(a.id || '').localeCompare(String(b.id || ''));
+}
+
+/**
+ * One current claim per `subject`. `validate` rejects two active atoms sharing
+ * a subject, but old vaults and manual edits can still contain one; injection
+ * must be safe even then. The newest active claim wins over heat: a stale hot
+ * note must not outrank the claim that replaced it.
+ */
+export function currentTruthNotes(notes, sessionScope = 'global') {
+  const injectable = (notes || []).filter((note) => isInjectable(note, sessionScope));
+  const bySubject = new Map();
+  const noSubject = [];
+  for (const note of injectable) {
+    const subject = String(note.subject || '').trim();
+    if (!subject) {
+      noSubject.push(note);
+      continue;
+    }
+    const previous = bySubject.get(subject);
+    if (!previous || newerTruth(note, previous) > 0) bySubject.set(subject, note);
+  }
+  return [...bySubject.values(), ...noSubject];
+}
+
 /**
  * Rank injectable memories for the shadow comparison in `consolidate`:
- * current truth (already filtered by `isInjectable`) × decayed heat × recency.
+ * current truth (one per subject) × decayed heat × recency.
  * This function is pure so the report can be tested without a vault or clock.
  */
 export function rankMemories(notes, accessRows = [], sessionScope = 'global', options = {}) {
@@ -123,18 +163,13 @@ export function rankMemories(notes, accessRows = [], sessionScope = 'global', op
     if (String(row.t || '') > prev.lastAt) prev.lastAt = String(row.t || '');
     heat.set(row.id, prev);
   }
-  const sequence = (id) => {
-    const match = /^(\d{4}-\d{2}-\d{2})-[atcw]-(\d{4})$/.exec(String(id || ''));
-    return match ? { date: match[1], seq: Number(match[2]) } : { date: '', seq: 0 };
-  };
-  return notes
-    .filter((note) => isInjectable(note, sessionScope))
+  return currentTruthNotes(notes, sessionScope)
     .map((note) => {
       const recalled = heat.get(note.id);
       return {
         note,
         heat: recalled ? heatWeight(recalled.count, recalled.lastAt, now, halfLifeDays) : 0,
-        order: sequence(note.id),
+        order: idSequence(note.id),
       };
     })
     .sort(

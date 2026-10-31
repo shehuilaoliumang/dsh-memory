@@ -276,7 +276,8 @@ function stripFence(text) {
   return fenced ? fenced[1].trim() : trimmed;
 }
 
-export function parseVerdict(text, cfg = DEFAULT_JUDGE) {
+export function parseVerdict(text, cfg = DEFAULT_JUDGE, options = {}) {
+  const allowGlobal = options.allowGlobal !== false;
   const raw = stripFence(text);
   let parsed;
   try {
@@ -297,9 +298,14 @@ export function parseVerdict(text, cfg = DEFAULT_JUDGE) {
       .map((atom) => ({
         title: clampText(atom.title, 80),
         type: TYPES.includes(String(atom.type)) ? String(atom.type) : 'fact',
-        scope: /^(global|system|unclassified|project:[a-z0-9][a-z0-9-]*)$/.test(String(atom.scope || ''))
-          ? String(atom.scope)
-          : 'unclassified',
+        scope: (() => {
+          const value = /^(global|system|unclassified|project:[a-z0-9][a-z0-9-]*)$/.test(String(atom.scope || ''))
+            ? String(atom.scope)
+            : 'unclassified';
+          // A project store must never mint a global preference: the global
+          // library is a separate, explicitly managed store (H4).
+          return !allowGlobal && value === 'global' ? 'unclassified' : value;
+        })(),
         subject: /^[a-z0-9][a-z0-9-]{1,63}$/.test(String(atom.subject || ''))
           ? String(atom.subject)
           : '',
@@ -372,6 +378,7 @@ export function breakerReset() {
 
 export function createJudgeWorker(deps = {}) {
   const root = deps.root;
+  const allowGlobal = deps.allowGlobal !== false;
   const config = typeof deps.config === 'function' ? deps.config : () => deps.config || {};
   const log = deps.log || (() => {});
   const state = {
@@ -526,7 +533,7 @@ export function createJudgeWorker(deps = {}) {
     const probes = (job.candidates || []).map((candidate) => String(candidate.text || candidate));
     const existing = selectExisting(known, probes);
     const text = await callModel(buildJudgePrompt(job, existing));
-    const verdict = parseVerdict(text, cfg);
+    const verdict = parseVerdict(text, cfg, { allowGlobal });
     verdict.existing = existing.map((row) => row.id);
     // Safety net only: the model has already been shown the screened rows above.
     const deduped = dedupeAtoms(verdict.atoms, known, Number(cfg.duplicateThreshold) || 0.9);

@@ -31,7 +31,7 @@ import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
 import { DEFAULT_GLOBAL_ROOT, DEFAULT_REGISTRY_FILE, readProjectRegistry, resolveStores, writableProjectStore } from './stores.js';
 import { parseFrontmatterData as parseFrontmatter } from './shared/frontmatter.mjs';
-import { briefText, isInjectable, rankMemories } from './work-brief.js';
+import { briefText, currentTruthNotes, rankMemories } from './work-brief.js';
 
 export const inject = ['webServer', 'systemPrompt'];
 
@@ -450,6 +450,7 @@ export function apply(ctx, config = {}) {
   })();
   const judgeWorker = createJudgeWorker({
     root,
+    allowGlobal: false,
     config: () => config,
     llm,
     runCommand: (args, timeoutMs) =>
@@ -479,6 +480,7 @@ export function apply(ctx, config = {}) {
 
     const externalJudge = createJudgeWorker({
       root: storeRoot,
+      allowGlobal: false,
       config: () => config,
       llm,
       runCommand: (args, timeoutMs) =>
@@ -727,7 +729,7 @@ export function apply(ctx, config = {}) {
       // project scope (when one is selected), capped at the 5-memory budget that
       // the prompt block actually uses. One shared predicate decides this for
       // both the counter and the prompt block — pages are never memories.
-      injected: Math.min(5, notes.filter((note) => isInjectable(note, session.scope || 'global')).length),
+      injected: Math.min(5, currentTruthNotes(notes, session.scope || 'global').length),
       scopes: [...new Set(notes.map((note) => note.scope).filter((scope) => /^project:/.test(scope || '')))].sort(),
       accessRows: heat.rows,
       hot: heat.hot,

@@ -175,6 +175,22 @@ test('parseVerdict: normalizes atoms and drops unusable ones', () => {
   assert.equal(verdict.atoms[1].title, 'A');
 });
 
+test('parseVerdict: project stores cannot mint a global scope', () => {
+  const body = JSON.stringify({
+    shouldRecord: true,
+    atoms: [
+      { title: 'A', summary: 'a', type: 'fact', points: ['x'], scope: 'global' },
+      { title: 'B', summary: 'b', type: 'fact', points: ['x'], scope: 'project:demo' },
+    ],
+  });
+  const guarded = parseVerdict(body, undefined, { allowGlobal: false });
+  assert.equal(guarded.atoms[0].scope, 'unclassified');
+  assert.equal(guarded.atoms[1].scope, 'project:demo');
+  // The global store's own judge may still emit global.
+  const allowed = parseVerdict(body);
+  assert.equal(allowed.atoms[0].scope, 'global');
+});
+
 test('parseVerdict: keeps valid subject/supersedes and drops malformed ones', () => {
   const verdict = parseVerdict(
     JSON.stringify({

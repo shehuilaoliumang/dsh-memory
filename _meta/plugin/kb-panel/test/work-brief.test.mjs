@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { briefText, clampText, heatWeight, isInjectable, rankMemories, scopeLabel, sectionItems } from '../work-brief.js';
+import { briefText, clampText, currentTruthNotes, heatWeight, isInjectable, rankMemories, scopeLabel, sectionItems } from '../work-brief.js';
 
 const atom = (over = {}) => ({ level: 'digest', status: 'active', type: 'preference', scope: 'global', ...over });
 
@@ -35,6 +35,31 @@ test('rankMemories: superseded notes are excluded before ranking', () => {
   ];
   const ranked = rankMemories(notes, [], 'global');
   assert.deepEqual(ranked.map((note) => note.id), ['2026-10-20-a-0001']);
+});
+
+test('currentTruthNotes: one active claim per subject, newest wins', () => {
+  const notes = [
+    atom({ id: '2026-10-20-a-0001', updated: '2026-10-20', subject: 'ui-language', summary: 'old' }),
+    atom({ id: '2026-10-29-a-0002', updated: '2026-10-29', subject: 'ui-language', summary: 'new' }),
+    atom({ id: '2026-10-28-a-0003', updated: '2026-10-28', summary: 'no subject' }),
+  ];
+  const picked = currentTruthNotes(notes, 'global');
+  assert.deepEqual(picked.map((note) => note.id).sort(), ['2026-10-28-a-0003', '2026-10-29-a-0002']);
+});
+
+test('currentTruthNotes: newest subject claim beats a hotter older claim', () => {
+  const notes = [
+    atom({ id: '2026-10-20-a-0001', updated: '2026-10-20', subject: 'ui-language', summary: 'old' }),
+    atom({ id: '2026-10-29-a-0002', updated: '2026-10-29', subject: 'ui-language', summary: 'new' }),
+  ];
+  const heat = [
+    { id: '2026-10-20-a-0001', t: '2026-10-29T00:00:00Z' },
+    { id: '2026-10-20-a-0001', t: '2026-10-29T00:00:00Z' },
+    { id: '2026-10-20-a-0001', t: '2026-10-29T00:00:00Z' },
+    { id: '2026-10-20-a-0001', t: '2026-10-29T00:00:00Z' },
+  ];
+  const ranked = rankMemories(notes, heat, 'global', { now: Date.parse('2026-10-29T00:00:00Z') });
+  assert.deepEqual(ranked.map((note) => note.id), ['2026-10-29-a-0002']);
 });
 
 test('isInjectable: system scope never enters a global session', () => {

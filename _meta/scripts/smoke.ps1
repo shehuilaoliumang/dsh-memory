@@ -303,8 +303,8 @@ updated: 2026-10-29
   $topic = Join-Path $base '20_Digest\topics\2026-10-20-t-0001.md'
   $mixedLine = "混合行：[[2026-10-20-a-0009]] 和 [[2026-10-20-a-0011]] 都应保留后者"
   [System.IO.File]::AppendAllText($topic, "`n$mixedLine`n", [System.Text.UTF8Encoding]::new($false))
-  # The real command refuses non-TTY output. The throwaway copy exercises
-  # `delete` with a synthetic ticket, so production code keeps no test bypass.
+  # The real command refuses non-TTY input. The throwaway copy exercises
+  # `delete` with a synthetic ticket and an explicit test-only opt-out.
   $r = Kb @('delete-request', '--ids', '2026-10-20-a-0009', '--json')
   Check '非交互终端拒绝生成删除密钥' ($r.code -ne 0 -and $r.text -match '交互终端') $r.text
   $smokeKey = 'SMOKE-DELETE-KEY'
@@ -324,6 +324,14 @@ updated: 2026-10-29
   [System.IO.Directory]::CreateDirectory((Split-Path $ticketFile -Parent)) | Out-Null
   [System.IO.File]::WriteAllText($ticketFile, $ticketJson, [System.Text.UTF8Encoding]::new($false))
   $r = Kb @('delete', '--ticket', $ticketId, '--key', $smokeKey, '--json')
+  Check 'delete 非 TTY 拒绝' ($r.code -ne 0 -and $r.text -match '交互终端') $r.text
+  $oldNonInteractive = $env:KB_NONINTERACTIVE_TEST
+  $env:KB_NONINTERACTIVE_TEST = '1'
+  try {
+    $r = Kb @('delete', '--ticket', $ticketId, '--key', $smokeKey, '--json')
+  } finally {
+    if ($null -eq $oldNonInteractive) { Remove-Item Env:\KB_NONINTERACTIVE_TEST -ErrorAction SilentlyContinue } else { $env:KB_NONINTERACTIVE_TEST = $oldNonInteractive }
+  }
   Check '合成票据可执行删除' ($r.code -eq 0) $r.text
   $after = [System.IO.File]::ReadAllText($topic, [System.Text.Encoding]::UTF8)
   Check '删除只移除链接、保留混合行正文' ($after -match '混合行' -and $after -match '\[\[2026-10-20-a-0011\]\]' -and $after -notmatch '\[\[2026-10-20-a-0009\]\]') $after
@@ -363,8 +371,12 @@ updated: 2026-10-29
 
   Write-Host "`n[10.6] 脱敏"
   $fakeSk = 'sk-' + 'proj-abcdefghijklmnopqrstuvwx'
+  $cnPassword = 'Abcd' + '1234'
+  $dbUrl = 'postgres://app:' + 's3cretpw' + '@db.example/app'
+  $mobile = '138' + '00138000'
+  $idCard = '110105' + '19491231' + '002X'
   $secretPath = Join-Path $base 'secret.txt'
-  Set-Content $secretPath ('api_key = "abcdEFGH12345678" and token ' + $fakeSk) -Encoding UTF8
+  Set-Content $secretPath (('api_key = "abcdEFGH12345678" and token ' + $fakeSk) + "`n密码是 $cnPassword`n连接串 $dbUrl`n电话 $mobile`n身份证 $idCard") -Encoding UTF8
   $r = Kb @('append-session', '--slug', 'redact-smoke', '--session-id', 'smoke-redact', '--title', '脱敏测试', '--text-file', $secretPath)
   Check 'append-session 成功' ($r.code -eq 0) $r.text
   $sessionFile = Get-ChildItem (Join-Path $base '10_Raw\sessions') -Recurse -Filter '*redact-smoke*' | Select-Object -First 1
@@ -374,6 +386,8 @@ updated: 2026-10-29
     Check 'append-session 写入前脱敏' ($sessionText -match '\[REDACTED') $sessionText
     $fakeSkPrefix = 'sk-' + 'proj-'
     Check 'append-session 不落盘密钥' ($sessionText -notmatch 'abcdEFGH12345678' -and $sessionText -notmatch $fakeSkPrefix) $sessionText
+    Check 'append-session 脱敏中文/短值/连接串' ($sessionText -notmatch $cnPassword -and $sessionText -notmatch 's3cretpw' -and $sessionText -match '\[REDACTED') $sessionText
+    Check 'append-session 脱敏手机号/身份证' ($sessionText -notmatch $mobile -and $sessionText -notmatch $idCard -and $sessionText -match '\[REDACTED:phone\]' -and $sessionText -match '\[REDACTED:id-card\]') $sessionText
   }
   # The Host trigger rebuilds after append-session; standalone callers must do the same.
   $null = Kb @('rebuild')
@@ -412,9 +426,17 @@ updated: 2026-10-29
   Check 'attach 幂等且不重复登记' ($r.code -eq 0 -and @($reg.projects).Count -eq 1) $r.text
 
   $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--write', '--json')
-  $attachWrite = $r.text | ConvertFrom-Json
-  $cfgWrite = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-  $regWrite = Get-Content $registry -Raw | ConvertFrom-Json
+  Check 'attach --write 非 TTY 拒绝' ($r.code -ne 0 -and $r.text -match '交互终端') $r.text
+  $oldNonInteractive = $env:KB_NONINTERACTIVE_TEST
+  $env:KB_NONINTERACTIVE_TEST = '1'
+  try {
+    $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--write', '--json')
+    $attachWrite = $r.text | ConvertFrom-Json
+    $cfgWrite = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $regWrite = Get-Content $registry -Raw | ConvertFrom-Json
+  } finally {
+    if ($null -eq $oldNonInteractive) { Remove-Item Env:\KB_NONINTERACTIVE_TEST -ErrorAction SilentlyContinue } else { $env:KB_NONINTERACTIVE_TEST = $oldNonInteractive }
+  }
   Check 'attach --write 开启写入并登记 writable' ($r.code -eq 0 -and $attachWrite.writable -eq $true -and $attachWrite.wroteConfig -eq $true -and $cfgWrite.ingest.enabled -eq $true -and $cfgWrite.judge.enabled -eq $true -and $regWrite.projects[0].writable -eq $true) $r.text
   $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--read-only', '--json')
   $cfgReadOnly = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -423,6 +445,23 @@ updated: 2026-10-29
   $missing = Join-Path $base 'not-a-store'
   $r = Kb @('--root', $missing, 'validate')
   Check '缺配置根报错而不是崩溃' ($r.code -ne 0 -and $r.text -match '不是知识库') $r.text
+
+  Write-Host "`n[10.9] N5 同 subject 当前真相"
+  $n5Spec = Join-Path $base 'n5-atom.json'
+  $n5Write = { param($path, $value) [System.IO.File]::WriteAllText($path, ($value | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false))) }
+  & $n5Write $n5Spec @{ title = 'N5 A'; type = 'decision'; summary = 'N5 claim a'; points = @('a'); status = 'active'; scope = 'global'; subject = 'smoke-subject' }
+  $r = Kb @('--root', $store, 'add-atom', '--json-file', $n5Spec, '--json')
+  $n5First = $r.text | ConvertFrom-Json
+  Check 'N5 首条 active 写入' ($r.code -eq 0 -and $n5First.ok -eq $true) $r.text
+  & $n5Write $n5Spec @{ title = 'N5 B'; type = 'decision'; summary = 'N5 claim b'; points = @('b'); status = 'active'; scope = 'global'; subject = 'smoke-subject' }
+  $r = Kb @('--root', $store, 'add-atom', '--json-file', $n5Spec, '--json')
+  Check 'N5 第二条 active 同 subject 被拒绝' ($r.code -ne 0 -and $r.text -match 'subject') $r.text
+  & $n5Write $n5Spec @{ title = 'N5 B2'; type = 'decision'; summary = 'N5 claim b2'; points = @('b2'); status = 'active'; scope = 'global'; subject = 'smoke-subject'; supersedes = @($n5First.id) }
+  $r = Kb @('--root', $store, 'add-atom', '--json-file', $n5Spec, '--json')
+  $n5Second = $r.text | ConvertFrom-Json
+  Check 'N5 supersedes 明确取代并退场旧条' ($r.code -eq 0 -and $n5Second.retired -contains $n5First.id) $r.text
+  $r = Kb @('--root', $store, 'validate')
+  Check 'N5 取代后 validate 通过' ($r.code -eq 0) $r.text
 
   Write-Host "`n[11] 收尾校验"
   $r = Kb @('validate')

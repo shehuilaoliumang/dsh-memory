@@ -21,7 +21,13 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react');
     const h = React.createElement;
-    const { useState, useEffect, useCallback, useMemo } = React;
+    const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+    /**
+     * Soft-refresh event: mounted panel surfaces re-read their read-only Host
+     * snapshots without unloading the page or touching any running session.
+     */
+    const REFRESH_EVENT = 'kb:refresh';
 
     const LAYER_LABEL = { raw: '原文', digest: '摘要', canon: '结论' };
     // P3.3: the Host rotates a per-process CSRF token; the panel snapshot is
@@ -75,7 +81,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-10-29-c20';
+    const CLIENT_BUILD = '2026-10-29-c21';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -235,6 +241,45 @@ window.__ModuleLoader__.load({
         color: 'var(--dsw-alias-label-secondary)',
       },
       reloadLabel: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      // The reload action is a split control: the main button is always a
+      // non-destructive soft refresh; the caret exposes the guarded full reload.
+      reloadWrap: { position: 'relative', display: 'flex', alignItems: 'center', gap: '2px' },
+      reloadCaret: {
+        boxSizing: 'border-box',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: 'none',
+        width: '24px',
+        minHeight: '34px',
+        padding: 0,
+        font: 'inherit',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '12px',
+        cursor: 'pointer',
+      },
+      reloadMenu: {
+        position: 'absolute',
+        left: 0,
+        bottom: 'calc(100% + 6px)',
+        zIndex: 30,
+        width: '248px',
+        boxSizing: 'border-box',
+        padding: '6px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'var(--dsw-alias-bg-overlay)',
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        borderRadius: '12px',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+      },
+      reloadMenuNote: {
+        padding: '6px 8px',
+        fontSize: '11px',
+        lineHeight: '16px',
+        color: 'var(--dsw-alias-label-secondary)',
+      },
 
       // --- page -------------------------------------------------------------
       page: {
@@ -610,6 +655,13 @@ window.__ModuleLoader__.load({
         });
       }, [load, sessionId]);
 
+      // Soft refresh from the sidebar action: re-read only, never unload.
+      useEffect(() => {
+        const onRefresh = () => load();
+        window.addEventListener(REFRESH_EVENT, onRefresh);
+        return () => window.removeEventListener(REFRESH_EVENT, onRefresh);
+      }, [load]);
+
       if (failed) return null;
       if (!data) return null;
       if (!data.session || !data.session.id) return null;
@@ -823,97 +875,201 @@ window.__ModuleLoader__.load({
     // --- sidebar footer action ----------------------------------------------
 
     /**
-     * Interface reload (the desktop shell has no refresh key). Three guards, in
-     * order: the first click only arms the action (4 s auto-disarm), the second
-     * click asks the Host whether any turn is running, and only an idle process
-     * actually reloads. `Ctrl+R` still bypasses this on purpose.
+     * Sidebar refresh action.
+     *
+     * The main button is a soft refresh: mounted panel surfaces re-read their
+     * snapshots and the page is never unloaded, so running turns cannot be
+     * interrupted. The caret exposes the full reload, which asks the Host first:
+     * idle -> reload now; busy -> queue and poll until idle. A busy full reload
+     * is never forced. `Ctrl+R` remains a browser-level escape hatch.
      */
     function KbReloadAction(props) {
-      const [hovered, setHovered] = useState(false);
-      const [armed, setArmed] = useState(false);
-      const [blocked, setBlocked] = useState(false);
       const wide = !props || props.wide !== false;
-      // Auto-disarm: an armed button that is forgotten about becomes a plain
-      // button again, so the next stray click cannot reload.
+      const [hovered, setHovered] = useState(false);
+      const [menuOpen, setMenuOpen] = useState(false);
+      const [queued, setQueued] = useState(false);
+      const [busyCount, setBusyCount] = useState(0);
+      const [flash, setFlash] = useState('');
+      const wrapRef = useRef(null);
+
       useEffect(() => {
-        if (!armed) return undefined;
-        const timer = setTimeout(() => setArmed(false), 4000);
+        if (!flash) return undefined;
+        const timer = setTimeout(() => setFlash(''), 1600);
         return () => clearTimeout(timer);
-      }, [armed]);
+      }, [flash]);
+
       useEffect(() => {
-        if (!blocked) return undefined;
-        const timer = setTimeout(() => setBlocked(false), 4000);
-        return () => clearTimeout(timer);
-      }, [blocked]);
-      const style = {
-        ...S.reloadBtn,
-        ...(wide ? null : S.reloadBtnCollapsed),
-        ...(armed || blocked ? S.reloadBtnArmed : hovered ? S.reloadBtnHover : null),
-      };
-      const title = blocked
-        ? '有对话正在运行，已阻止重新加载（可用 Ctrl+R 强制）'
-        : armed
-          ? '再次点击确认重新加载（运行中的对话会被拦截）'
-          : '重新加载界面（点两次确认；有对话运行时会拦截）';
-      return h(
-        'button',
-        {
-          type: 'button',
-          style,
-          title,
-          'aria-label': title,
-          onMouseEnter: () => setHovered(true),
-          onMouseLeave: () => setHovered(false),
-          onFocus: () => setHovered(true),
-          onBlur: () => setHovered(false),
-          onClick: async () => {
-            if (blocked) return;
-            if (!armed) {
-              setArmed(true);
+        if (!menuOpen) return undefined;
+        const close = (event) => {
+          if (wrapRef.current && !wrapRef.current.contains(event.target)) setMenuOpen(false);
+        };
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+      }, [menuOpen]);
+
+      // A queued full reload waits for every running turn to end. It never
+      // forces a reload while `/kb/busy` reports work in progress.
+      useEffect(() => {
+        if (!queued) return undefined;
+        let cancelled = false;
+        const tick = async () => {
+          try {
+            const response = await fetch('/kb/busy', { cache: 'no-store' });
+            if (!response.ok) throw new Error(String(response.status));
+            const info = await response.json();
+            const count = Number(info && info.busy) || 0;
+            if (cancelled) return;
+            if (count === 0) {
+              try {
+                window.location.reload();
+              } catch {
+                if (!cancelled) {
+                  setQueued(false);
+                  setFlash('重载失败');
+                }
+              }
               return;
             }
-            setArmed(false);
-            // Ask the Host before reloading: a running turn must not be cut.
-            try {
-              const response = await fetch('/kb/busy', { cache: 'no-store' });
-              const info = response.ok ? await response.json() : null;
-              if (info && Number(info.busy) > 0) {
-                setBlocked(true);
-                return;
-              }
-            } catch {
-              /* cannot ask: fall through and let the user reload */
+            setBusyCount(count);
+          } catch {
+            if (!cancelled) {
+              setQueued(false);
+              setFlash('检查失败');
             }
+          }
+        };
+        tick();
+        const timer = setInterval(tick, 2000);
+        return () => {
+          cancelled = true;
+          clearInterval(timer);
+        };
+      }, [queued]);
+
+      const softRefresh = () => {
+        setMenuOpen(false);
+        window.dispatchEvent(new Event(REFRESH_EVENT));
+        setFlash('已刷新');
+      };
+
+      const startFullReload = async () => {
+        setMenuOpen(false);
+        try {
+          const response = await fetch('/kb/busy', { cache: 'no-store' });
+          if (!response.ok) throw new Error(String(response.status));
+          const info = await response.json();
+          const count = Number(info && info.busy) || 0;
+          if (count === 0) {
             try {
               window.location.reload();
             } catch {
-              /* a denied reload must not break the sidebar */
+              setFlash('重载失败');
             }
-          },
-        },
+            return;
+          }
+          setBusyCount(count);
+          setQueued(true);
+        } catch {
+          setFlash('检查失败');
+        }
+      };
+
+      const label = queued ? (busyCount ? `等待空闲 ${busyCount}` : '等待空闲') : flash || '刷新界面';
+      const title = queued
+        ? `有 ${busyCount} 个对话在运行；空闲后自动完整重载。点击主按钮仍可软刷新`
+        : wide
+          ? '刷新界面（软刷新，不中断对话）；点右侧箭头可完整重载'
+          : '刷新界面（软刷新，不中断对话）；展开侧栏可完整重载';
+      const style = {
+        ...S.reloadBtn,
+        ...(wide ? { flex: '1 1 auto' } : S.reloadBtnCollapsed),
+        ...(hovered ? S.reloadBtnHover : null),
+        ...(queued ? S.reloadBtnArmed : null),
+      };
+      return h(
+        'div',
+        { ref: wrapRef, style: S.reloadWrap },
         h(
-          'span',
-          { style: S.reloadIcon, 'aria-hidden': 'true' },
+          'button',
+          {
+            type: 'button',
+            style,
+            title,
+            'aria-label': title,
+            onMouseEnter: () => setHovered(true),
+            onMouseLeave: () => setHovered(false),
+            onFocus: () => setHovered(true),
+            onBlur: () => setHovered(false),
+            onClick: softRefresh,
+          },
           h(
-            'svg',
-            {
-              width: 16,
-              height: 16,
-              viewBox: '0 0 24 24',
-              fill: 'none',
-              focusable: 'false',
-              role: 'presentation',
-            },
-            h('path', {
-              d: 'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5',
-              stroke: 'currentColor',
-              strokeWidth: 1.5,
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-            }),
+            'span',
+            { style: S.reloadIcon, 'aria-hidden': 'true' },
+            h(
+              'svg',
+              {
+                width: 16,
+                height: 16,
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                focusable: 'false',
+                role: 'presentation',
+              },
+              h('path', {
+                d: 'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5',
+                stroke: 'currentColor',
+                strokeWidth: 1.5,
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+              }),
+            ),
           ),
+          wide ? h('span', { style: S.reloadLabel }, label) : null,
         ),
-        wide ? h('span', { style: S.reloadLabel }, blocked ? '运行中，已阻止' : armed ? '确认重载' : '重新加载') : null,
+        wide
+          ? h(
+              'button',
+              {
+                type: 'button',
+                style: S.reloadCaret,
+                title: queued ? '等待空闲后完整重载' : '完整重载界面',
+                'aria-label': '完整重载界面',
+                'aria-haspopup': 'menu',
+                'aria-expanded': menuOpen,
+                onClick: () => setMenuOpen((value) => !value),
+              },
+              '▾',
+            )
+          : null,
+        wide && menuOpen
+          ? h(
+              'div',
+              { style: S.reloadMenu, role: 'menu' },
+              h(
+                'div',
+                { style: S.reloadMenuNote },
+                queued
+                  ? `正在等待 ${busyCount} 个对话结束；完成后自动完整重载`
+                  : '完整重载会刷新页面；有对话运行时会等待空闲，不会强制中断',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  role: 'menuitem',
+                  style: S.menuItem,
+                  onClick: queued
+                    ? () => {
+                        setQueued(false);
+                        setMenuOpen(false);
+                        setFlash('已取消');
+                      }
+                    : startFullReload,
+                },
+                queued ? '取消等待重载' : '完整重载界面',
+              ),
+            )
+          : null,
       );
     }
 
@@ -991,6 +1147,14 @@ window.__ModuleLoader__.load({
         load();
         const timer = setInterval(load, 30000);
         return () => clearInterval(timer);
+      }, [load]);
+
+      // Soft refresh from the sidebar action: keep query/filter/selection and
+      // re-read the snapshots only.
+      useEffect(() => {
+        const onRefresh = () => load();
+        window.addEventListener(REFRESH_EVENT, onRefresh);
+        return () => window.removeEventListener(REFRESH_EVENT, onRefresh);
       }, [load]);
 
       const openNote = useCallback(async (id) => {
@@ -1559,7 +1723,7 @@ window.__ModuleLoader__.load({
         );
         ctx.slots.inject('sidebar.footer.action', () =>
           ctx.slots.register(
-            { name: 'sidebar.footer.action', id: 'kb-reload', order: 10, label: () => '重新加载' },
+            { name: 'sidebar.footer.action', id: 'kb-reload', order: 10, label: () => '刷新界面' },
             KbReloadAction,
           ),
         );

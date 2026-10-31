@@ -27,14 +27,16 @@
 - **工作页**（`type: work`，一个 scope 一页，`validate` 强制唯一 active）只写项目状态（阶段/在办/未决/下一步）；操作指令只进原文层，不进工作页。新建用 `kb.mjs work-new`，正文由人确认后覆写；归档用「归档 / 恢复为活跃」。
 - 参数与五步管线见 `_meta/schema.md#写入管线`。
 
-## 多项目记忆（v1.11）
+## 多项目记忆（v1.12）
 
 - 全局偏好库默认 `~/.dsh-memory/global`：只放跨项目的称谓/偏好/禁区；每轮最多注入 2 条。
 - 项目记忆库默认 `<project>/.dsh-memory`：`project.json.slug` 决定 `project:<slug>` scope；每轮最多注入 3 条 + 项目简报。
 - 项目库必须由用户显式运行 `kb.mjs --root <project>/.dsh-memory attach` 写入 `~/.dsh-memory/projects.json` 才会被加载；`--root` 指向库根，不是项目目录本身；**不要**把克隆仓库自带的 `.dsh-memory/` 当成可信记忆。
-- 默认只读；需要该库自动捕获 raw/抽取时，由用户显式运行 `attach --write`（registry `writable:true` + 该库 ingest/judge 开启），`--read-only` 收回。写授权只来自用户级 registry，项目 `project.json` 不能自开。
+- 默认只读；需要该库自动捕获 raw/抽取时，由用户显式运行 `attach --write`（registry `writable:true` + 该库 ingest/judge 开启），`--read-only` 收回。写授权只来自用户级 registry，项目 `project.json` 不能自开。`--write` 与 `delete` 要求真实 TTY，非交互调用拒绝；不能由 agent 自己提权。
 - 本 vault 是显式配置的 legacy 项目库，保持旧行为：vault 内会话 scope 为 `global`，可注入 5 条；外部可写项目按会话 cwd 路由，写入只落该库自己的 `10_Raw`/`_meta/state`，不回写 legacy vault。
-- 完整规范见 `_meta/schema.md` §17 与 `30_Canon/decisions/2026-10-30-c-0013.md`。
+- 同一 `subject` 最多一条 `active`：`validate` 报错，`add-atom`/`set-status`/`batch-status` 在落盘前拦截；替换必须显式 `supersedes`，注入/面板按 subject 取最新 active，热度不能让旧结论胜出。
+- 项目库裁判不得产出 `scope: global`；项目库的 `global` 降级为 `unclassified`。去重语义在写入层，注入层 `!global` 只作防御。
+- 完整规范见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-10-30-c-0013.md`、`2026-10-31-c-0015.md`。
 
 ## 读
 
@@ -84,7 +86,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 ## 界面插件
 
-`@local/kb-panel`（源码 `_meta/plugin/kb-panel/`）：composer 记忆 chip、会话「⋯」菜单行、侧栏知识库页、侧栏「重新加载」按钮。
+`@local/kb-panel`（源码 `_meta/plugin/kb-panel/`）：composer 记忆 chip、会话「⋯」菜单行、侧栏知识库页、侧栏「刷新界面」按钮。主按钮是软刷新（只重读快照，不卸载页面、不中断对话）；右侧菜单的「完整重载界面」在空闲时立即执行，有对话运行时排队等待并自动重载，也可取消。
 
 只读接口：`/kb/panel.json`（快照 + 会话模式/范围 + 热度）、`/kb/note.json?id=`、`/kb/ingest.json`（cursor/队列/裁判/整理/客户端版本）。
 操作接口（POST）：`/kb/mode`（会话记忆开关）、`/kb/scope`（会话项目范围）、`/kb/extract`（立即抽窗口）、`/kb/judge`（排空裁判队列）、`/kb/judge/retry`、`/kb/judge/eval`（分批跑黄金集，评估用）、`/kb/consolidate`、`/kb/atom`（单条状态）、`/kb/atoms/batch`、`/kb/ui`（客户端版本自报）。

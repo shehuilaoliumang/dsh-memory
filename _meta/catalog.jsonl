@@ -15,7 +15,8 @@
 {"id":"2026-10-29-c-0009","path":"30_Canon/decisions/2026-10-29-c-0009.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"黄金集回归 + precision 安全指标 + 反馈标签 + 熔断","updated":"2026-10-29"}
 {"id":"2026-10-29-c-0010","path":"30_Canon/decisions/2026-10-29-c-0010.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"检索只读、注入加边界、写入口 CSRF、密钥脱敏、威胁模型四类边界","updated":"2026-10-29"}
 {"id":"2026-10-29-c-0011","path":"30_Canon/decisions/2026-10-29-c-0011.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"Phase 4 减债：共享契约、scope 回落、id 去重、遥测轮转","updated":"2026-10-29"}
-{"id":"2026-10-29-w-0001","path":"20_Digest/work/2026-10-29-w-0001.md","level":"digest","type":"work","status":"active","tags":[],"summary":"Phase 6 完成；1.11.0 已发布；外部写入与恢复演练通过","updated":"2026-10-31"}
+{"id":"2026-10-29-w-0001","path":"20_Digest/work/2026-10-29-w-0001.md","level":"digest","type":"work","status":"active","tags":[],"summary":"Phase 7 审计清偿完成；1.12.0 待发布","updated":"2026-10-31"}
 {"id":"2026-10-30-c-0012","path":"30_Canon/decisions/2026-10-30-c-0012.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"第三轮复审：loopback 拒绝、本机令牌、ingest 故障注入、FN 复核","updated":"2026-10-30"}
 {"id":"2026-10-30-c-0013","path":"30_Canon/decisions/2026-10-30-c-0013.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"引擎支持可配置根；全局偏好库 + 显式接入的项目库；双库注入与信任边界","updated":"2026-10-31"}
 {"id":"2026-10-30-c-0014","path":"30_Canon/decisions/2026-10-30-c-0014.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"项目库存项目内、默认只读；原文不公开；完整库私有备份","updated":"2026-10-30"}
+{"id":"2026-10-31-c-0015","path":"30_Canon/decisions/2026-10-31-c-0015.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"审计清偿：同 subject 唯一 active 与 TTY/脱敏","updated":"2026-10-31"}

@@ -33,7 +33,7 @@ Obsidian Vault/memory
      + 项目 work brief（不占预算）
 ```
 
-没有项目库时只注入全局层；没有全局库时保留旧行为（legacy vault 5 条）。`inbox` / `superseded` / `system` / `unclassified` / `topic` / `work` / `session` 永不注入。
+没有项目库时只注入全局层；没有全局库时保留旧行为（legacy vault 5 条）。`inbox` / `superseded` / `system` / `unclassified` / `topic` / `work` / `session` 永不注入。同一 `subject` 最多一条 `active`：`validate` 报错，写入接口在落盘前拒绝冲突；注入/面板按 subject 取最新 active，热度不能让旧结论胜出。
 
 **关键不变量**：不搬家、不删除（唯一例外需票据 + 人工密钥）、索引是派生物、页面不是记忆、一个 scope 一个 active 工作页、旧结论由 `superseded` 退场而不是靠热度、生命周期变更写日志。
 
@@ -47,7 +47,7 @@ Obsidian Vault/memory
 <project>/.dsh-memory/        项目库（project.json + 10_Raw/20_Digest/30_Canon/_meta）
 ```
 
-项目库必须**显式接入**才会加载：克隆仓库自带的 `.dsh-memory/` 不会自动进入模型上下文（防止被 PR 注入）。legacy vault 仍作为显式配置的项目库兼容旧行为。项目库默认**只读注入**；`kb attach --write` 才把该库显式提升为可写（raw 捕获、裁判、面板写入都落在该库自己的 `_meta/state`），`--read-only` 可随时收回。项目仓库应把 `.dsh-memory/` 加入 `.gitignore`。`10_Raw/` 永不进入公开仓库或公开快照，完整库用私有 git bundle 备份（公开快照不是备份）。
+项目库必须**显式接入**才会加载：克隆仓库自带的 `.dsh-memory/` 不会自动进入模型上下文（防止被 PR 注入）。legacy vault 仍作为显式配置的项目库兼容旧行为。项目库默认**只读注入**；`kb attach --write` 才把该库显式提升为可写（raw 捕获、裁判、面板写入都落在该库自己的 `_meta/state`），`--read-only` 可随时收回。**`--write` 与 `delete` 一样要求真实 TTY**，非交互调用直接拒绝；项目自身的 `project.json` 不能自开写入。项目仓库应把 `.dsh-memory/` 加入 `.gitignore`。`10_Raw/` 永不进入公开仓库或公开快照，完整库用私有 git bundle 备份（公开快照不是备份）。
 
 从现有库安装全局偏好库（人工执行，拒绝覆盖；可用 `-Target`/`-Registry` 指定位置）：
 
@@ -66,7 +66,7 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
 node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 ```
 
-`kb.mjs` 的 `--root` / `KB_ROOT` 指向**库根**（项目库是 `<project>/.dsh-memory`，不是项目目录本身），对所有命令生效；新库默认 `ingest.enabled=false`，不会在 clone 后自动写。`attach --write` 只修改用户级 registry 与该库 config，项目自身的 `project.json` 不能自开写入；面板会列出已接入项目的当前/可写/只读状态。完整规则见 `_meta/schema.md` §17 与 `30_Canon/decisions/2026-10-30-c-0013.md`。
+`kb.mjs` 的 `--root` / `KB_ROOT` 指向**库根**（项目库是 `<project>/.dsh-memory`，不是项目目录本身），对所有命令生效；新库默认 `ingest.enabled=false`，不会在 clone 后自动写。`attach --write` 只修改用户级 registry 与该库 config，项目自身的 `project.json` 不能自开写入；面板会列出已接入项目的当前/可写/只读状态。完整规则见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-10-30-c-0013.md`、`2026-10-30-c-0014.md`、`2026-10-31-c-0015.md`。
 
 **可维护性**：根目录 `VERSION` 是唯一版本号，`CHANGELOG.md` 记录各阶段；`kb.mjs init` 幂等创建 7 个实际使用的目录（不创建未使用的顶层目录）；frontmatter parser 与工作页节名抽到 `_meta/plugin/kb-panel/shared/`，CLI 与插件共用；同分钟会话按前缀加 `-2`/`-3` 去重；`access.jsonl` 超阈值自动轮转、不删除。
 
@@ -80,6 +80,8 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - `_meta/scripts/kb.mjs`：零依赖 Node 规则层（校验、索引重建、写入、整理、工作页、只读检索、删除闸门）。
 - `_meta/plugin/kb-panel/`：DSH 插件（记忆 chip、知识库页、注入与入库触发器、脱敏、HTTP 防护与本机令牌）。
 - `_meta/schema.md`：完整规范。
+
+侧栏“刷新界面”主按钮是**软刷新**：只重读 `/kb/panel.json`、`/kb/ingest.json`，不卸载页面，运行中的对话不中断；右侧菜单的“完整重载界面”在空闲时立即执行，忙时按 `/kb/busy` 排队，等所有会话空闲后自动重载，可取消。软刷新不加载新版前端代码，换代码仍需完整重载或 `Ctrl+R`。
 
 ## 测试
 
@@ -98,7 +100,7 @@ node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 node _meta/plugin/kb-panel/test/stores.test.mjs
 ```
 
-当前：冒烟 90 条、插件单测 114 条全过。
+当前：冒烟 98 条、插件单测 122 条全过。
 
 ## 裁判评估
 

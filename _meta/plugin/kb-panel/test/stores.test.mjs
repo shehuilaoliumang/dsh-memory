@@ -142,6 +142,45 @@ test('only an explicitly writable attached project is a write target', () => {
   }
 });
 
+test('a corrupt registry never grants write access', () => {
+  const root = tempDir();
+  const project = path.join(root, 'app');
+  const store = path.join(project, '.dsh-memory');
+  const registry = path.join(root, 'projects.json');
+  try {
+    writeStore(store, { slug: 'corrupt-demo' });
+    fs.writeFileSync(registry, '{"version":1,"projects":[', 'utf8');
+    assert.equal(writableProjectStore(path.join(project, 'src'), { registryFile: registry }), null);
+    assert.equal(resolveStores(path.join(project, 'src'), { registryFile: registry }).projectRoot, null);
+    // A failed re-attach must not overwrite the damaged registry with a
+    // half-written grant either; the file stays exactly as it was.
+    assert.throws(() => attachProject(store, path.join(registry, 'nested.json')));
+    assert.equal(fs.readFileSync(registry, 'utf8'), '{"version":1,"projects":[');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a nested unregistered .dsh-memory cannot hijack a writable parent', () => {
+  const root = tempDir();
+  const project = path.join(root, 'parent');
+  const parentStore = path.join(project, '.dsh-memory');
+  const child = path.join(project, 'child');
+  const childStore = path.join(child, '.dsh-memory');
+  const registry = path.join(root, 'projects.json');
+  try {
+    writeStore(parentStore, { slug: 'parent-writable' });
+    attachProject(parentStore, registry, { writable: true });
+    writeStore(childStore, { slug: 'child-unregistered' });
+    const found = writableProjectStore(path.join(child, 'src'), { registryFile: registry });
+    assert.ok(found);
+    assert.equal(found.root, path.resolve(parentStore));
+    assert.equal(found.meta.slug, 'parent-writable');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('registry reads tolerate missing/corrupt files and deduplicate by path', () => {
   const root = tempDir();
   const registry = path.join(root, 'projects.json');

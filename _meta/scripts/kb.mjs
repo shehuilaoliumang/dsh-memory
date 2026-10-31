@@ -241,6 +241,17 @@ function splitLinks(value) {
   return out;
 }
 
+/** Accept both `[[id]]` links and already-normalized bare ids. */
+function linkIds(value) {
+  const ids = new Set(splitLinks(value).map((link) => link.replace(/\.md$/, '').split('/').pop()));
+  for (const raw of Array.isArray(value) ? value : [value]) {
+    if (typeof raw !== 'string') continue;
+    const bare = raw.replace(/\[\[|\]\]/g, '').split('|')[0].replace(/\.md$/, '').split('/').pop().trim();
+    if (bare) ids.add(bare);
+  }
+  return [...ids];
+}
+
 // -------------------------------------------------------------- 笔记扫描
 
 function walk(dir, visit) {
@@ -441,6 +452,24 @@ function cmdValidate(opts) {
     const previous = activeWorkScopes.get(scope);
     if (previous) errors.push(`${n.rel}: 同一 scope 只能有一个 active 工作页（已有 ${previous}）`);
     else activeWorkScopes.set(scope, n.rel);
+  }
+
+  // 注入按 subject 选一条当前 claim。正常写入会先退旧条，但手工编辑/旧版
+  // 数据仍可能留下两条 active；校验必须拦住这种“两个真相同时可注入”。
+  const activeSubjectNotes = new Map();
+  for (const n of notes) {
+    if (n.fixed || !n.data || n.data.status !== 'active') continue;
+    if (['work', 'session'].includes(String(n.data.type))) continue;
+    const subject = String(n.data.subject || '').trim();
+    if (!subject) continue;
+    const list = activeSubjectNotes.get(subject) || [];
+    list.push(n);
+    activeSubjectNotes.set(subject, list);
+  }
+  for (const [subject, list] of activeSubjectNotes) {
+    if (list.length < 2) continue;
+    const ids = list.map((n) => `${n.data.id}（${n.rel}）`).join('、');
+    errors.push(`subject "${subject}" 有 ${list.length} 条 active：${ids}；先用 supersedes 明确取代并退场旧条`);
   }
 
   const expected = notes.filter((n) => !n.fixed && n.data).map((n) => fitRow(toRow(n), CONFIG.limits.catalog_max_bytes)).sort(byIdAsc);
@@ -764,6 +793,19 @@ function oneLine(value, max) {
   return max && [...text].length > max ? [...text].slice(0, max).join('') : text;
 }
 
+/**
+ * Destructive/authorizing commands need a human at the terminal. This is a
+ * speed bump, not a security boundary: a same-user agent can write files
+ * directly. Smoke tests opt out explicitly so the rules themselves stay
+ * testable in CI where no TTY exists.
+ */
+function requireInteractive(where) {
+  if (process.env.KB_NONINTERACTIVE_TEST === '1') return;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(`${where} 必须在交互终端运行：需要人在场确认（非 TTY 拒绝）`);
+  }
+}
+
 function inlineList(values, quote) {
   const items = (values || []).map((v) => oneLine(v, 80)).filter(Boolean);
   if (!items.length) return null;
@@ -841,6 +883,8 @@ function cmdAddAtom(opts) {
     return out(`已存在同 summary 的笔记：${dup.data.id}（未重复写入）`);
   }
 
+  assertOneActiveSubject(allNotes, { data: { ...spec, id, subject, status, supersedes } }, 'add-atom');
+
   const meta = [
     ['id', id],
     ['title', title],
@@ -882,7 +926,7 @@ function cmdAddAtom(opts) {
   } catch {
     /* the change log is advisory; a failure must not lose the atom */
   }
-  const payload = { ok: true, id, file: relPath(file), duplicate: false, rebuilt: true, index: counts };
+  const payload = { ok: true, id, file: relPath(file), duplicate: false, rebuilt: true, retired, index: counts };
   if (opts.json) return out(JSON.stringify(payload));
   out(`已写入 ${payload.file}\n主索引 ${counts.active} 行，归档 ${counts.archived} 行`);
 }
@@ -895,8 +939,7 @@ function cmdAddAtom(opts) {
  */
 function retireSupersededTargets(note, notes, skipIds = new Set()) {
   const retired = [];
-  for (const link of splitLinks(note?.data?.supersedes)) {
-    const targetId = link.replace(/\.md$/, '').split('/').pop();
+  for (const targetId of linkIds(note?.data?.supersedes)) {
     if (!targetId || targetId === note.data?.id || skipIds.has(targetId)) continue;
     const old = notes.find((n) => !n.fixed && n.data?.id === targetId);
     if (!old || ['superseded', 'archived'].includes(String(old.data?.status))) continue;
@@ -909,6 +952,29 @@ function retireSupersededTargets(note, notes, skipIds = new Set()) {
     }
   }
   return retired;
+}
+
+/**
+ * Refuse to create a second active claim for one subject. A write may replace
+ * existing claims only by naming them in `supersedes`; in a batch the named
+ * claim is not auto-retired, so `plannedIds` makes that collision explicit.
+ */
+function assertOneActiveSubject(notes, note, where, options = {}) {
+  const data = note?.data;
+  if (!data || String(data.status) !== 'active') return;
+  if (['work', 'session'].includes(String(data.type))) return;
+  const subject = String(data.subject || '').trim();
+  if (!subject) return;
+  const supersedes = new Set(linkIds(data.supersedes));
+  const plannedIds = options.plannedIds || new Set();
+  const peers = notes.filter((n) => !n.fixed && n.data
+    && String(n.data.id) !== String(data.id)
+    && String(n.data.status) === 'active'
+    && String(n.data.subject || '').trim() === subject
+    && !['work', 'session'].includes(String(n.data.type)));
+  const conflicts = peers.filter((n) => plannedIds.has(String(n.data.id)) || !supersedes.has(String(n.data.id)));
+  if (!conflicts.length) return;
+  throw new Error(`${where}: subject "${subject}" 已有 active ${conflicts.map((n) => n.data.id).join(', ')}；先用 supersedes 明确取代，或换一个 subject`);
 }
 
 /**
@@ -938,6 +1004,7 @@ function cmdSetStatus(opts) {
       if (clash) throw new Error(`set-status: ${effectiveScope} 已有 active 工作页 ${clash.data.id}，请先归档它`);
     }
   }
+  assertOneActiveSubject(notes, { data: { ...note.data, status, scope: scope || note.data.scope } }, 'set-status');
 
   const before = readText(note.file);
   let text = before.replace(/^(status:)\s*.*$/m, `$1 ${status}`);
@@ -1510,6 +1577,17 @@ function cmdBatchStatus(opts) {
     text = text.replace(/^(updated:)\s*.*$/m, `$1 ${localDate()}`);
     if (text !== before) plans.push({ note, text, id });
   }
+  // `retireSupersededTargets` skips ids in this batch, so two planned active
+  // notes with one subject would survive together; check before any write.
+  const plannedIds = new Set(ids);
+  for (const plan of plans) {
+    assertOneActiveSubject(
+      notes,
+      { data: { ...plan.note.data, status, scope: scope || plan.note.data.scope } },
+      'batch-status',
+      { plannedIds },
+    );
+  }
   // Phase 2: apply and rebuild once.
   for (const plan of plans) writeText(plan.note.file, plan.text);
   const changedIds = plans.map((plan) => plan.id);
@@ -1656,6 +1734,7 @@ function cmdDelete(opts) {
   if (ticket.ticket !== ticketId) throw new Error('delete: 票据不匹配');
   if (Date.parse(ticket.expiresAt) < Date.now()) throw new Error('delete: 票据已过期，请重新生成');
   if (ticket.keyHash !== hashKey(key)) throw new Error('delete: 密钥不匹配，拒绝执行');
+  requireInteractive('delete');
 
   const notes = loadNotes();
   const deleted = [];
@@ -1810,6 +1889,7 @@ function cmdAttach(opts = {}) {
   if (opts.write === true && opts.readOnly === true) {
     throw new Error('attach: --write 与 --read-only 不能同时使用');
   }
+  if (opts.write === true) requireInteractive('attach --write');
   const requestedWritable = opts.write === true ? true : opts.readOnly === true ? false : undefined;
   const writable = requestedWritable === undefined ? Boolean(previous && previous.writable === true) : requestedWritable;
   const kept = projects.filter((entry) => {

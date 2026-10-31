@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.12.0 — 2026-10-31
+
+审计清偿版：冻结新功能，处理六轮复审的必改项。
+
+- N5 当前真相：`validate` 拒绝同一 `subject` 的多条 `active`；`add-atom`/`set-status`/`batch-status` 写入前守卫，只允许显式 `supersedes` 退场旧条；`work-brief.mjs` 的 `currentTruthNotes` 让注入与面板计数统一按 subject 取最新 active。顺带修复裸 id `supersedes` 不退场的旧 bug。
+- Redaction：补 URL 内嵌密码、中文键名/短值、手机号、18 位身份证；新增 raw 落盘端到端断言。
+- 人闸：`attach --write` 与 `delete` 要求真实 TTY，非 TTY 拒绝；`KB_NONINTERACTIVE_TEST` 仅供测试，明确不是安全边界。
+- H4：项目库裁判不允许产出 `scope: global`，降级 `unclassified`；注入层过滤只作防御，不再承担去重语义。
+- H3：新增 registry 损坏不授权、未登记 nested 不劫持父库两类故障注入。
+- 测试：插件 122/122、冒烟 98/98；schema v1.12.0。
+- 审计回应：第六轮 69 分中的 N5 安全洞、redact 覆盖、TTY 不对称、H4 层次问题本轮清偿；进程级认证、跨库锁/队列仍明确不做，理由见 [[2026-10-31-c-0015]]。
+
+## 1.11.1 — 2026-10-31
+
+- 侧栏刷新改为两层语义：主按钮“刷新界面”是软刷新，只重读 `/kb/panel.json` / `/kb/ingest.json`，不卸载页面、不中断运行中的对话；右侧菜单“完整重载界面”空闲时立即执行，忙时按 `/kb/busy` 排队，全部会话空闲后自动重载，可随时取消。
+- 软刷新同时作用于 composer 记忆 chip 与侧栏知识库页；客户端构建 `2026-10-29-c21`。旧版“两次点击 + 忙时阻止”不再使用。
+- 说明：软刷新不加载新版前端代码；需要换代码仍要完整重载或 `Ctrl+R`。`Ctrl+R` 仍可绕过 busy 检查，本功能不改变浏览器原生行为。
+
 ## 1.11.0 — 2026-10-31
 
 - 外部项目写入：`kb attach --write` 在用户级 registry 写 `writable: true`，并同步该库的 `_meta/config.json` 的 `ingest.enabled`/`judge.enabled`；`--read-only` 反向关闭。项目自身 `project.json` 不能自开写入，默认仍只读。

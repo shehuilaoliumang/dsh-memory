@@ -76,3 +76,5 @@
 2026-10-30 18:05 | phase5 | 多项目记忆库首轮：--root/KB_ROOT、init/attach、stores 双库解析与注入、stores 测试 6 条；插件 112/112、冒烟 88/88
 2026-10-31 10:20 | phase6 | 外部项目写入：attach --write/--read-only、按 cwd 的外部 ingestor/judge、面板项目状态；插件 114/114、冒烟 90/90、私有 bundle 恢复演练通过；v1.11.0
 2026-10-31 11:50 | publish | 1.11.0 公开快照：发布 commit 87f228b、tree da0591a、77 文件；CI run 41165962008 全绿
+2026-10-31 13:50 | ui | 安全刷新：软刷新（不卸载页面）+ 完整重载空闲执行/忙时排队；客户端 c21；v1.11.1；插件 114/114、冒烟 90/90
+2026-10-31 15:49 | phase7 | 审计清偿：N5 同 subject 唯一 active、redact 中文/短值/URL/手机/身份证、attach --write/delete TTY、项目库裁判禁止 global、registry 故障注入；插件 122/122、冒烟 98/98；c-0015；v1.12.0 待发布

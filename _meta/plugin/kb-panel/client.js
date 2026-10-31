@@ -97,16 +97,17 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-10-30-c27';
+    const CLIENT_BUILD = '2026-10-31-c28';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
      * live client version stays observable across plugin reloads (the one-shot
      * activation report is lost when the Host restarts, this poll is not).
      */
-    function panelUrl(sessionId) {
+    function panelUrl(sessionId, workspace) {
       const params = new URLSearchParams();
       if (sessionId) params.set('session', String(sessionId));
+      if (workspace) params.set('workspace', String(workspace));
       params.set('build', CLIENT_BUILD);
       return `/kb/panel.json?${params.toString()}`;
     }
@@ -364,7 +365,6 @@ window.__ModuleLoader__.load({
       },
       inputFocus: { borderColor: 'var(--dsw-alias-brand-primary)' },
       filters: { display: 'flex', gap: '8px', padding: '0 12px 10px', flexWrap: 'wrap', flex: 'none' },
-      hotRow: { display: 'flex', gap: '6px', padding: '0 12px 10px', flexWrap: 'wrap', alignItems: 'center', flex: 'none' },
       chip: {
         font: 'inherit',
         fontSize: '13px',
@@ -549,6 +549,26 @@ window.__ModuleLoader__.load({
         borderRadius: '999px',
         background: 'var(--dsw-alias-bg-layer-2)',
         color: 'var(--dsw-alias-label-secondary)',
+      },
+      readonlyNote: {
+        marginTop: '12px',
+        padding: '8px 10px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-2) 72%, transparent)',
+        borderRadius: '8px',
+      },
+      select: {
+        maxWidth: '240px',
+        height: '26px',
+        padding: '0 26px 0 9px',
+        fontSize: '12px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent)',
+        border: '1px solid var(--dsw-alias-border-l2)',
+        borderRadius: '8px',
+        cursor: 'pointer',
       },
       listCard: {
         boxSizing: 'border-box',
@@ -1528,6 +1548,7 @@ window.__ModuleLoader__.load({
     function KbPage() {
       const [data, setData] = useState(null);
       const [failed, setFailed] = useState(false);
+      const [workspace, setWorkspace] = useState('');
       const [query, setQuery] = useState('');
       const [tab, setTab] = useState('inbox');
       const [selected, setSelected] = useState(null);
@@ -1556,11 +1577,15 @@ window.__ModuleLoader__.load({
       const load = useCallback(async () => {
         try {
           const [panelResponse, healthResponse] = await Promise.all([
-            fetch(panelUrl(currentSessionId), { cache: 'no-store' }),
+            fetch(panelUrl(currentSessionId, workspace), { cache: 'no-store' }),
             fetch('/kb/ingest.json', { cache: 'no-store' }),
           ]);
           if (!panelResponse.ok) throw new Error(String(panelResponse.status));
-          setData(rememberCsrf(await panelResponse.json()));
+          const payload = rememberCsrf(await panelResponse.json());
+          setData(payload);
+          // The Host resolves the default view (session project, else legacy).
+          // Persist that id so the selector and note reads address the same store.
+          if (!workspace && payload.view && payload.view.id) setWorkspace(payload.view.id);
           if (healthResponse.ok) {
             try {
               setHealth(await healthResponse.json());
@@ -1572,7 +1597,7 @@ window.__ModuleLoader__.load({
         } catch {
           setFailed(true);
         }
-      }, []);
+      }, [workspace]);
 
       useEffect(() => {
         load();
@@ -1593,7 +1618,9 @@ window.__ModuleLoader__.load({
         setDetailBusy(true);
         setDetail(null);
         try {
-          const response = await fetch(`/kb/note.json?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+          const params = new URLSearchParams({ id: String(id) });
+          if (workspace) params.set('workspace', workspace);
+          const response = await fetch(`/kb/note.json?${params.toString()}`, { cache: 'no-store' });
           if (!response.ok) throw new Error(String(response.status));
           setDetail(await response.json());
         } catch {
@@ -1601,7 +1628,7 @@ window.__ModuleLoader__.load({
         } finally {
           setDetailBusy(false);
         }
-      }, []);
+      }, [workspace]);
 
       /** POST one lifecycle action; surfaces the Host's error text on failure. */
       const postAction = useCallback(async (url, body) => {
@@ -1633,7 +1660,7 @@ window.__ModuleLoader__.load({
         async (id, status, scope, clearScope) => {
           setStatusBusy(true);
           try {
-            if (!(await postAction('/kb/atom', { id, status, scope, clearScope: clearScope === true }))) return;
+            if (!(await postAction('/kb/atom', { id, status, scope, clearScope: clearScope === true, workspace }))) return;
             notify(status === 'active' ? '已记住；后续对话可能会参考它' : status === 'archived' ? '已移出记忆；不会进入对话' : '已更新');
             await load();
             await openNote(id);
@@ -1643,7 +1670,7 @@ window.__ModuleLoader__.load({
             setStatusBusy(false);
           }
         },
-        [load, notify, openNote, postAction],
+        [load, notify, openNote, postAction, workspace],
       );
 
       /**
@@ -1741,7 +1768,19 @@ window.__ModuleLoader__.load({
         }
       }, [load]);
 
+      const switchWorkspace = useCallback((next) => {
+        const id = String(next || '');
+        if (!id || id === workspace) return;
+        setWorkspace(id);
+        setSelected(null);
+        setDetail(null);
+        setQuery('');
+        pickedInitialTab.current = false;
+      }, [workspace]);
+
       const session = data && data.session;
+      const view = data && data.view;
+      const viewWritable = !view || view.writable !== false;
       const canToggle = Boolean(session && session.id);
       const currentProject = ((data && Array.isArray(data.projects) ? data.projects : []) || []).find(
         (project) => session && project.path === session.projectRoot,
@@ -1790,13 +1829,32 @@ window.__ModuleLoader__.load({
                 )
               : null,
           ),
-          h(KbButton, { onClick: load }, '刷新'),
+          h(KbButton, { onClick: () => load() }, '刷新'),
         ),
       );
 
       const statusBar = h(
         'div',
         { style: S.statusStrip },
+        h(
+          'div',
+          { style: S.statusGroup },
+          h('span', { style: S.statusStrong }, '正在查看'),
+          h(
+            'select',
+            {
+              style: S.select,
+              value: workspace || (view && view.id) || '',
+              onChange: (event) => switchWorkspace(event.target.value),
+              'aria-label': '选择要查看的工作区',
+            },
+            ((data && data.workspaces) || []).map((option) =>
+              h('option', { key: option.id, value: option.id }, `${option.label}${option.writable === false ? '（只读）' : ''}`),
+            ),
+          ),
+          view && !viewWritable ? h('span', { style: S.statusTag }, '只读') : null,
+        ),
+        h('span', { style: S.statusDivider }),
         h(
           'div',
           { style: S.statusGroup },
@@ -1844,7 +1902,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: S.statusGroup },
-          h('span', null, currentProject ? `项目 ${currentProject.slug}` : '未接入项目库'),
+          h('span', null, currentProject ? `本会话项目：${currentProject.slug}` : '本会话未接入项目库'),
           currentProject
             ? h('span', { style: S.statusTag }, currentProject.writable ? '可写' : '只读')
             : h('span', { style: S.statusTag }, '仅全局记忆'),
@@ -1903,7 +1961,9 @@ window.__ModuleLoader__.load({
       };
       const detailActions = !detail
         ? null
-        : isWorkNote(detail)
+        : !viewWritable
+          ? h('div', { style: S.readonlyNote }, '这是只读工作区。切换到当前会话的项目后可以修改记忆。')
+          : isWorkNote(detail)
           ? h(
               'div',
               { style: S.confirmRow },
@@ -1980,6 +2040,7 @@ window.__ModuleLoader__.load({
                   style: searchFocused ? { ...S.input, ...S.inputFocus } : S.input,
                   value: query,
                   placeholder: '搜索记忆…',
+                  'aria-label': '搜索记忆',
                   onChange: (event) => setQuery(event.target.value),
                   onFocus: () => setSearchFocused(true),
                   onBlur: () => setSearchFocused(false),
@@ -1987,7 +2048,7 @@ window.__ModuleLoader__.load({
               ),
               h(
                 'div',
-                { style: S.tabs2 },
+                { style: S.tabs2, role: 'tablist', 'aria-label': '记忆分类' },
                 [
                   ['inbox', '待确认'],
                   ['active', '已记住'],
@@ -1999,6 +2060,8 @@ window.__ModuleLoader__.load({
                     {
                       key: value,
                       type: 'button',
+                      role: 'tab',
+                      'aria-selected': tab === value,
                       style: { ...S.tab2, ...(tab === value ? S.tabOn2 : null) },
                       onClick: () => setTab(value),
                     },
@@ -2168,7 +2231,7 @@ window.__ModuleLoader__.load({
           body,
           runStatus ? h('div', { style: S.pageFooter }, runStatus) : null,
         ),
-        toast ? h('div', { style: S.toast }, toast) : null,
+        toast ? h('div', { style: S.toast, role: 'status', 'aria-live': 'polite' }, toast) : null,
       );
     }
 

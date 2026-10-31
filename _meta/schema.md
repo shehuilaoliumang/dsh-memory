@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.13.0
+title: 知识库规范 v1.14.0
 status: canon
 updated: 2026-10-31
 ---
 
-# 知识库规范 v1.13.0
+# 知识库规范 v1.14.0
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -388,7 +388,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：chip 显示“已记住 N · 待确认 N”，弹层显示三项计数与最近记住；侧栏“记忆”页四页签（待确认/已记住/项目状态/全部），默认待确认，隐藏 raw/session，详情按状态给确认/归档/改范围，正文 Markdown 渲染；`sidebar.footer.action` 的「刷新界面」主按钮只重读面板快照（软刷新，不卸载页面），右侧菜单的「完整重载界面」空闲即重载、忙时排队到全部会话空闲后自动重载，绝不强制中断 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
-| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测八个文件共 127 条（含 stores 9、ingest 外部 `--root` 路由、N5 冲突、跨库仲裁/预算与 redact 断言） |
+| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测八个文件共 129 条（含 stores 10、ingest 外部 `--root` 路由、N5 冲突、跨库仲裁/预算与 redact 断言） |
 
 已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板只展示已接入项目及当前/可写/只读状态，不提供 attach 或授权操作（授权仍走 CLI）；自动写入在 Host 侧触发器，不在面板操作里。软刷新只更新已挂载面板的数据，不加载新版前端代码；完整重载始终以 `/kb/busy` 为准，忙时不强制。浏览器原生 `Ctrl+R` 仍是可绕过 busy 检查的兜底，本功能不改变这一点。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
 
@@ -425,7 +425,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v1.13.0）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
+已知限制（v1.14.0）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -527,7 +527,7 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 node _meta/scripts/kb.mjs search --query "界面 中文" --limit 5
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/http-guard.test.mjs
-node _meta/scripts/smoke.ps1   # 冒烟 100/100；插件 127/127
+node _meta/scripts/smoke.ps1   # 冒烟 102/102；插件 129/129
 ```
 
 非目标（v1.8 明确不做）：多用户/公网部署、进程级认证、密钥保险库、自动语义检索、对已提交 git 历史的清洗。
@@ -547,7 +547,7 @@ node _meta/scripts/smoke.ps1   # 冒烟 100/100；插件 127/127
 | 简化 ingest | 先测量接管、自检、去重与失败窗口的故障率再删代码；`test/FAULT-INJECTION.md` 把每类机制映射到测试，删掉会失败；保留 raw 追加这一最小路径 |
 | HTTP 本机令牌 | `index.js` 每次启动生成 local token 写 `_meta/state/http-token`（0600）；非浏览器写请求需 `x-kb-local-token`，loopback 之外的连接一律 403 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 1.13.0；`init` 可重复执行；同一分钟两个会话 validate 通过；`stores` 9 条、ingest 外部 `--root` 路由测试、N5 同 subject 冲突与跨库仲裁测试通过；冒烟 100/100、插件 127/127。
+验收：`node _meta/scripts/kb.mjs version` 输出 1.14.0；`init` 可重复执行；同一分钟两个会话 validate 通过；`stores` 10 条、ingest 外部 `--root` 路由测试、N5 同 subject 冲突与跨库仲裁测试通过；冒烟 102/102、插件 129/129。
 
 ## 17. 多项目记忆库与全局偏好（v1.10 新增，v1.11 外部写入，v1.12 审计清偿，v1.13 跨库仲裁）
 
@@ -616,7 +616,7 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 ### 17.5 注入与 scope
 
-- `scope: global` 只进全局库的 2 条预算；项目库只取 `scope: project:<slug>` 的 3 条（legacy vault 为保持旧行为取全部 5 条）。
+- `scope: global` 只进全局库的 2 条预算；项目库只取 `scope: project:<slug>` 的 3 条。legacy vault 保持历史 5 条总预算：全局库先占最多 2 条，剩余名额由项目库补齐；全局库为空时 legacy 项目库仍可拿满 5 条。
 - `system` / `unclassified` / `inbox` / `superseded` / `topic` / `work` / `session` 仍一律不注入。
 - 项目 core 只在项目库存在且命中会话时注入；全局 core 与项目 core 都包在 `<untrusted-memory>` 边界和 core 声明里。
 - 同一 `subject` 最多一条 `active`：`validate` 硬报错；`add-atom`/`set-status`/`batch-status` 写入前用 `assertOneActiveSubject` 拦截；替换必须显式 `supersedes`。单库内注入与面板计数经 `currentTruthNotes` 按 subject 取最新 active，热度不能让旧 claim 胜出。
@@ -629,7 +629,7 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - `attach --write` 必须先过真实 TTY 人闸，没有环境变量旁路。写授权与删除同权，不能由 agent 自己 `attach` 提权。
 - 项目自身的 `project.json` 不能自开写入；写授权只来自用户级 registry。外部项目 raw 仍受 c-0014 约束：不进公开快照，随完整库私有备份。
 - 项目库裁判`allowGlobal=false`：项目库不能产出 `scope: global`，`global` 降级为 `unclassified`；写入层是根因，注入层过滤只作防御。非 legacy 项目库若已有 global active 条目，注入时排除并每库显式告警一次（列出 id），不再静默丢弃。
-- 面板的 session `mode/scope/projectRoot/globalRoot` 与 `projects` 已按双库解析；面板只展示项目状态，不提供 attach/授权操作。
+- 面板的 session `mode/scope/projectRoot/globalRoot` 与 `projects` 已按双库解析；记忆页可切换“正在查看”的 workspace（§17.8），但仍不提供 attach/授权操作。
 - 项目库放项目内 `.dsh-memory/`、默认只读加载、项目仓库将其加入 `.gitignore`，已由 c-0014 固定；写入按项目显式开启。
 - `10_Raw/` 永不进入公开仓库/公开快照；完整库用私有 git bundle 备份，公开快照不是备份（c-0014）。
 - 全局库与 `projects.json` 在用户目录，插件**不会**自动创建或自动登记；首次使用必须运行上面的 `init`/`attach`。
@@ -648,7 +648,16 @@ node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --registry <tmp>\proje
 node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tmp>\projects.json
 ```
 
-## 18. 审计清偿与跨库加固（v1.12 新增，v1.13 扩展）
+### 17.8 多工作区查看
+
+- 注入/抽取仍只跟随当前会话：`resolveStores(cwd)` 决定 global + 最近项目库；浏览其他工作区不会启动 ingestor/judge，也不会改变本会话上下文。
+- 管理页的读接口 `/kb/panel.json`、`/kb/note.json` 接受可选 `workspace=global|legacy|<slug>`。缺省 = 当前会话项目，否则 legacy；只接受这三类 id，路径与未知 id 返回 400。
+- `snapshot(sessionId, workspace)` 中的 `view` 是正在查看的库（`id/root/kind/meta/writable`），`session` 仍是当前会话；notes/counts/recent/core/work 全部来自 `view`，不会混入其他库。
+- 管理页的写接口 `/kb/atom`、`/kb/atoms/batch` 也接受 body 中的 `workspace`，经 `workspaceWriteTarget` 校验：只有 `writable` 的项目库或 legacy/global 显式写视图可写，其他目标返回 403；写命令统一带 `--root view.root`。
+- 页面顶部“正在查看”选择器列出 global、legacy、已接入项目；只读项目标注“（只读）”，详情隐藏写操作并提示只读。浏览其他工作区永远不改变本会话使用的项目库。
+- 当前会话项目与正在查看项目分开显示；项目库默认只读，写授权仍只能由用户在 TTY 里 `attach --write`。
+
+## 18. 审计清偿与跨库加固（v1.12 新增，v1.13–v1.14 扩展）
 
 - 同一 `subject` 最多一条 `active`；`validate` 是硬门禁，写入 API 在落盘前拦截；替换必须显式 `supersedes`，注入/面板统一按 subject 取最新 active。
 - 跨库同一 subject 冲突由 `selectInjection` 先合并仲裁、再按 source 预算；注入与 `injected` 计数共用该函数，不能先单库截断再拼接（c-0016）。
@@ -656,5 +665,6 @@ node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tm
 - `attach --write`/`delete` 需要真实 TTY；**没有环境变量旁路**，旧测试钩子已在 1.13.0 删除。
 - redaction 覆盖中文键名、短值、URL 凭证、手机号、身份证；raw 落盘前必须经过同一 redactor。
 - trigger_words 用可判定短语；单字/泛代词（记/别/我的/我用）不再触发。
+- 多工作区查看只改变“正在查看”的目标，不改变注入/抽取；workspace 只接受 global/legacy/已接入 slug，写操作按目标库 `writable` 校验（c-0017）。
 - 未做项（进程级认证、跨库锁/队列）在 c-0015 记录“不做+理由”；连续复审若仍列为必须项，下一轮 CHANGELOG 必须显式回应，不能静默略过。
 

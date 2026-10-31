@@ -420,6 +420,9 @@ updated: 2026-10-29
   Check '新项目库 validate 通过' ($r.code -eq 0) $r.text
   $r = Kb @('--root', $store, 'version')
   Check '--root 读取项目版本' ($r.code -eq 0 -and $r.text.Trim() -eq $expectedVersion) $r.text
+  $newConfig = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  Check 'init 默认触发词 20 项' (@($newConfig.extract.trigger_words).Count -eq 20) ''
+  Check 'init 默认 meta 关键词 10 项' (@($newConfig.extract.meta_keywords).Count -eq 10) ''
   $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--json')
   $attach = $r.text | ConvertFrom-Json
   Check 'attach 登记项目库' ($r.code -eq 0 -and $attach.ok -eq $true -and (Test-Path $registry)) $r.text

@@ -10,6 +10,7 @@ import {
   readProjectMeta,
   readProjectRegistry,
   resolveStores,
+  resolveWorkspaceStore,
   writableProjectStore,
 } from '../stores.js';
 
@@ -195,6 +196,41 @@ test('registry reads tolerate missing/corrupt files and deduplicate by path', ()
     const rows = readProjectRegistry(registry);
     assert.equal(rows.size, 1);
     assert.equal([...rows.values()][0].slug, 'demo-app');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('resolveWorkspaceStore accepts trust-gated ids only', () => {
+  const root = tempDir();
+  const globalRoot = path.join(root, 'global');
+  const legacy = path.join(root, 'vault');
+  const projectStore = path.join(root, 'app', '.dsh-memory');
+  const registry = path.join(root, 'projects.json');
+  try {
+    writeStore(globalRoot, { project: false });
+    writeStore(legacy, { slug: 'vault-demo' });
+    writeStore(projectStore, { slug: 'app-demo' });
+    attachProject(projectStore, registry, { writable: false });
+    const options = { legacyRoot: legacy, globalRoot, registryFile: registry };
+
+    const globalView = resolveWorkspaceStore('global', options);
+    assert.equal(globalView.kind, 'global');
+    assert.equal(globalView.id, 'global');
+    assert.equal(globalView.writable, true);
+
+    const legacyView = resolveWorkspaceStore('legacy', options);
+    assert.equal(legacyView.kind, 'legacy');
+    assert.equal(legacyView.root, path.resolve(legacy));
+
+    const projectView = resolveWorkspaceStore('app-demo', options);
+    assert.equal(projectView.kind, 'project');
+    assert.equal(projectView.root, path.resolve(projectStore));
+    assert.equal(projectView.writable, false);
+
+    // A filesystem path is never accepted as a view id.
+    assert.throws(() => resolveWorkspaceStore(projectStore, options));
+    assert.throws(() => resolveWorkspaceStore('missing-app', options));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

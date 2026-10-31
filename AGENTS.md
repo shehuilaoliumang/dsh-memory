@@ -27,7 +27,7 @@
 - **工作页**（`type: work`，一个 scope 一页，`validate` 强制唯一 active）只写项目状态（阶段/在办/未决/下一步）；操作指令只进原文层，不进工作页。新建用 `kb.mjs work-new`，正文由人确认后覆写；归档用「归档 / 恢复为活跃」。
 - 参数与五步管线见 `_meta/schema.md#写入管线`。
 
-## 多项目记忆（v1.12）
+## 多项目记忆（v1.14）
 
 - 全局偏好库默认 `~/.dsh-memory/global`：只放跨项目的称谓/偏好/禁区；每轮最多注入 2 条。
 - 项目记忆库默认 `<project>/.dsh-memory`：`project.json.slug` 决定 `project:<slug>` scope；每轮最多注入 3 条 + 项目简报。
@@ -36,7 +36,8 @@
 - 本 vault 是显式配置的 legacy 项目库，保持旧行为：vault 内会话 scope 为 `global`，可注入 5 条；外部可写项目按会话 cwd 路由，写入只落该库自己的 `10_Raw`/`_meta/state`，不回写 legacy vault。
 - 同一 `subject` 最多一条 `active`：`validate` 报错，`add-atom`/`set-status`/`batch-status` 在落盘前拦截；替换必须显式 `supersedes`，注入/面板按 subject 取最新 active，热度不能让旧结论胜出。
 - 项目库裁判不得产出 `scope: global`；项目库的 `global` 降级为 `unclassified`。去重语义在写入层，注入层 `!global` 只作防御。
-- 完整规范见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-10-30-c-0013.md`、`2026-10-31-c-0015.md`。
+- 管理页可切换“正在查看”的工作区（global/legacy/已接入项目），但注入仍只跟当前会话；只读目标只能看，写操作按目标库 `writable` 校验。workspace 只接受受信 id，不接受路径。
+- 完整规范见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-10-30-c-0013.md`、`2026-10-31-c-0015.md`、`2026-10-31-c-0017.md`。
 
 ## 读
 

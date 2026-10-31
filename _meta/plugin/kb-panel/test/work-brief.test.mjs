@@ -102,6 +102,25 @@ test('currentTruthEntries: subject-less memories from both stores survive', () =
   assert.deepEqual(picked.map((entry) => entry.source), ['global', 'project']);
 });
 
+test('currentTruthEntries: a duplicate id from two stores keeps the newer copy only', () => {
+  const staleProject = atom({
+    id: '2026-10-20-a-0001',
+    updated: '2026-10-20',
+    scope: 'project:my-app',
+    summary: 'stale copy',
+  });
+  const freshGlobal = atom({
+    id: '2026-10-20-a-0001',
+    updated: '2026-10-29',
+    summary: 'fresh copy',
+  });
+  const picked = currentTruthEntries([
+    { note: staleProject, source: 'project' },
+    { note: freshGlobal, source: 'global' },
+  ], 'project:my-app');
+  assert.deepEqual(picked.map((entry) => entry.source), ['global']);
+});
+
 test('pickBySource: arbitration leaves the losing store budget empty, no duplicate', () => {
   const olderGlobal = atom({ id: '2026-10-20-a-0001', updated: '2026-10-20', subject: 'ui-language' });
   const newerProject = atom({

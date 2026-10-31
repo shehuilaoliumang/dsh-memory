@@ -90,8 +90,12 @@ function defaultConfig() {
       idle_seconds: 300,
       max_delay_seconds: 1200,
       every_turns: 20,
-      trigger_words: ['记住', '记一下', '别忘', '决定', '以后', '不要', '喜欢', '讨厌', '我希望', '我要求', '我偏好'],
-      meta_keywords: ['知识库', 'kb.mjs', '_meta/', 'catalog', 'schema.md'],
+      trigger_words: [
+        '记住', '记一下', '别忘', '以后', '不要', '喜欢', '讨厌',
+        '决定', '改成', '其实是', '不对', '每周', '每月', '截止', '交付',
+        '我希望', '我要求', '我偏好', '所谓', '定义为',
+      ],
+      meta_keywords: ['知识库', 'kb.mjs', '_meta/', 'catalog', 'schema.md', '插件', '冒烟', '工作页', '原子', '裁判'],
       meta_threshold: 2,
     },
     ingest: {

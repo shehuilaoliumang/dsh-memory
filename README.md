@@ -49,6 +49,9 @@ Obsidian Vault/memory
 
 项目库必须**显式接入**才会加载：克隆仓库自带的 `.dsh-memory/` 不会自动进入模型上下文（防止被 PR 注入）。legacy vault 仍作为显式配置的项目库兼容旧行为。项目库默认**只读注入**；`kb attach --write` 才把该库显式提升为可写（raw 捕获、裁判、面板写入都落在该库自己的 `_meta/state`），`--read-only` 可随时收回。**`--write` 与 `delete` 一样要求真实 TTY**，非交互调用直接拒绝；项目自身的 `project.json` 不能自开写入。项目仓库应把 `.dsh-memory/` 加入 `.gitignore`。`10_Raw/` 永不进入公开仓库或公开快照，完整库用私有 git bundle 备份（公开快照不是备份）。
 
+管理页顶部有“正在查看”选择器，可浏览 global、legacy 和已接入项目；浏览其他工作区只读，不会改变当前会话使用哪个项目库，也不会启动该库的捕获/裁判。读接口与单条写入都按选中的 workspace 解析，任意路径或未接入 slug 一律拒绝。
+
+
 从现有库安装全局偏好库（人工执行，拒绝覆盖；可用 `-Target`/`-Registry` 指定位置）：
 
 ```powershell
@@ -72,7 +75,7 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 ## 目录里有什么
 
-- `30_Canon/decisions/`：c-0001 ~ c-0016，记录分层、git、ASCII id、flash 裁判、规则层、记忆隔离、写入/注入分离、架构总览、裁判评估、检索与威胁模型、减债与共享契约、本机端口加固、多项目记忆库与全局偏好、记忆库边界与备份策略、审计清偿与当前真相裁决、跨库仲裁与无后门授权。
+- `30_Canon/decisions/`：c-0001 ~ c-0017，记录分层、git、ASCII id、flash 裁判、规则层、记忆隔离、写入/注入分离、架构总览、裁判评估、检索与威胁模型、减债与共享契约、本机端口加固、多项目记忆库与全局偏好、记忆库边界与备份策略、审计清偿与当前真相裁决、跨库仲裁与无后门授权、多工作区隔离查看。
 - `30_Canon/core.md`：每轮常驻的称谓、硬偏好、禁区。
 - `20_Digest/atoms/`：用户偏好、决策、原则等原子记忆。
 - `20_Digest/topics/`：主题页（汇总 + 争点 + 待办）。
@@ -102,7 +105,7 @@ node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 node _meta/plugin/kb-panel/test/stores.test.mjs
 ```
 
-当前：冒烟 100 条、插件单测 127 条全过。
+当前：冒烟 102 条、插件单测 129 条全过。
 
 ## 裁判评估
 

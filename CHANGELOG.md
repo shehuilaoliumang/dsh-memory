@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.14.0 — 2026-10-31
+
+多工作区隔离查看 + 审计 P1 修复：管理页可以查看不同工作区的记忆，但当前会话的注入/抽取不受浏览目标影响。
+
+- 新增 `resolveWorkspaceStore`：workspace 只接受 `global` / `legacy` / 已接入项目 slug；路径、未知 id、未登记 `.dsh-memory/` 一律拒绝。
+- `/kb/panel.json`、`/kb/note.json` 接受 `workspace`；snapshot 返回 `view`（正在查看的库）与 `session`（当前会话），notes/counts/core/work 全部来自 `view`，不同库数据不混合。
+- `/kb/atom`、`/kb/atoms/batch` 按目标 workspace 写入，写前校验 `writable`；只读项目返回 403。
+- 记忆页顶部新增“正在查看”选择器；只读目标隐藏写操作并显示只读提示；切换工作区会重置选择/详情/搜索。
+- 修复审计 P1-1：跨库同 id 先去重（保留较新副本）再按 subject 仲裁；候选先按 scope 过滤再排序；legacy 保持 5 条总预算（全局最多 2，项目补足），不会因全局库为空降到 3 条。
+- 修复审计 P1-2：`init` 默认触发词 20 项、meta 关键词 10 项，与仓库 config/schema/samples 一致；smoke 新增默认值断言。
+- 可访问性：tabs 使用 tablist/tab/aria-selected，搜索有 aria-label，toast 使用 role=status。
+- 客户端构建 `2026-10-31-c28`；插件 129/129、冒烟 102/102、validate 35 篇/32+2、0 警告。
+- 未做：进程级认证、跨库锁/队列（沿用 c-0015 的“不做 + 理由”）；浏览其他工作区不会为它启动 ingestor/judge。
+
 ## 1.13.0 — 2026-10-31
 
 记忆交互改版 + 90+ 质量加固：侧栏“知识库”改为“记忆”，按“人确认过的内容才进入对话”组织；同时清偿第八轮复审的 N6/TTY/触发词问题。

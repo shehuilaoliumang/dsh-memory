@@ -29,7 +29,16 @@ import { randomBytes } from 'node:crypto';
 import { createIngestor, resolveNode, runProcess } from './ingest.js';
 import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
-import { DEFAULT_GLOBAL_ROOT, DEFAULT_REGISTRY_FILE, readProjectRegistry, resolveStores, writableProjectStore } from './stores.js';
+import {
+  DEFAULT_GLOBAL_ROOT,
+  DEFAULT_REGISTRY_FILE,
+  isStoreRoot,
+  readProjectMeta,
+  readProjectRegistry,
+  resolveStores,
+  resolveWorkspaceStore,
+  writableProjectStore,
+} from './stores.js';
 import { parseFrontmatterData as parseFrontmatter } from './shared/frontmatter.mjs';
 import { briefText, currentTruthEntries, currentTruthNotes, pickBySource, rankMemories } from './work-brief.js';
 
@@ -590,9 +599,9 @@ export function apply(ctx, config = {}) {
    * Top recalled notes. Heat is derived from `access.jsonl` only; this is a
    * read-only summary for the page, not another source of truth.
    */
-  const heatTop = (limit = 5) => {
+  const heatTop = (limit = 5, storeRoot = root) => {
     try {
-      const file = path.join(root, '_meta', 'access.jsonl');
+      const file = path.join(storeRoot, '_meta', 'access.jsonl');
       if (!fs.existsSync(file)) return { rows: 0, hot: [] };
       const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean);
       const counts = new Map();
@@ -643,9 +652,9 @@ export function apply(ctx, config = {}) {
     return notes;
   };
 
-  const countLines = (relative) => {
+  const countLines = (relative, storeRoot = root) => {
     try {
-      return fs.readFileSync(path.join(root, relative), 'utf8').split(/\r?\n/).filter(Boolean).length;
+      return fs.readFileSync(path.join(storeRoot, relative), 'utf8').split(/\r?\n/).filter(Boolean).length;
     } catch {
       return 0;
     }
@@ -667,19 +676,74 @@ export function apply(ctx, config = {}) {
     }
   };
 
-  const snapshot = (sessionId) => {
-    const notes = scanNotes();
-    let sessionStores = null;
-
-    const layers = {};
-    const statuses = {};
-    for (const note of notes) {
-      layers[note.level] = (layers[note.level] || 0) + 1;
-      statuses[note.status] = (statuses[note.status] || 0) + 1;
+  /**
+   * View targets the page may request. Ids are trust-gated names; the Client
+   * never sends a filesystem path. The legacy root and the global store are
+   * always distinct entries even when the registry happens to point at the
+   * legacy root (which older attach commands did).
+   */
+  const workspaceOptions = () => {
+    const options = [];
+    if (isStoreRoot(globalRoot)) {
+      options.push({ id: 'global', label: '全局记忆', kind: 'global', root: globalRoot, writable: true });
     }
+    options.push({ id: 'legacy', label: '当前工作区（旧版）', kind: 'legacy', root, writable: true });
+    const seen = new Set([path.resolve(root)]);
+    if (isStoreRoot(globalRoot)) seen.add(path.resolve(globalRoot));
+    for (const entry of readProjectRegistry(registryFile).values()) {
+      if (!entry.slug || seen.has(path.resolve(entry.path))) continue;
+      try {
+        if (!isStoreRoot(entry.path) || !readProjectMeta(entry.path)) continue;
+      } catch {
+        continue;
+      }
+      seen.add(path.resolve(entry.path));
+      options.push({
+        id: entry.slug,
+        label: readProjectMeta(entry.path).title || entry.slug,
+        kind: 'project',
+        root: entry.path,
+        writable: entry.writable === true,
+      });
+    }
+    return options;
+  };
 
-    const sorted = [...notes].sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || b.id.localeCompare(a.id));
+  /** Resolve the page's selected view without accepting arbitrary paths. */
+  const workspaceView = (workspace, sessionStores) => {
+    const requested = String(workspace || '').trim();
+    if (!requested || requested === 'session') {
+      if (sessionStores && sessionStores.projectRoot && !sessionStores.project?.legacy) {
+        const project = sessionStores.project;
+        return {
+          id: project.meta.slug,
+          root: project.root,
+          kind: 'project',
+          meta: project.meta,
+          writable: project.entry ? project.entry.writable === true : false,
+        };
+      }
+      return resolveWorkspaceStore('legacy', { legacyRoot: root, globalRoot, registryFile });
+    }
+    return resolveWorkspaceStore(requested, { legacyRoot: root, globalRoot, registryFile });
+  };
 
+  /** Resolve a writable target; the page must never write an arbitrary store. */
+  const workspaceWriteTarget = (workspace) => {
+    const view = workspaceView(workspace, null);
+    if (!view.writable) {
+      const error = new Error('该工作区是只读的');
+      error.statusCode = 403;
+      throw error;
+    }
+    return view;
+  };
+
+  /** Engine command bound to the selected store, never to the Host's current root. */
+  const kbCommand = (view, args) => [path.join(root, '_meta', 'scripts', 'kb.mjs'), '--root', view.root, ...args];
+
+  const snapshot = (sessionId, workspace) => {
+    let sessionStores = null;
     const session = { id: sessionId || null, cwd: null, mode: 'unknown', manual: false };
     if (sessionId) {
       const agent = lookupAgent(sessionId);
@@ -699,9 +763,23 @@ export function apply(ctx, config = {}) {
       }
     }
 
-    const heat = heatTop();
+    const view = workspaceView(workspace, sessionStores);
+    const notes = scanNotes(view.root);
+
+    const layers = {};
+    const statuses = {};
+    for (const note of notes) {
+      layers[note.level] = (layers[note.level] || 0) + 1;
+      statuses[note.status] = (statuses[note.status] || 0) + 1;
+    }
+
+    const sorted = [...notes].sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || b.id.localeCompare(a.id));
+
+    const heat = heatTop(5, view.root);
     return {
-      workspace: root,
+      workspace: view.root,
+      view,
+      workspaces: workspaceOptions(),
       globalRoot,
       registryFile,
       projects: listProjects(),
@@ -712,8 +790,8 @@ export function apply(ctx, config = {}) {
       total: notes.length,
       layers,
       statuses,
-      catalog: countLines(path.join('_meta', 'catalog.jsonl')),
-      archive: countLines(path.join('_meta', 'catalog.archive.jsonl')),
+      catalog: countLines(path.join('_meta', 'catalog.jsonl'), view.root),
+      archive: countLines(path.join('_meta', 'catalog.archive.jsonl'), view.root),
       review: notes.filter((note) => note.status === 'review').length,
       inbox: notes.filter((note) => note.status === 'inbox').length,
       pendingIds: notes.filter((note) => note.status === 'inbox').map((note) => note.id),
@@ -743,10 +821,10 @@ export function apply(ctx, config = {}) {
       scopes: [...new Set(notes.map((note) => note.scope).filter((scope) => /^project:/.test(scope || '')))].sort(),
       accessRows: heat.rows,
       hot: heat.hot,
-      core: coreText().replace(/^【核心记忆[^\n]*\n/, '').slice(0, 160),
+      core: coreText(view.root).replace(/^【核心记忆[^\n]*\n/, '').slice(0, 160),
       work: (() => {
         try {
-          const pages = workPageFiles()
+          const pages = workPageFiles(view.root)
             .map((file) => ({ file, data: parseFrontmatter(readCached(file)) }))
             .filter(({ data }) => data.type === 'work' && data.status === 'active')
             .map(({ file, data }) => ({
@@ -754,10 +832,11 @@ export function apply(ctx, config = {}) {
               title: String(data.title || ''),
               scope: String(data.scope || ''),
               updated: String(data.updated || ''),
-              file: path.relative(root, file).split(path.sep).join('/'),
+              file: path.relative(view.root, file).split(path.sep).join('/'),
             }))
             .sort((a, b) => b.updated.localeCompare(a.updated) || a.id.localeCompare(b.id));
-          return { pages, brief: workBriefFor(session.scope || 'global') };
+          const briefScope = view.kind === 'project' ? `project:${view.meta.slug}` : session.scope || 'global';
+          return { pages, brief: workBriefFor(briefScope, view.root) };
         } catch {
           return { pages: [], brief: '' };
         }
@@ -861,12 +940,13 @@ export function apply(ctx, config = {}) {
         );
       }
     }
-    return rankMemories(notes, accessRowsFor(storeRoot), scope, { limit: 500 })
-      // `!global` means "keep project-local claims only": when the same
-      // preference also lives in the global store, injecting the project copy
-      // would show it twice.
-      .filter((note) => !filterScope
-        || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope));
+    return rankMemories(
+      notes.filter((note) => !filterScope
+        || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope)),
+      accessRowsFor(storeRoot),
+      scope,
+      { limit: 500 },
+    );
   };
 
   /**
@@ -889,13 +969,19 @@ export function apply(ctx, config = {}) {
       add('global', selectStoreCandidates(stores.globalRoot, 'global', 'global'));
     }
     if (projectLimit && stores.projectRoot) {
-      const filterScope = stores.project && stores.project.legacy
-        ? (stores.globalRoot ? '!global' : '')
-        : scope;
+      const filterScope = stores.project && stores.project.legacy ? '' : scope;
       add('project', selectStoreCandidates(stores.projectRoot, scope, filterScope));
     }
     const current = currentTruthEntries(entries, scope);
-    return pickBySource(current, { globalLimit, projectLimit });
+    const isLegacy = Boolean(stores.project && stores.project.legacy);
+    if (!isLegacy) return pickBySource(current, { globalLimit, projectLimit });
+    // A legacy vault keeps its historical five-slot budget. Prefer the global
+    // store's two slots, then let the project store fill whatever remains (up to
+    // five total) so a missing global copy does not silently shrink the budget.
+    const legacy = pickBySource(current, { globalLimit, projectLimit: 5 });
+    const legacyGlobal = legacy.globalPicked.slice(0, globalLimit);
+    const legacyProject = legacy.projectPicked.slice(0, Math.max(0, 5 - legacyGlobal.length));
+    return { globalPicked: legacyGlobal, projectPicked: legacyProject };
   };
 
   // Prompt context: global preferences plus the session's attached project
@@ -971,22 +1057,25 @@ export function apply(ctx, config = {}) {
         }
         if (requestRejected(req, res)) return;
         let sessionId;
+        let workspace;
         let build;
         try {
           const params = new URL(req.url || '/', 'http://localhost').searchParams;
           sessionId = params.get('session') || undefined;
+          workspace = params.get('workspace') || undefined;
           build = params.get('build') || undefined;
         } catch {
           sessionId = undefined;
+          workspace = undefined;
           build = undefined;
         }
         // The client piggybacks its build on this poll, so the live version stays
         // observable even after the Host restarts and loses the one-shot report.
         if (build) lastUiReport = { build: String(build), reportedAt: new Date().toISOString(), receivedAt: new Date().toISOString(), via: 'panel-poll' };
         try {
-          sendJson(res, 200, snapshot(sessionId));
+          sendJson(res, 200, snapshot(sessionId, workspace));
         } catch (error) {
-          sendJson(res, 500, { error: String(error && error.message ? error.message : error) });
+          sendJson(res, 400, { error: String(error && error.message ? error.message : error) });
         }
       },
     }),
@@ -1003,32 +1092,37 @@ export function apply(ctx, config = {}) {
         }
         if (requestRejected(req, res)) return;
         let id;
+        let workspace;
         try {
-          id = new URL(req.url || '/', 'http://localhost').searchParams.get('id');
+          const params = new URL(req.url || '/', 'http://localhost').searchParams;
+          id = params.get('id');
+          workspace = params.get('workspace') || undefined;
         } catch {
           id = null;
+          workspace = undefined;
         }
         if (!id) {
           sendJson(res, 400, { error: 'missing id' });
           return;
         }
         try {
+          const view = workspaceView(workspace, null);
           // Resolve through the scan so only indexed notes are reachable: the
           // requested id is never joined into a filesystem path.
-          const note = scanNotes().find((candidate) => candidate.id === id);
+          const note = scanNotes(view.root).find((candidate) => candidate.id === id);
           if (!note) {
             sendJson(res, 404, { error: 'note not found' });
             return;
           }
-          const text = readCached(path.join(root, note.file)).replace(/^\uFEFF/, '');
-          // Opening a note in the knowledge-base page is a real recall.
-          recordRecall([note.id], 'read', 'panel');
+          const text = readCached(path.join(view.root, note.file)).replace(/^\uFEFF/, '');
+          // Opening a note in the memory page is a real recall.
+          recordRecall([note.id], 'read', 'panel', view.root);
           sendJson(res, 200, {
             ...note,
             body: stripFrontmatter(text).slice(0, NOTE_BODY_LIMIT),
           });
         } catch (error) {
-          sendJson(res, 500, { error: String(error && error.message ? error.message : error) });
+          sendJson(res, 400, { error: String(error && error.message ? error.message : error) });
         }
       },
     }),
@@ -1245,6 +1339,7 @@ export function apply(ctx, config = {}) {
         if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
+          const view = workspaceWriteTarget(body && body.workspace);
           const ids = Array.isArray(body && body.ids) ? body.ids.map(String).filter((id) => /^\d{4}-\d{2}-\d{2}-[atcw]-\d{4}$/.test(id)) : [];
           if (!ids.length) {
             sendJson(res, 400, { error: 'missing ids' });
@@ -1256,26 +1351,19 @@ export function apply(ctx, config = {}) {
             sendJson(res, 400, { error: 'invalid status' });
             return;
           }
-          const args = [
-            path.join(root, '_meta', 'scripts', 'kb.mjs'),
-            'batch-status',
-            '--ids',
-            ids.join(','),
-            '--status',
-            status,
-            '--json',
-          ];
+          const args = kbCommand(view, []);
+          args.push('batch-status', '--ids', ids.join(','), '--status', status, '--json');
           if (body.clearScope === true) args.push('--clear-scope');
           else if (body.scope) args.push('--scope', String(body.scope));
           const result = await runProcess(nodeRuntime.command, args, {
-            cwd: root,
+            cwd: view.root,
             env: { ...process.env, ...nodeRuntime.env },
             timeoutMs: 60000,
           });
           if (result.code !== 0) throw new Error(commandError(result));
           sendJson(res, 200, { ok: true, ...(JSON.parse(result.stdout || '{}') || {}) });
         } catch (error) {
-          sendJson(res, 500, { error: String(error && error.message ? error.message : error) });
+          sendJson(res, error && error.statusCode ? error.statusCode : 500, { error: String(error && error.message ? error.message : error) });
         }
       },
     }),
@@ -1329,6 +1417,7 @@ export function apply(ctx, config = {}) {
         if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
+          const view = workspaceWriteTarget(body && body.workspace);
           const id = String((body && body.id) || '').trim();
           const status = String((body && body.status) || 'active').trim();
           const scope = body && body.scope ? String(body.scope).trim() : '';
@@ -1341,18 +1430,18 @@ export function apply(ctx, config = {}) {
             sendJson(res, 400, { error: 'invalid status' });
             return;
           }
-          const args = [path.join(root, '_meta', 'scripts', 'kb.mjs'), 'set-status', '--id', id, '--status', status, '--json'];
+          const args = kbCommand(view, ['set-status', '--id', id, '--status', status, '--json']);
           if (body && body.clearScope === true) args.push('--clear-scope');
           else if (scope) args.push('--scope', scope);
           const result = await runProcess(nodeRuntime.command, args, {
-            cwd: root,
+            cwd: view.root,
             env: { ...process.env, ...nodeRuntime.env },
             timeoutMs: 30000,
           });
           if (result.code !== 0) throw new Error(commandError(result));
           sendJson(res, 200, { ok: true, ...(JSON.parse(result.stdout || '{}') || {}) });
         } catch (error) {
-          sendJson(res, 500, { error: String(error && error.message ? error.message : error) });
+          sendJson(res, error && error.statusCode ? error.statusCode : 500, { error: String(error && error.message ? error.message : error) });
         }
       },
     }),

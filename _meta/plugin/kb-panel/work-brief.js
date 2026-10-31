@@ -137,9 +137,18 @@ function newerTruth(a, b) {
  */
 export function currentTruthEntries(entries, sessionScope = 'global') {
   const injectable = (entries || []).filter((entry) => entry && isInjectable(entry.note, sessionScope));
+  // The same memory can exist in both the global store and a legacy vault.
+  // Keep the newer copy so a stale duplicate cannot consume a second slot.
+  const byId = new Map();
+  for (const entry of injectable) {
+    const id = String(entry.note.id || '');
+    const previous = byId.get(id);
+    if (!previous || newerTruth(entry.note, previous.note) > 0) byId.set(id, entry);
+  }
+  const unique = [...byId.values()];
   const bySubject = new Map();
   const noSubject = [];
-  for (const entry of injectable) {
+  for (const entry of unique) {
     const subject = String(entry.note.subject || '').trim();
     if (!subject) {
       noSubject.push(entry);

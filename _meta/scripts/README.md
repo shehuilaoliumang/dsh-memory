@@ -1,4 +1,4 @@
-# _meta/scripts
+﻿# _meta/scripts
 
 知识库规则层。零依赖，Node ≥ 20（DSH 自带运行时即可）。
 
@@ -56,7 +56,7 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 ## 冒烟测试
 
-`smoke.ps1` 把 vault 复制到临时目录，跑一遍 validate / rebuild / id-next / add-atom（dry-run + 真实 + 去重）/ set-status / clear-scope / batch-status / promote / access / consolidate / 当前真相（supersedes 与反馈）/ 裁判黄金集回归 / work-new / work-brief / 工作页唯一性、状态守卫、归档恢复与批量预校验 / 只读检索 / 触发词误伤 / append-session 脱敏 / Phase 4 契约（JSON 输出、同分钟会话、version、init）/ Phase 5 多项目库（`--root init`、project.json、attach、registry、缺配置根报错）/ Phase 6 attach `--write`/`--read-only` 开关 / N5 同 subject 冲突 / TTY 无环境旁路，共 100 条断言，结束清理。**不触碰真实库。**
+`smoke.ps1` 把 vault 复制到临时目录，跑一遍 validate / rebuild / id-next / add-atom（dry-run + 真实 + 去重）/ set-status / clear-scope / batch-status / promote / access / consolidate / 当前真相（supersedes 与反馈）/ 裁判黄金集回归 / work-new / work-brief / 工作页唯一性、状态守卫、归档恢复与批量预校验 / 只读检索 / 触发词误伤 / append-session 脱敏 / Phase 4 契约（JSON 输出、同分钟会话、version、init）/ Phase 5 多项目库（`--root init`、project.json、attach、registry、缺配置根报错）/ Phase 6 attach `--write`/`--read-only` 开关 / N5 同 subject 冲突 / TTY 无环境旁路，共 102 条断言，结束清理。**不触碰真实库。**
 
 ```powershell
 # 文件是 UTF-8 BOM，PowerShell 5.1 与 pwsh 都能直接 -File；执行策略可能需 Bypass
@@ -80,7 +80,7 @@ node _meta/plugin/kb-panel/test/http-guard.test.mjs
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 node _meta/plugin/kb-panel/test/stores.test.mjs
-# 共 127 条：ingest 34 / judge 30 / transcript 6 / work-brief 25 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 9
+# 共 129 条：ingest 34 / judge 30 / transcript 6 / work-brief 26 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 10
 ```
 
 不要用 `node --test`：沙箱不允许它用管道 stdio 再 spawn 子进程。

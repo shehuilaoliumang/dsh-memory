@@ -163,3 +163,42 @@ export function writableProjectStore(cwd, options = {}) {
   if (!project || project.legacy || !project.entry || project.entry.writable !== true) return null;
   return project;
 }
+
+/**
+ * Resolve one view target for the management UI. `id` is a trust-gated name,
+ * never a filesystem path: `global`, `legacy`, or a slug from the user-level
+ * registry. This is deliberately read-only about discovery; write permission is
+ * reported on the result and enforced by the caller.
+ *
+ * @returns {{id:string, root:string, kind:'global'|'legacy'|'project', meta:{slug:string,title:string}, writable:boolean}}
+ */
+export function resolveWorkspaceStore(id, options = {}) {
+  const legacyRoot = options.legacyRoot ? path.resolve(options.legacyRoot) : '';
+  const globalRoot = options.globalRoot ? path.resolve(options.globalRoot) : DEFAULT_GLOBAL_ROOT;
+  const key = String(id || '').trim().toLowerCase();
+  const legacyMeta = () =>
+    readProjectMeta(legacyRoot) || {
+      slug: path.basename(legacyRoot).toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'vault',
+      title: path.basename(legacyRoot),
+    };
+
+  if (key === 'global') {
+    if (!isStoreRoot(globalRoot)) throw new Error('全局记忆库不存在');
+    return { id: 'global', root: globalRoot, kind: 'global', meta: { slug: 'global', title: '全局记忆' }, writable: true };
+  }
+
+  if (!legacyRoot) throw new Error('当前没有可用的工作区记忆库');
+  if (key === '' || key === 'legacy') {
+    return { id: 'legacy', root: legacyRoot, kind: 'legacy', meta: { ...legacyMeta(), slug: 'legacy' }, writable: true };
+  }
+
+  const entry = [...readProjectRegistry(options.registryFile || DEFAULT_REGISTRY_FILE).values()].find((candidate) => candidate.slug === key);
+  if (!entry) throw new Error(`未知的工作区：${key}`);
+  if (!isStoreRoot(entry.path)) throw new Error(`工作区记忆库不可读：${key}`);
+  if (path.resolve(entry.path) === legacyRoot) {
+    return { id: 'legacy', root: legacyRoot, kind: 'legacy', meta: { ...legacyMeta(), slug: 'legacy' }, writable: true };
+  }
+  const meta = readProjectMeta(entry.path);
+  if (!meta) throw new Error(`工作区缺少有效 project.json：${key}`);
+  return { id: meta.slug, root: entry.path, kind: 'project', meta, writable: entry.writable === true };
+}

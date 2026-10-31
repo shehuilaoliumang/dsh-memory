@@ -1802,19 +1802,42 @@ function cmdAttach(opts = {}) {
   }
   const projects = Array.isArray(registry.projects) ? registry.projects : [];
   const canonical = path.resolve(ROOT);
+  const previous = projects.find((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const target = entry.path || entry.root;
+    return target ? path.resolve(path.dirname(registryFile), String(target)) === canonical : false;
+  });
+  if (opts.write === true && opts.readOnly === true) {
+    throw new Error('attach: --write 与 --read-only 不能同时使用');
+  }
+  const requestedWritable = opts.write === true ? true : opts.readOnly === true ? false : undefined;
+  const writable = requestedWritable === undefined ? Boolean(previous && previous.writable === true) : requestedWritable;
   const kept = projects.filter((entry) => {
     if (!entry || typeof entry !== 'object') return false;
     const target = entry.path || entry.root;
     return target ? path.resolve(path.dirname(registryFile), String(target)) !== canonical : true;
   });
-  kept.push({ slug, path: canonical, attachedAt: new Date().toISOString() });
+  kept.push({ slug, path: canonical, attachedAt: new Date().toISOString(), writable });
   fs.mkdirSync(path.dirname(registryFile), { recursive: true });
   const tmp = `${registryFile}.${process.pid}.${Date.now()}.tmp`;
   writeText(tmp, `${JSON.stringify({ version: 1, projects: kept }, null, 2)}\n`);
   fs.renameSync(tmp, registryFile);
+  let wroteConfig = false;
+  if (requestedWritable !== undefined) {
+    let live = {};
+    try {
+      live = JSON.parse(readText(CONFIG_FILE).replace(/^\uFEFF/, '')) || {};
+    } catch {
+      live = {};
+    }
+    live.ingest = { ...(live.ingest || {}), enabled: writable };
+    live.judge = { ...(live.judge || {}), enabled: writable };
+    writeText(CONFIG_FILE, `${JSON.stringify(live, null, 2)}\n`);
+    wroteConfig = true;
+  }
   out(opts.json
-    ? JSON.stringify({ ok: true, slug, root: canonical, registryFile })
-    : `已接入项目库：${slug} → ${canonical}\nregistry: ${registryFile}`);
+    ? JSON.stringify({ ok: true, slug, root: canonical, registryFile, writable, wroteConfig })
+    : `已接入项目库：${slug} → ${canonical}\nregistry: ${registryFile}\n写入模式：${writable ? '可写（ingest/judge 已开启）' : '只读注入'}${wroteConfig ? '\n已同步 _meta/config.json' : ''}`);
 }
 
 
@@ -1975,7 +1998,8 @@ const HELP = `kb.mjs — 知识库规则层
   version                             打印项目版本（VERSION）
   init [--root DIR] [--slug S] [--title T]
                                       幂等创建知识库目录骨架；--slug 写 project.json（项目库标识）
-  attach [--registry F] [--json]      把当前项目库写入用户级 projects.json（显式接入）`;
+  attach [--registry F] [--write|--read-only] [--json]
+                                      显式接入项目库；--write 同时开启该库的 ingest/judge`;
 
 function main() {
   const { command, opts } = parseArgs(GLOBAL_ARGS.argv);

@@ -355,6 +355,45 @@ test('step 1 appends the turn through kb.mjs and persists the cursor', async () 
   assert.ok(catalog.includes(entry.sessionFile.split(path.sep).join('/').replace(/^.*?10_Raw/, '10_Raw')));
 });
 
+test('external project commands use one engine with --root', async () => {
+  const store = freshRoot();
+  const base = makeExec(store);
+  const seen = [];
+  const exec = async (spec) => {
+    seen.push(spec.args);
+    const args = [...spec.args];
+    const at = args.indexOf('--root');
+    if (at >= 0) args.splice(at, 2);
+    return base({ ...spec, args });
+  };
+  const timers = makeTimers();
+  const ingestor = createIngestor({
+    root: store,
+    config: {},
+    isKbSession: () => true,
+    now: () => new Date('2020-01-01T00:00:00Z'),
+    exec,
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    kbScript: 'C:/engine/kb.mjs',
+    globalArgs: ['--root', store],
+  });
+  ingestor.start();
+  const session = makeSession(turnEvents(1, '决定用外置引擎', '收到', 1));
+  await ingestor.handleTurnEnd(agentFor(session), turnEndEvent(1));
+
+  const appends = seen.filter((args) => args.includes('append-session'));
+  assert.equal(appends.length, 2);
+  for (const args of appends) {
+    assert.equal(args[0], 'C:/engine/kb.mjs');
+    assert.deepEqual(args.slice(1, 3), ['--root', store]);
+  }
+  const rebuild = seen.find((args) => args.includes('rebuild'));
+  assert.ok(rebuild);
+  assert.equal(rebuild[0], 'C:/engine/kb.mjs');
+  assert.deepEqual(rebuild.slice(1, 3), ['--root', store]);
+});
+
 test('step 1 is idempotent for duplicate turn/end: no append and no rebuild', async () => {
   const root = freshRoot();
   const session = makeSession(turnEvents(1, '决定 A', '收到', 1));

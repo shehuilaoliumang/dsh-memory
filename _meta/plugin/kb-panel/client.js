@@ -75,7 +75,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-10-29-c19';
+    const CLIENT_BUILD = '2026-10-29-c20';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -1211,6 +1211,33 @@ window.__ModuleLoader__.load({
         h('span', { style: S.sessionBarNote }, '关闭后该会话不再注入 core.md，也不影响其它会话'),
       );
 
+      const projectBar = h(
+        'div',
+        { style: { ...S.sessionBar, flexWrap: 'wrap' } },
+        h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '已接入项目：'),
+        (data && Array.isArray(data.projects) ? data.projects : []).length
+          ? (data.projects || []).map((project) =>
+              h(
+                'span',
+                {
+                  key: project.slug,
+                  title: project.path,
+                  style: {
+                    color:
+                      session && project.path === session.projectRoot
+                        ? 'var(--dsw-alias-label-primary)'
+                        : 'var(--dsw-alias-label-secondary)',
+                  },
+                },
+                `${session && project.path === session.projectRoot ? '当前 ' : ''}${project.slug} · ${project.writable ? '可写' : '只读'}`,
+              ),
+            )
+          : h('span', null, '无；在项目库运行 kb attach 显式接入'),
+        data && data.globalRoot
+          ? h('span', { style: S.sessionBarNote }, `全局库 ${data.globalRoot}`)
+          : null,
+      );
+
       const body = failed
         ? h('div', { style: { ...S.empty, padding: '24px' } }, '读取失败：Host 接口 /kb/panel.json 不可用')
         : h(
@@ -1465,6 +1492,7 @@ window.__ModuleLoader__.load({
         { style: S.page },
         header,
         sessionBar,
+        projectBar,
         tidyBar,
         actionError
           ? h(

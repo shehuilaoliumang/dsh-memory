@@ -35,13 +35,14 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 node _meta/scripts/kb.mjs init --root C:\path\to\project\.dsh-memory --slug my-app --title "My App"
 node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
+node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 ```
 
 ## 多项目库
 
 - 全局偏好库默认 `~/.dsh-memory/global`；项目库默认 `<project>/.dsh-memory/`（`project.json.slug` 决定注入 scope）。
 - 项目库必须 `attach` 到用户级 `~/.dsh-memory/projects.json` 才被插件加载；克隆仓库自带的 `.dsh-memory/` 不自动信任。
-- 首阶段外部项目只读注入；raw 捕获、裁判、面板写入仍只服务 legacy vault。规则见 `_meta/schema.md` §17、决策 `2026-10-30-c-0013`。
+- 默认只读注入；`attach --write` 在 registry 写 `writable:true` 并同步该库 `_meta/config.json` 的 ingest/judge，插件才会按会话 cwd 为该库建外部 ingestor/judge；`--read-only` 收回。规则见 `_meta/schema.md` §17、决策 `2026-10-30-c-0013`。
 
 ## 设计约束
 
@@ -55,7 +56,7 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
 
 ## 冒烟测试
 
-`smoke.ps1` 把 vault 复制到临时目录，跑一遍 validate / rebuild / id-next / add-atom（dry-run + 真实 + 去重）/ set-status / clear-scope / batch-status / promote / access / consolidate / 当前真相（supersedes 与反馈）/ 裁判黄金集回归 / work-new / work-brief / 工作页唯一性、状态守卫、归档恢复与批量预校验 / 只读检索 / append-session 脱敏 / Phase 4 契约（JSON 输出、同分钟会话、version、init）/ Phase 5 多项目库（`--root init`、project.json、attach、registry、缺配置根报错），共 88 条断言，结束清理。**不触碰真实库。**
+`smoke.ps1` 把 vault 复制到临时目录，跑一遍 validate / rebuild / id-next / add-atom（dry-run + 真实 + 去重）/ set-status / clear-scope / batch-status / promote / access / consolidate / 当前真相（supersedes 与反馈）/ 裁判黄金集回归 / work-new / work-brief / 工作页唯一性、状态守卫、归档恢复与批量预校验 / 只读检索 / append-session 脱敏 / Phase 4 契约（JSON 输出、同分钟会话、version、init）/ Phase 5 多项目库（`--root init`、project.json、attach、registry、缺配置根报错）/ Phase 6 attach `--write`/`--read-only` 开关，共 90 条断言，结束清理。**不触碰真实库。**
 
 ```powershell
 # 文件是 UTF-8 BOM，PowerShell 5.1 与 pwsh 都能直接 -File；执行策略可能需 Bypass
@@ -79,7 +80,7 @@ node _meta/plugin/kb-panel/test/http-guard.test.mjs
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 node _meta/plugin/kb-panel/test/stores.test.mjs
-# 共 112 条：ingest 33 / judge 29 / transcript 6 / work-brief 18 / http-guard 11 / redact 5 / shared-frontmatter 4 / stores 6
+# 共 114 条：ingest 34 / judge 29 / transcript 6 / work-brief 18 / http-guard 11 / redact 5 / shared-frontmatter 4 / stores 7
 ```
 
 不要用 `node --test`：沙箱不允许它用管道 stdio 再 spawn 子进程。

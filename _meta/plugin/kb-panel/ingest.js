@@ -379,6 +379,13 @@ export function runProcess(command, args, options = {}) {
 export function createIngestor(deps) {
   const root = path.resolve(deps.root);
   const exec = deps.exec || ((spec) => runProcess(spec.command, spec.args, spec));
+  // Project stores do not ship their own copy of the engine. `kbScript` plus
+  // `globalArgs` let one engine serve both the legacy vault and external
+  // project roots (`kb.mjs --root <store> ...`). Legacy callers leave both
+  // unset, so their command lines stay byte-for-byte unchanged.
+  const kbScript = deps.kbScript || path.join(root, '_meta', 'scripts', 'kb.mjs');
+  const globalArgs = Array.isArray(deps.globalArgs) ? deps.globalArgs : [];
+  const kbArgs = (args) => [kbScript, ...globalArgs, ...args];
   const now = deps.now || (() => new Date());
   const log = typeof deps.log === 'function' ? deps.log : () => {};
   const setTimer = deps.setTimer || ((fn, ms) => setTimeout(fn, Math.max(0, ms)));
@@ -651,8 +658,7 @@ export function createIngestor(deps) {
     try {
       const result = await exec({
         command: node.command,
-        args: [
-          path.join(root, '_meta', 'scripts', 'kb.mjs'),
+        args: kbArgs([
           'append-session',
           '--slug',
           context.slug,
@@ -663,7 +669,7 @@ export function createIngestor(deps) {
           '--text-file',
           textFile,
           '--json',
-        ],
+        ]),
         cwd: root,
         env: { ...process.env, ...node.env, DSH_SESSION_ID: sessionId },
         timeoutMs: cfg.ingest.appendTimeoutMs,
@@ -951,7 +957,7 @@ export function createIngestor(deps) {
     if (row && row.updated === today) return false;
     const result = await exec({
       command: node.command,
-      args: [path.join(root, '_meta', 'scripts', 'kb.mjs'), 'rebuild'],
+      args: kbArgs(['rebuild']),
       cwd: root,
       env: { ...process.env, ...node.env },
       timeoutMs: cfg.ingest.rebuildTimeoutMs,
@@ -1185,7 +1191,7 @@ export function createIngestor(deps) {
     try {
       const result = await exec({
         command: node.command,
-        args: [path.join(root, '_meta', 'scripts', 'kb.mjs'), 'candidates', '--file', inputFile, '--json'],
+        args: kbArgs(['candidates', '--file', inputFile, '--json']),
         cwd: root,
         env: { ...process.env, ...node.env },
         timeoutMs: cfg.ingest.candidatesTimeoutMs,
@@ -1261,14 +1267,13 @@ export function createIngestor(deps) {
     fs.appendFileSync(queueFile(), `${JSON.stringify(job)}\n`, 'utf8');
     const result = await exec({
       command: node.command,
-      args: [
-        path.join(root, '_meta', 'scripts', 'kb.mjs'),
+      args: kbArgs([
         'log',
         '--action',
         'extract',
         '--note',
         `${job.sessionId} 候选 ${job.candidates.length} 条 → judge 队列（${job.cause}）`,
-      ],
+      ]),
       cwd: root,
       env: { ...process.env, ...node.env },
       timeoutMs: cfg.ingest.appendTimeoutMs,

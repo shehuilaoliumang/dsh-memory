@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.0 — 2026-10-31
+
+- 外部项目写入：`kb attach --write` 在用户级 registry 写 `writable: true`，并同步该库的 `_meta/config.json` 的 `ingest.enabled`/`judge.enabled`；`--read-only` 反向关闭。项目自身 `project.json` 不能自开写入，默认仍只读。
+- 插件按会话 cwd 选择可写项目库，懒建外部 ingestor + judge；外部库命令统一经宿主 `kb.mjs --root <store>`，无需在项目里复制引擎；会话记忆开关 `off` 优先于 cwd，外部只读库不会把原文写进 legacy vault。
+- 面板显示已接入项目、当前项目与读写状态（客户端 c20）；snapshot 增加 `globalRoot`/`registryFile`/`projects`。
+- 测试：新增 `stores` 显式写授权、`ingest` 外部 `--root` 命令路由测试；插件 114 条、冒烟 90 条全过；私有 bundle 恢复演练通过。
+
 ## 1.10.1 — 2026-10-30
 
 - 双库注入去重：legacy 项目库中的 `scope: global` 偏好不再与全局库重复注入；项目注入只保留项目本地 claim（验证现场从“全局 2 / 项目 2”变为“全局 2 / 项目 0”）。

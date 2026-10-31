@@ -410,6 +410,16 @@ updated: 2026-10-29
   $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--json')
   $reg = Get-Content $registry -Raw | ConvertFrom-Json
   Check 'attach 幂等且不重复登记' ($r.code -eq 0 -and @($reg.projects).Count -eq 1) $r.text
+
+  $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--write', '--json')
+  $attachWrite = $r.text | ConvertFrom-Json
+  $cfgWrite = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $regWrite = Get-Content $registry -Raw | ConvertFrom-Json
+  Check 'attach --write 开启写入并登记 writable' ($r.code -eq 0 -and $attachWrite.writable -eq $true -and $attachWrite.wroteConfig -eq $true -and $cfgWrite.ingest.enabled -eq $true -and $cfgWrite.judge.enabled -eq $true -and $regWrite.projects[0].writable -eq $true) $r.text
+  $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--read-only', '--json')
+  $cfgReadOnly = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $regReadOnly = Get-Content $registry -Raw | ConvertFrom-Json
+  Check 'attach --read-only 关闭写入并登记只读' ($r.code -eq 0 -and $cfgReadOnly.ingest.enabled -eq $false -and $cfgReadOnly.judge.enabled -eq $false -and $regReadOnly.projects[0].writable -eq $false) $r.text
   $missing = Join-Path $base 'not-a-store'
   $r = Kb @('--root', $missing, 'validate')
   Check '缺配置根报错而不是崩溃' ($r.code -ne 0 -and $r.text -match '不是知识库') $r.text

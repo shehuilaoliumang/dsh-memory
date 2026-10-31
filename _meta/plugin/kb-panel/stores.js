@@ -67,6 +67,9 @@ export function readProjectRegistry(registryFile = DEFAULT_REGISTRY_FILE) {
       slug: String(entry.slug || '').trim().toLowerCase(),
       path: resolved,
       attachedAt: String(entry.attachedAt || entry.attached_at || ''),
+      // Write access is a user-level grant, never a project-controlled flag:
+      // a cloned repository cannot make itself writable by editing project.json.
+      writable: entry.writable === true,
     });
   }
   return out;
@@ -90,14 +93,16 @@ export function findProjectStore(cwd, options = {}) {
       const canonical = path.resolve(candidate);
       // Keep looking upward when this store is unmarked or not attached: a
       // nested repository must not shadow an attached parent store.
-      if (meta && registry.has(canonical)) return { root: canonical, meta, legacy: false };
+      if (meta && registry.has(canonical)) {
+        return { root: canonical, meta, legacy: false, entry: registry.get(canonical) };
+      }
     }
     if (legacyRoot && isWithin(legacyRoot, dir)) {
       const meta = readProjectMeta(legacyRoot) || {
         slug: path.basename(legacyRoot).toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'vault',
         title: path.basename(legacyRoot),
       };
-      return { root: legacyRoot, meta, legacy: true };
+      return { root: legacyRoot, meta, legacy: true, entry: null };
     }
     const parent = path.dirname(dir);
     if (parent === dir) return null;
@@ -121,23 +126,40 @@ export function registryEntryFor(storeRoot, registryFile = DEFAULT_REGISTRY_FILE
 }
 
 /** Idempotently attach a project store in the user-level registry. */
-export function attachProject(storeRoot, registryFile = DEFAULT_REGISTRY_FILE) {
+export function attachProject(storeRoot, registryFile = DEFAULT_REGISTRY_FILE, options = {}) {
   const root = path.resolve(storeRoot);
   const meta = readProjectMeta(root);
   if (!meta) throw new Error(`不是项目库（缺少有效 project.json）：${root}`);
   const registry = readJson(registryFile, null);
   const base = registry && !Array.isArray(registry) ? registry : { version: 1, projects: [] };
   const projects = Array.isArray(base.projects) ? base.projects : [];
+  const previous = projects.find((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const target = entry.path || entry.root;
+    return target ? path.resolve(path.dirname(registryFile), String(target)) === root : false;
+  });
   const kept = projects.filter((entry) => {
     if (!entry || typeof entry !== 'object') return false;
     const target = entry.path || entry.root;
     return target ? path.resolve(path.dirname(registryFile), String(target)) !== root : true;
   });
-  kept.push({ slug: meta.slug, path: root, attachedAt: new Date().toISOString() });
+  const writable = options.writable === undefined ? previous && previous.writable === true : options.writable === true;
+  kept.push({ slug: meta.slug, path: root, attachedAt: new Date().toISOString(), writable });
   const next = { version: 1, projects: kept };
   fs.mkdirSync(path.dirname(registryFile), { recursive: true });
   const tmp = `${registryFile}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   fs.renameSync(tmp, registryFile);
-  return { root, slug: meta.slug, registryFile };
+  return { root, slug: meta.slug, registryFile, writable };
+}
+
+/**
+ * The store a turn should be written into. Only an attached project entry with
+ * an explicit `writable: true` grant qualifies; otherwise this returns null so
+ * the caller can fall back to the legacy predicate (or skip writing entirely).
+ */
+export function writableProjectStore(cwd, options = {}) {
+  const project = findProjectStore(cwd, options);
+  if (!project || project.legacy || !project.entry || project.entry.writable !== true) return null;
+  return project;
 }

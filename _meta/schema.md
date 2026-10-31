@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.10.1
+title: 知识库规范 v1.11.0
 status: canon
 updated: 2026-10-30
 ---
 
-# 知识库规范 v1.10.1
+# 知识库规范 v1.11.0
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -384,13 +384,13 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 |---|---|
 | 包名 | `@local/kb-panel`（本地目录安装，源码 `_meta/plugin/kb-panel/`） |
 | Host | `systemPrompt.context()` 注入 `30_Canon/core.md` + 工作页简报（§13）；`GET /kb/panel.json` 提供派生快照；`GET /kb/ingest.json` 提供触发器状态（cursor/窗口/队列） |
-| 触发器 | `ingest.js`：监听 `session/event` 的 `turn/end` → 第 1 步原文追加（复用 `modeOf` 判据，跳过子会话）；静默/兜底/轮数 → 第 2 步 `candidates` 调度；第 3 步由 `judge.js` 直调 deepseek-flash，队列只用于重试/审计 |
+| 触发器 | `ingest.js`：监听 `session/event` 的 `turn/end` → 第 1 步原文追加；按会话 cwd 选可写项目库，外部库走 `kb.mjs --root <store>`；未命中时仅 legacy root/无 cwd 回退 legacy ingestor，跳过子会话与记忆开关 `off`；静默/兜底/轮数 → 第 2 步 `candidates` 调度；第 3 步由 `judge.js` 直调 deepseek-flash，队列只用于重试/审计 |
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：折叠时显示篇数/索引数，展开显示分层、状态、最近更新、核心记忆摘要 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
-| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测 `node _meta/plugin/kb-panel/test/{ingest,judge,work-brief,transcript-chunks,http-guard,redact,shared-frontmatter,stores}.test.mjs`（共 112 条） |
+| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测八个文件共 114 条（含 stores 7、ingest 外部 `--root` 路由） |
 
-已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板 UI 只读（自动写入在 Host 侧触发器，不在面板操作里）。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
+已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板只展示已接入项目及当前/可写/只读状态，不提供 attach 或授权操作（授权仍走 CLI）；自动写入在 Host 侧触发器，不在面板操作里。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
 
 `/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1 即 403），但监听地址本身仍由 DSH Host 配置决定。所有路由经 `http-guard.js`：带 `Origin` 时必须与 `Host` 同源，`sec-fetch-site: cross-site` 一律拒绝，写端点只接受 `content-type: application/json` 并校验 Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；非浏览器写请求还必须携带从 `_meta/state/http-token` 读取的 `x-kb-local-token`。`/kb/ui` 仅收客户端版本，免 token。这挡浏览器跨站请求和随意本机进程，不等于操作系统进程级鉴权——同机进程读文件后仍可访问端口（§15）。
 
@@ -425,7 +425,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v1.10.1）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
+已知限制（v1.11.0）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -527,7 +527,7 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 node _meta/scripts/kb.mjs search --query "界面 中文" --limit 5
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/http-guard.test.mjs
-node _meta/scripts/smoke.ps1   # 冒烟 88/88；插件 112/112
+node _meta/scripts/smoke.ps1   # 冒烟 90/90；插件 114/114
 ```
 
 非目标（v1.8 明确不做）：多用户/公网部署、进程级认证、密钥保险库、自动语义检索、对已提交 git 历史的清洗。
@@ -547,9 +547,9 @@ node _meta/scripts/smoke.ps1   # 冒烟 88/88；插件 112/112
 | 简化 ingest | 先测量接管、自检、去重与失败窗口的故障率再删代码；`test/FAULT-INJECTION.md` 把每类机制映射到测试，删掉会失败；保留 raw 追加这一最小路径 |
 | HTTP 本机令牌 | `index.js` 每次启动生成 local token 写 `_meta/state/http-token`（0600）；非浏览器写请求需 `x-kb-local-token`，loopback 之外的连接一律 403 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 1.10.1；`init` 可重复执行；同一分钟两个会话 validate 通过；`shared-frontmatter` 4 条、`stores` 6 条测试通过；冒烟 88/88、插件 112/112。
+验收：`node _meta/scripts/kb.mjs version` 输出 1.11.0；`init` 可重复执行；同一分钟两个会话 validate 通过；`stores` 7 条、ingest 外部 `--root` 路由测试通过；冒烟 90/90、插件 114/114。
 
-## 17. 多项目记忆库与全局偏好（v1.10 新增）
+## 17. 多项目记忆库与全局偏好（v1.10 新增，v1.11 支持外部写入）
 
 ### 17.1 目标
 
@@ -584,7 +584,8 @@ node _meta/scripts/smoke.ps1   # 冒烟 88/88；插件 112/112
 ### 17.3 接入与信任
 
 - 项目库只有出现在用户级 `projects.json` 里才被加载。克隆一个带 `.dsh-memory/` 的仓库不会自动进入模型上下文。
-- `kb attach` 是显式接入：`node _meta/scripts/kb.mjs --root <project>/.dsh-memory attach [--registry F]`；`--registry` 仅供测试/多用户目录。`--root` 指向库根，不是项目目录本身。
+- `kb attach` 是显式接入：`node _meta/scripts/kb.mjs --root <project>/.dsh-memory attach [--registry F] [--write|--read-only]`；`--registry` 仅供测试/多用户目录；`--write`/`--read-only` 互斥，写授权记在用户级 registry 的 `writable`，并同步该库 config 的 ingest/judge 开关。默认只读。
+- `--root` 指向库根，不是项目目录本身。
 - 插件当前已配置的 `workspaceRoot`（本 vault）视为显式 legacy 项目库，始终信任；它不会因为目录里有未登记的 `.dsh-memory/` 而改变。
 - 全局库路径默认 `~/.dsh-memory/global`，可由插件配置 `globalRoot` 覆盖；插件不自动创建全局库。
 - 未标记/未接入的 nested `.dsh-memory/` 不遮蔽已接入的父项目库。
@@ -605,8 +606,11 @@ node _meta/scripts/kb.mjs init --root C:\path\to\project\.dsh-memory --slug my-a
 # 全局偏好库（路径由用户决定；插件默认读 ~/.dsh-memory/global）
 node _meta/scripts/kb.mjs init --root "$HOME\.dsh-memory\global"
 
-# 显式接入项目库
+# 显式接入项目库（默认只读）
 node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
+
+# 显式开启该库的捕获/裁判写入（可用 --read-only 收回）
+node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 ```
 
 ### 17.5 注入与 scope
@@ -616,19 +620,24 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
 - 项目 core 只在项目库存在且命中会话时注入；全局 core 与项目 core 都包在 `<untrusted-memory>` 边界和 core 声明里。
 - 检索/写入仍按显式 `--root` 选库；跨库晋升（项目→全局）是人工/CLI 动作，不自动发生。
 
-### 17.6 首阶段已知边界
+### 17.6 外部项目写入与已知边界
 
-- 外部项目库当前**只读注入**：`10_Raw` 捕获、裁判队列、面板的写操作仍只服务 legacy vault；外部项目写入需用户用 CLI 或后续版本接入。
-- 面板/`snapshot` 的统计仍以 legacy vault 为主，但 session 的 `mode/scope/projectRoot/globalRoot` 已按双库解析。
-- 项目库放项目内 `.dsh-memory/`、默认只读加载是当前默认；用户可改为用户目录或开启写入，但需要显式配置。
+- 外部项目库默认**只读注入**；只有用户运行 `attach --write` 后，registry 的 `writable` 才为 true，插件才会在会话 cwd 命中该库时懒建外部 ingestor + judge，写入落在该库自己的 `10_Raw`/`_meta/state`，不会写进 legacy vault。`--read-only` 可随时收回。
+- 项目自身的 `project.json` 不能自开写入；写授权只来自用户级 registry。外部项目 raw 仍受 c-0014 约束：不进公开快照，随完整库私有备份。
+- 面板的 session `mode/scope/projectRoot/globalRoot` 与 `projects` 已按双库解析；面板只展示项目状态，不提供 attach/授权操作。
+- 项目库放项目内 `.dsh-memory/`、默认只读加载、项目仓库将其加入 `.gitignore`，已由 c-0014 固定；写入按项目显式开启。
+- `10_Raw/` 永不进入公开仓库/公开快照；完整库用私有 git bundle 备份，公开快照不是备份（c-0014）。
 - 全局库与 `projects.json` 在用户目录，插件**不会**自动创建或自动登记；首次使用必须运行上面的 `init`/`attach`。
+- 外部库的 raw 捕获只按 session cwd 路由；同一会话中途切换目录不重算 store；子会话不写。若需更强隔离，后续可加 store 级锁/队列。
 
 ### 17.7 验收
 
 ```powershell
-node _meta/plugin/kb-panel/test/stores.test.mjs       # 6/6
+node _meta/plugin/kb-panel/test/stores.test.mjs       # 7/7
+node _meta/plugin/kb-panel/test/ingest.test.mjs       # 34/34（含外部 --root 路由）
 node _meta/plugin/kb-panel/test/work-brief.test.mjs   # 18/18
 node _meta/scripts/kb.mjs init --root <tmp>\.dsh-memory --slug demo
 node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --registry <tmp>\projects.json
+node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tmp>\projects.json
 ```
 

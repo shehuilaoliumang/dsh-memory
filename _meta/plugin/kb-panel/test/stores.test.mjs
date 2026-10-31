@@ -10,6 +10,7 @@ import {
   readProjectMeta,
   readProjectRegistry,
   resolveStores,
+  writableProjectStore,
 } from '../stores.js';
 
 function tempDir() {
@@ -114,6 +115,28 @@ test('resolveStores reports global and project roots independently', () => {
     assert.equal(found.globalRoot, path.resolve(globalRoot));
     assert.equal(found.projectRoot, path.resolve(store));
     assert.equal(found.project.meta.slug, 'repo-demo');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('only an explicitly writable attached project is a write target', () => {
+  const root = tempDir();
+  const project = path.join(root, 'app');
+  const store = path.join(project, '.dsh-memory');
+  const registry = path.join(root, 'projects.json');
+  try {
+    writeStore(store, { slug: 'write-demo' });
+    attachProject(store, registry, { writable: false });
+    assert.equal(writableProjectStore(path.join(project, 'src'), { registryFile: registry }), null);
+    attachProject(store, registry, { writable: true });
+    const found = writableProjectStore(path.join(project, 'src'), { registryFile: registry });
+    assert.ok(found);
+    assert.equal(found.root, path.resolve(store));
+    assert.equal(found.entry.writable, true);
+    // Re-attaching without a flag must preserve the explicit grant.
+    attachProject(store, registry);
+    assert.ok(writableProjectStore(path.join(project, 'src'), { registryFile: registry }));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -27,12 +27,13 @@
 - **工作页**（`type: work`，一个 scope 一页，`validate` 强制唯一 active）只写项目状态（阶段/在办/未决/下一步）；操作指令只进原文层，不进工作页。新建用 `kb.mjs work-new`，正文由人确认后覆写；归档用「归档 / 恢复为活跃」。
 - 参数与五步管线见 `_meta/schema.md#写入管线`。
 
-## 多项目记忆（v1.10）
+## 多项目记忆（v1.11）
 
 - 全局偏好库默认 `~/.dsh-memory/global`：只放跨项目的称谓/偏好/禁区；每轮最多注入 2 条。
 - 项目记忆库默认 `<project>/.dsh-memory`：`project.json.slug` 决定 `project:<slug>` scope；每轮最多注入 3 条 + 项目简报。
 - 项目库必须由用户显式运行 `kb.mjs --root <project>/.dsh-memory attach` 写入 `~/.dsh-memory/projects.json` 才会被加载；`--root` 指向库根，不是项目目录本身；**不要**把克隆仓库自带的 `.dsh-memory/` 当成可信记忆。
-- 本 vault 是显式配置的 legacy 项目库，保持旧行为：vault 内会话 scope 为 `global`，可注入 5 条；外部项目库首阶段只读注入，raw 捕获/裁判/面板写入仍只服务本 vault。
+- 默认只读；需要该库自动捕获 raw/抽取时，由用户显式运行 `attach --write`（registry `writable:true` + 该库 ingest/judge 开启），`--read-only` 收回。写授权只来自用户级 registry，项目 `project.json` 不能自开。
+- 本 vault 是显式配置的 legacy 项目库，保持旧行为：vault 内会话 scope 为 `global`，可注入 5 条；外部可写项目按会话 cwd 路由，写入只落该库自己的 `10_Raw`/`_meta/state`，不回写 legacy vault。
 - 完整规范见 `_meta/schema.md` §17 与 `30_Canon/decisions/2026-10-30-c-0013.md`。
 
 ## 读
@@ -66,6 +67,7 @@ node _meta/scripts/kb.mjs work-new --scope global|project:S   # 新建工作页�
 node _meta/scripts/kb.mjs work-brief --scope global|project:S --json   # 恢复简报（新会话接上文）
 node _meta/scripts/kb.mjs version               # 打印根目录 VERSION（唯一版本号）
 node _meta/scripts/kb.mjs init                  # 幂等创建目录骨架
+node _meta/scripts/kb.mjs --root <库> attach [--write|--read-only]   # 显式接入并授权/收回项目库写入
 node _meta/scripts/export-public.mjs --out D:\dsh-memory-public   # 生成脱敏公开快照（排除原文/状态，重建索引）
 ```
 

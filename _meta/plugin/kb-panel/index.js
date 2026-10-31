@@ -29,7 +29,7 @@ import { randomBytes } from 'node:crypto';
 import { createIngestor, resolveNode, runProcess } from './ingest.js';
 import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
-import { DEFAULT_GLOBAL_ROOT, DEFAULT_REGISTRY_FILE, resolveStores } from './stores.js';
+import { DEFAULT_GLOBAL_ROOT, DEFAULT_REGISTRY_FILE, readProjectRegistry, resolveStores, writableProjectStore } from './stores.js';
 import { parseFrontmatterData as parseFrontmatter } from './shared/frontmatter.mjs';
 import { briefText, isInjectable, rankMemories } from './work-brief.js';
 
@@ -388,6 +388,11 @@ export function apply(ctx, config = {}) {
     log: (line) => console.warn(line),
   });
 
+  // One ingestor/judge pair per attached writable project store. The legacy
+  // vault keeps its original pair above; external stores are created lazily on
+  // the first turn we are allowed to write to them.
+  const externalRuntimes = new Map();
+
   ctx.effect(() => {
     // Register the listener first: if `ctx.on` throws, `start()` must not have
     // armed timers that this effect would then fail to clean up.
@@ -398,7 +403,25 @@ export function apply(ctx, config = {}) {
     // `turn/end` matters; the handler is O(1) and drains asynchronously.
     const stopListening = ctx.on('session/event', (session, event) => {
       if (!event || event.type !== 'turn/end') return;
-      void ingestor.handleTurnEnd(session, event).catch((error) => {
+      // A session-level memory toggle wins over the cwd: `off` means no store
+      // gets this turn. Without a writable project, only sessions inside the
+      // legacy vault may be captured; an external read-only project must never
+      // leak its transcript into the legacy raw layer through an override.
+      const sessionId = session && session.id ? bareId(session.id) : '';
+      if (sessionId && overrides.has(sessionId) && overrides.get(sessionId) === false) return;
+      let runner = null;
+      try {
+        const cwd = cwdOfSession(session);
+        const project = cwd
+          ? writableProjectStore(cwd, { legacyRoot: root, globalRoot, registryFile })
+          : null;
+        if (project) runner = externalRuntimeFor(project).ingestor;
+        else if (!cwd || within(root, cwd)) runner = ingestor;
+      } catch (error) {
+        console.warn('[kb-ingest] writable project resolution failed', error);
+      }
+      if (!runner) return;
+      void runner.handleTurnEnd(session, event).catch((error) => {
         console.warn('[kb-ingest] turn/end listener failed', error);
       });
     });
@@ -406,6 +429,8 @@ export function apply(ctx, config = {}) {
     return () => {
       if (typeof stopListening === 'function') stopListening();
       ingestor.dispose();
+      for (const runtime of externalRuntimes.values()) runtime.dispose();
+      externalRuntimes.clear();
     };
   });
 
@@ -415,18 +440,20 @@ export function apply(ctx, config = {}) {
   // `_meta/state/judge-dry-run.jsonl` so the distillation can be reviewed
   // before any atom can reach `20_Digest/`.
   const nodeRuntime = resolveNode({ ...config, home: profileHome }, process.env, process.platform);
+  const engineKb = path.join(root, '_meta', 'scripts', 'kb.mjs');
+  const llm = (() => {
+    try {
+      return ctx.get('llm');
+    } catch {
+      return undefined;
+    }
+  })();
   const judgeWorker = createJudgeWorker({
     root,
     config: () => config,
-    llm: (() => {
-      try {
-        return ctx.get('llm');
-      } catch {
-        return undefined;
-      }
-    })(),
+    llm,
     runCommand: (args, timeoutMs) =>
-      runProcess(nodeRuntime.command, [path.join(root, '_meta', 'scripts', 'kb.mjs'), ...args], {
+      runProcess(nodeRuntime.command, [engineKb, ...args], {
         cwd: root,
         env: { ...process.env, ...nodeRuntime.env },
         timeoutMs,
@@ -438,6 +465,71 @@ export function apply(ctx, config = {}) {
     judgeWorker.start();
     return () => judgeWorker.dispose();
   });
+
+  /**
+   * Lazily build the write pipeline for one explicitly writable project store.
+   * External stores do not carry engine code; every command is routed through
+   * the host's `kb.mjs` with `--root <store>`. Read-only attached projects never
+   * reach this function.
+   */
+  const externalRuntimeFor = (project) => {
+    const storeRoot = path.resolve(project.root);
+    const existing = externalRuntimes.get(storeRoot);
+    if (existing) return existing;
+
+    const externalJudge = createJudgeWorker({
+      root: storeRoot,
+      config: () => config,
+      llm,
+      runCommand: (args, timeoutMs) =>
+        runProcess(nodeRuntime.command, [engineKb, '--root', storeRoot, ...args], {
+          cwd: storeRoot,
+          env: { ...process.env, ...nodeRuntime.env },
+          timeoutMs,
+        }),
+      log: (line) => console.warn(line),
+    });
+    externalJudge.start();
+
+    const externalIngestor = createIngestor({
+      root: storeRoot,
+      config: { ...config, home: profileHome },
+      kbScript: engineKb,
+      globalArgs: ['--root', storeRoot],
+      isKbSession: (session) => {
+        try {
+          const cwd = cwdOfSession(session);
+          const found = cwd
+            ? writableProjectStore(cwd, { legacyRoot: root, globalRoot, registryFile })
+            : null;
+          return Boolean(found && path.resolve(found.root) === storeRoot);
+        } catch {
+          return false;
+        }
+      },
+      log: (line) => console.warn(line),
+    });
+    externalIngestor.start();
+
+    const runtime = {
+      ingestor: externalIngestor,
+      judge: externalJudge,
+      dispose() {
+        try {
+          externalIngestor.dispose();
+        } catch {
+          /* best effort */
+        }
+        try {
+          externalJudge.dispose();
+        } catch {
+          /* best effort */
+        }
+      },
+    };
+    externalRuntimes.set(storeRoot, runtime);
+    return runtime;
+  };
 
   // ----------------------------------------------------------------- step 5
   // Daily consolidation (`_meta/config.json` → consolidate.daily, default 03:30).
@@ -557,6 +649,22 @@ export function apply(ctx, config = {}) {
     }
   };
 
+  /** Attached project stores, for the panel's multi-project status row. */
+  const listProjects = () => {
+    try {
+      return [...readProjectRegistry(registryFile).values()]
+        .map((entry) => ({
+          slug: entry.slug,
+          path: entry.path,
+          attachedAt: entry.attachedAt,
+          writable: entry.writable === true,
+        }))
+        .sort((a, b) => a.slug.localeCompare(b.slug));
+    } catch {
+      return [];
+    }
+  };
+
   const snapshot = (sessionId) => {
     const notes = scanNotes();
 
@@ -590,6 +698,9 @@ export function apply(ctx, config = {}) {
     const heat = heatTop();
     return {
       workspace: root,
+      globalRoot,
+      registryFile,
+      projects: listProjects(),
       csrfToken,
       localTokenFile,
       generatedAt: new Date().toISOString(),

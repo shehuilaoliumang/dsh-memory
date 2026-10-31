@@ -47,7 +47,7 @@ Obsidian Vault/memory
 <project>/.dsh-memory/        项目库（project.json + 10_Raw/20_Digest/30_Canon/_meta）
 ```
 
-项目库必须**显式接入**才会加载：克隆仓库自带的 `.dsh-memory/` 不会自动进入模型上下文（防止被 PR 注入）。legacy vault 仍作为显式配置的项目库兼容旧行为。
+项目库必须**显式接入**才会加载：克隆仓库自带的 `.dsh-memory/` 不会自动进入模型上下文（防止被 PR 注入）。legacy vault 仍作为显式配置的项目库兼容旧行为。项目库默认**只读注入**；`kb attach --write` 才把该库显式提升为可写（raw 捕获、裁判、面板写入都落在该库自己的 `_meta/state`），`--read-only` 可随时收回。项目仓库应把 `.dsh-memory/` 加入 `.gitignore`。`10_Raw/` 永不进入公开仓库或公开快照，完整库用私有 git bundle 备份（公开快照不是备份）。
 
 从现有库安装全局偏好库（人工执行，拒绝覆盖；可用 `-Target`/`-Registry` 指定位置）：
 
@@ -60,17 +60,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-global.ps1
 node _meta/scripts/kb.mjs init --root C:\path\to\project\.dsh-memory --slug my-app --title "My App"
 # 新建全局偏好库（路径由用户决定；插件默认读 ~/.dsh-memory/global）
 node _meta/scripts/kb.mjs init --root "$HOME\.dsh-memory\global"
-# 显式接入项目库
+# 显式接入项目库（默认只读）
 node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
+# 需要该库自动捕获原文/抽取时再显式开启写入
+node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 ```
 
-`kb.mjs` 的 `--root` / `KB_ROOT` 指向**库根**（项目库是 `<project>/.dsh-memory`，不是项目目录本身），对所有命令生效；新库默认 `ingest.enabled=false`，不会在 clone 后自动写。首阶段外部项目库只读注入，raw 捕获/裁判/面板写入仍只服务 legacy vault。完整规则见 `_meta/schema.md` §17 与 `30_Canon/decisions/2026-10-30-c-0013.md`。
+`kb.mjs` 的 `--root` / `KB_ROOT` 指向**库根**（项目库是 `<project>/.dsh-memory`，不是项目目录本身），对所有命令生效；新库默认 `ingest.enabled=false`，不会在 clone 后自动写。`attach --write` 只修改用户级 registry 与该库 config，项目自身的 `project.json` 不能自开写入；面板会列出已接入项目的当前/可写/只读状态。完整规则见 `_meta/schema.md` §17 与 `30_Canon/decisions/2026-10-30-c-0013.md`。
 
 **可维护性**：根目录 `VERSION` 是唯一版本号，`CHANGELOG.md` 记录各阶段；`kb.mjs init` 幂等创建 7 个实际使用的目录（不创建未使用的顶层目录）；frontmatter parser 与工作页节名抽到 `_meta/plugin/kb-panel/shared/`，CLI 与插件共用；同分钟会话按前缀加 `-2`/`-3` 去重；`access.jsonl` 超阈值自动轮转、不删除。
 
 ## 目录里有什么
 
-- `30_Canon/decisions/`：c-0001 ~ c-0013，记录分层、git、ASCII id、flash 裁判、规则层、记忆隔离、写入/注入分离、架构总览、裁判评估、检索与威胁模型、减债与共享契约、本机端口加固、多项目记忆库与全局偏好。
+- `30_Canon/decisions/`：c-0001 ~ c-0014，记录分层、git、ASCII id、flash 裁判、规则层、记忆隔离、写入/注入分离、架构总览、裁判评估、检索与威胁模型、减债与共享契约、本机端口加固、多项目记忆库与全局偏好、记忆库边界与备份策略。
 - `30_Canon/core.md`：每轮常驻的称谓、硬偏好、禁区。
 - `20_Digest/atoms/`：用户偏好、决策、原则等原子记忆。
 - `20_Digest/topics/`：主题页（汇总 + 争点 + 待办）。
@@ -96,7 +98,7 @@ node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 node _meta/plugin/kb-panel/test/stores.test.mjs
 ```
 
-当前：冒烟 88 条、插件单测 112 条全过。
+当前：冒烟 90 条、插件单测 114 条全过。
 
 ## 裁判评估
 

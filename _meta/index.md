@@ -28,9 +28,9 @@ updated: 2026-10-31
 
 - 笔记数：以 `node _meta/scripts/kb.mjs stats` 为准（分层 / 状态 / 类型）
 - 索引：`catalog.jsonl` 由 `kb.mjs rebuild` 生成，`validate` 通过（0 错误 0 警告）
-- 规则层：v1.12.0 —— Phase 0–7 已完成；Phase 6 外部项目写入：`attach --write/--read-only`、按会话 cwd 的外部 ingestor/judge、宿主 `kb.mjs --root <store>`、面板项目状态；Phase 7 审计清偿：N5 同 subject 唯一 active、redact 补强、TTY 人闸、项目库裁判禁止 global、registry 故障注入。插件 122/122、冒烟 98/98；1.12.0 待发布；上一发布 1.11.0 commit `87f228b`、CI `41165962008` 全绿。默认仍只读，外部写入需显式 `attach --write`。
+- 规则层：v1.12.0 —— Phase 0–7 已完成并发布；Phase 6 外部项目写入：`attach --write/--read-only`、按会话 cwd 的外部 ingestor/judge、宿主 `kb.mjs --root <store>`、面板项目状态；Phase 7 审计清偿：N5 同 subject 唯一 active、redact 补强、TTY 人闸、项目库裁判禁止 global、registry 故障注入。插件 122/122、冒烟 98/98；1.12.0 发布 commit `5c33d63`、CI `41182549002` 全绿。默认仍只读，外部写入需显式 `attach --write`。
 - 界面：`@local/kb-panel` 已启用 —— 记忆 chip、会话菜单、知识库页（含「工作页」徽标）、软刷新 + 排队完整重载
-- 已定：项目内 `.dsh-memory/` + 显式 attach + 默认只读，外部写入需显式 `attach --write`（TTY 人闸）；`10_Raw/` 永不公开；完整库私有 bundle 备份已建立（`dsh-memory-private`），恢复演练通过；1.12.0 待发布，1.11.0 已发布。
+- 已定：项目内 `.dsh-memory/` + 显式 attach + 默认只读，外部写入需显式 `attach --write`（TTY 人闸）；`10_Raw/` 永不公开；完整库私有 bundle 备份已建立（`dsh-memory-private`），恢复演练通过；1.12.0 已发布。
 
 ## 怎么用
 

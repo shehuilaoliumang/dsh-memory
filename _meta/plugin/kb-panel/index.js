@@ -31,7 +31,7 @@ import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
 import { DEFAULT_GLOBAL_ROOT, DEFAULT_REGISTRY_FILE, readProjectRegistry, resolveStores, writableProjectStore } from './stores.js';
 import { parseFrontmatterData as parseFrontmatter } from './shared/frontmatter.mjs';
-import { briefText, currentTruthNotes, rankMemories } from './work-brief.js';
+import { briefText, currentTruthEntries, currentTruthNotes, pickBySource, rankMemories } from './work-brief.js';
 
 export const inject = ['webServer', 'systemPrompt'];
 
@@ -669,6 +669,7 @@ export function apply(ctx, config = {}) {
 
   const snapshot = (sessionId) => {
     const notes = scanNotes();
+    let sessionStores = null;
 
     const layers = {};
     const statuses = {};
@@ -684,6 +685,7 @@ export function apply(ctx, config = {}) {
       const agent = lookupAgent(sessionId);
       if (agent) {
         const stores = storesFor(agent);
+        sessionStores = stores;
         // `modeOf` is the legacy capture switch (writes into the vault); the
         // prompt may be enabled by an attached project store even when capture
         // is not. Keep the two concepts separate so the panel does not lie.
@@ -729,7 +731,15 @@ export function apply(ctx, config = {}) {
       // project scope (when one is selected), capped at the 5-memory budget that
       // the prompt block actually uses. One shared predicate decides this for
       // both the counter and the prompt block — pages are never memories.
-      injected: Math.min(5, currentTruthNotes(notes, session.scope || 'global').length),
+      injected: (() => {
+        if (!sessionStores) return Math.min(5, currentTruthNotes(notes, 'global').length);
+        try {
+          const selected = selectInjection(sessionStores, session.scope || 'global');
+          return selected.globalPicked.length + selected.projectPicked.length;
+        } catch {
+          return 0;
+        }
+      })(),
       scopes: [...new Set(notes.map((note) => note.scope).filter((scope) => /^project:/.test(scope || '')))].sort(),
       accessRows: heat.rows,
       hot: heat.hot,
@@ -825,21 +835,67 @@ export function apply(ctx, config = {}) {
   };
 
   /**
-   * Pick at most `limit` injectable memories from one store. `filterScope`
-   * narrows the store's own project scope when global memories live in a
-   * separate store and must not be double-counted.
+   * Rank the injectable candidates of one store. The result is intentionally
+   * uncapped (within a large safety bound): cross-store subject arbitration can
+   * remove earlier entries, so the final budget must be applied after it.
+   * `filterScope` narrows the store's own project scope when global memories
+   * live in a separate store and must not be double-counted.
    */
-  const selectMemories = (storeRoot, scope, limit, filterScope = '') => {
-    if (!storeRoot || limit <= 0) return [];
+  const scopeLeakWarned = new Set();
+  const selectStoreCandidates = (storeRoot, scope, filterScope = '') => {
+    if (!storeRoot) return [];
     const notes = scanNotes(storeRoot);
-    const picked = rankMemories(notes, accessRowsFor(storeRoot), scope, { limit: Math.max(limit * 4, limit) })
+    // In a non-legacy project store, a global-scope memory is a write-layer
+    // leak: the judge must downgrade it to unclassified. Existing leaks are
+    // excluded, but never silently: surface once per store so the owner can
+    // repair the data. Legacy roots legitimately still hold global memories.
+    if (filterScope && filterScope[0] !== '!' && filterScope.startsWith('project:')) {
+      const leaked = notes.filter(
+        (note) => note.level === 'digest' && note.status === 'active' && note.scope === 'global',
+      );
+      if (leaked.length && !scopeLeakWarned.has(storeRoot)) {
+        scopeLeakWarned.add(storeRoot);
+        console.warn(
+          `[kb-panel] project store ${storeRoot} contains ${leaked.length} global-scope active memory(s): `
+          + `${leaked.map((note) => note.id).join(', ')}; excluded from injection.`,
+        );
+      }
+    }
+    return rankMemories(notes, accessRowsFor(storeRoot), scope, { limit: 500 })
       // `!global` means "keep project-local claims only": when the same
       // preference also lives in the global store, injecting the project copy
       // would show it twice.
       .filter((note) => !filterScope
-        || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope))
-      .slice(0, limit);
-    return picked;
+        || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope));
+  };
+
+  /**
+   * The one selection used by both the prompt block and `snapshot.injected`.
+   *
+   * Global and project stores are validated independently, so the same
+   * `subject` can exist in both. Arbitrate the merged candidates before
+   * applying the 2/3 budget; otherwise a stale global claim can survive next to
+   * a newer project claim. Each candidate keeps its source and rank so the
+   * budget stays source-aware after the loser is removed.
+   */
+  const selectInjection = (stores, scope) => {
+    const globalLimit = stores.globalRoot ? 2 : 0;
+    const projectLimit = stores.projectRoot ? (stores.globalRoot ? 3 : 5) : 0;
+    const entries = [];
+    const add = (source, notes) => {
+      notes.forEach((note, rank) => entries.push({ note, source, rank }));
+    };
+    if (globalLimit && stores.globalRoot) {
+      add('global', selectStoreCandidates(stores.globalRoot, 'global', 'global'));
+    }
+    if (projectLimit && stores.projectRoot) {
+      const filterScope = stores.project && stores.project.legacy
+        ? (stores.globalRoot ? '!global' : '')
+        : scope;
+      add('project', selectStoreCandidates(stores.projectRoot, scope, filterScope));
+    }
+    const current = currentTruthEntries(entries, scope);
+    return pickBySource(current, { globalLimit, projectLimit });
   };
 
   // Prompt context: global preferences plus the session's attached project
@@ -869,17 +925,7 @@ export function apply(ctx, config = {}) {
             if (core) chunks.push(core);
           }
 
-          const globalLimit = stores.globalRoot ? 2 : 0;
-          const projectLimit = stores.projectRoot ? (stores.globalRoot ? 3 : 5) : 0;
-          const globalPicked = selectMemories(stores.globalRoot, 'global', globalLimit, 'global');
-          const projectPicked = selectMemories(
-            stores.projectRoot,
-            scope,
-            projectLimit,
-            stores.project && stores.project.legacy
-              ? (stores.globalRoot ? '!global' : '')
-              : scope,
-          );
+          const { globalPicked, projectPicked } = selectInjection(stores, scope);
           if (globalPicked.length) {
             recordRecall(globalPicked.map((note) => note.id), 'inject', `session:${bareId(agent.id)}`, stores.globalRoot);
           }

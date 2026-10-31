@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { briefText, clampText, currentTruthNotes, heatWeight, isInjectable, rankMemories, scopeLabel, sectionItems } from '../work-brief.js';
+import { briefText, clampText, currentTruthEntries, currentTruthNotes, heatWeight, isInjectable, pickBySource, rankMemories, scopeLabel, sectionItems } from '../work-brief.js';
 
 const atom = (over = {}) => ({ level: 'digest', status: 'active', type: 'preference', scope: 'global', ...over });
 
@@ -60,6 +60,77 @@ test('currentTruthNotes: newest subject claim beats a hotter older claim', () =>
   ];
   const ranked = rankMemories(notes, heat, 'global', { now: Date.parse('2026-10-29T00:00:00Z') });
   assert.deepEqual(ranked.map((note) => note.id), ['2026-10-29-a-0002']);
+});
+
+test('currentTruthEntries: newer project claim beats older global claim across stores', () => {
+  const olderGlobal = atom({ id: '2026-10-20-a-0001', updated: '2026-10-20', subject: 'ui-language', summary: 'old global' });
+  const newerProject = atom({
+    id: '2026-10-29-a-0002',
+    updated: '2026-10-29',
+    subject: 'ui-language',
+    scope: 'project:my-app',
+    summary: 'new project',
+  });
+  const picked = currentTruthEntries([
+    { note: olderGlobal, source: 'global' },
+    { note: newerProject, source: 'project' },
+  ], 'project:my-app');
+  assert.deepEqual(picked.map((entry) => entry.note.id), ['2026-10-29-a-0002']);
+});
+
+test('currentTruthEntries: newer global claim beats older project claim across stores', () => {
+  const olderProject = atom({
+    id: '2026-10-20-a-0001',
+    updated: '2026-10-20',
+    subject: 'ui-language',
+    scope: 'project:my-app',
+    summary: 'old project',
+  });
+  const newerGlobal = atom({ id: '2026-10-29-a-0002', updated: '2026-10-29', subject: 'ui-language', summary: 'new global' });
+  const picked = currentTruthEntries([
+    { note: olderProject, source: 'project' },
+    { note: newerGlobal, source: 'global' },
+  ], 'project:my-app');
+  assert.deepEqual(picked.map((entry) => entry.note.id), ['2026-10-29-a-0002']);
+});
+
+test('currentTruthEntries: subject-less memories from both stores survive', () => {
+  const picked = currentTruthEntries([
+    { note: atom({ id: '2026-10-20-a-0001', summary: 'global no subject' }), source: 'global' },
+    { note: atom({ id: '2026-10-21-a-0002', summary: 'project no subject', scope: 'project:my-app' }), source: 'project' },
+  ], 'project:my-app');
+  assert.deepEqual(picked.map((entry) => entry.source), ['global', 'project']);
+});
+
+test('pickBySource: arbitration leaves the losing store budget empty, no duplicate', () => {
+  const olderGlobal = atom({ id: '2026-10-20-a-0001', updated: '2026-10-20', subject: 'ui-language' });
+  const newerProject = atom({
+    id: '2026-10-29-a-0002',
+    updated: '2026-10-29',
+    subject: 'ui-language',
+    scope: 'project:my-app',
+  });
+  const otherGlobal = atom({ id: '2026-10-21-a-0003', updated: '2026-10-21', subject: 'other' });
+  const entries = currentTruthEntries([
+    { note: olderGlobal, source: 'global', rank: 0 },
+    { note: otherGlobal, source: 'global', rank: 1 },
+    { note: newerProject, source: 'project', rank: 0 },
+  ], 'project:my-app');
+  const picked = pickBySource(entries, { globalLimit: 2, projectLimit: 3 });
+  assert.deepEqual(picked.globalPicked.map((note) => note.id), ['2026-10-21-a-0003']);
+  assert.deepEqual(picked.projectPicked.map((note) => note.id), ['2026-10-29-a-0002']);
+});
+
+test('pickBySource: source budgets are independent', () => {
+  const entries = [
+    { note: atom({ id: '2026-10-20-a-0001' }), source: 'global', rank: 0 },
+    { note: atom({ id: '2026-10-20-a-0002' }), source: 'global', rank: 1 },
+    { note: atom({ id: '2026-10-20-a-0003' }), source: 'global', rank: 2 },
+    { note: atom({ id: '2026-10-20-a-0004', scope: 'project:my-app' }), source: 'project', rank: 0 },
+  ];
+  const picked = pickBySource(entries, { globalLimit: 2, projectLimit: 3 });
+  assert.equal(picked.globalPicked.length, 2);
+  assert.equal(picked.projectPicked.length, 1);
 });
 
 test('isInjectable: system scope never enters a global session', () => {

@@ -66,13 +66,13 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach
 node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 ```
 
-`kb.mjs` 的 `--root` / `KB_ROOT` 指向**库根**（项目库是 `<project>/.dsh-memory`，不是项目目录本身），对所有命令生效；新库默认 `ingest.enabled=false`，不会在 clone 后自动写。`attach --write` 只修改用户级 registry 与该库 config，项目自身的 `project.json` 不能自开写入；面板会列出已接入项目的当前/可写/只读状态。完整规则见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-10-30-c-0013.md`、`2026-10-30-c-0014.md`、`2026-10-31-c-0015.md`。
+`kb.mjs` 的 `--root` / `KB_ROOT` 指向**库根**（项目库是 `<project>/.dsh-memory`，不是项目目录本身），对所有命令生效；新库默认 `ingest.enabled=false`，不会在 clone 后自动写。`attach --write` 只修改用户级 registry 与该库 config，项目自身的 `project.json` 不能自开写入；面板会列出已接入项目的当前/可写/只读状态。注入前会对全局库与项目库的同一 `subject` 先取最新 active，再做全局 2 / 项目 3 的 source-aware 预算；项目库存量 `scope: global` 条目会被排除并显式告警。完整规则见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-10-30-c-0013.md`、`2026-10-30-c-0014.md`、`2026-10-31-c-0015.md`、`2026-10-31-c-0016.md`。
 
 **可维护性**：根目录 `VERSION` 是唯一版本号，`CHANGELOG.md` 记录各阶段；`kb.mjs init` 幂等创建 7 个实际使用的目录（不创建未使用的顶层目录）；frontmatter parser 与工作页节名抽到 `_meta/plugin/kb-panel/shared/`，CLI 与插件共用；同分钟会话按前缀加 `-2`/`-3` 去重；`access.jsonl` 超阈值自动轮转、不删除。
 
 ## 目录里有什么
 
-- `30_Canon/decisions/`：c-0001 ~ c-0014，记录分层、git、ASCII id、flash 裁判、规则层、记忆隔离、写入/注入分离、架构总览、裁判评估、检索与威胁模型、减债与共享契约、本机端口加固、多项目记忆库与全局偏好、记忆库边界与备份策略。
+- `30_Canon/decisions/`：c-0001 ~ c-0016，记录分层、git、ASCII id、flash 裁判、规则层、记忆隔离、写入/注入分离、架构总览、裁判评估、检索与威胁模型、减债与共享契约、本机端口加固、多项目记忆库与全局偏好、记忆库边界与备份策略、审计清偿与当前真相裁决、跨库仲裁与无后门授权。
 - `30_Canon/core.md`：每轮常驻的称谓、硬偏好、禁区。
 - `20_Digest/atoms/`：用户偏好、决策、原则等原子记忆。
 - `20_Digest/topics/`：主题页（汇总 + 争点 + 待办）。
@@ -80,6 +80,8 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - `_meta/scripts/kb.mjs`：零依赖 Node 规则层（校验、索引重建、写入、整理、工作页、只读检索、删除闸门）。
 - `_meta/plugin/kb-panel/`：DSH 插件（记忆 chip、知识库页、注入与入库触发器、脱敏、HTTP 防护与本机令牌）。
 - `_meta/schema.md`：完整规范。
+
+侧栏“记忆”页按“人确认过的内容才进入对话”组织：顶部是待确认 / 已记住 / 本轮参考三个数字，页面分待确认、已记住、项目状态、全部四页；候选记忆只有点“记住”后才会参与注入，原文与会话记录不显示在页面上。技术字段收进“运行状态”或详情底部，日常只需要做确认、归档和改范围。
 
 侧栏“刷新界面”主按钮是**软刷新**：只重读 `/kb/panel.json`、`/kb/ingest.json`，不卸载页面，运行中的对话不中断；右侧菜单的“完整重载界面”在空闲时立即执行，忙时按 `/kb/busy` 排队，等所有会话空闲后自动重载，可取消。软刷新不加载新版前端代码，换代码仍需完整重载或 `Ctrl+R`。
 
@@ -100,7 +102,7 @@ node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 node _meta/plugin/kb-panel/test/stores.test.mjs
 ```
 
-当前：冒烟 98 条、插件单测 122 条全过。
+当前：冒烟 100 条、插件单测 127 条全过。
 
 ## 裁判评估
 

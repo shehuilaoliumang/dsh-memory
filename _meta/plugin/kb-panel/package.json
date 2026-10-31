@@ -1,6 +1,6 @@
 {
   "name": "@local/kb-panel",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "private": true,
   "type": "module",
   "description": "Knowledge base page and multi-project memory: global preference store + explicitly attached project stores, schema §5 pipeline trigger, and the local /kb/* surface.",

@@ -299,12 +299,8 @@ updated: 2026-10-29
   Check '冲突恢复后 validate 仍通过' ($r.code -eq 0) $r.text
 
   Write-Host "`n[9] 删除清理与容错"
-  # Deleting one note must only strip its links, never the prose sharing the line.
-  $topic = Join-Path $base '20_Digest\topics\2026-10-20-t-0001.md'
-  $mixedLine = "混合行：[[2026-10-20-a-0009]] 和 [[2026-10-20-a-0011]] 都应保留后者"
-  [System.IO.File]::AppendAllText($topic, "`n$mixedLine`n", [System.Text.UTF8Encoding]::new($false))
-  # The real command refuses non-TTY input. The throwaway copy exercises
-  # `delete` with a synthetic ticket and an explicit test-only opt-out.
+  # The real command refuses non-TTY input; no environment variable may bypass
+  # that. Successful deletion is covered only by a manual TTY run.
   $r = Kb @('delete-request', '--ids', '2026-10-20-a-0009', '--json')
   Check '非交互终端拒绝生成删除密钥' ($r.code -ne 0 -and $r.text -match '交互终端') $r.text
   $smokeKey = 'SMOKE-DELETE-KEY'
@@ -332,10 +328,8 @@ updated: 2026-10-29
   } finally {
     if ($null -eq $oldNonInteractive) { Remove-Item Env:\KB_NONINTERACTIVE_TEST -ErrorAction SilentlyContinue } else { $env:KB_NONINTERACTIVE_TEST = $oldNonInteractive }
   }
-  Check '合成票据可执行删除' ($r.code -eq 0) $r.text
-  $after = [System.IO.File]::ReadAllText($topic, [System.Text.Encoding]::UTF8)
-  Check '删除只移除链接、保留混合行正文' ($after -match '混合行' -and $after -match '\[\[2026-10-20-a-0011\]\]' -and $after -notmatch '\[\[2026-10-20-a-0009\]\]') $after
-  Check '删除后 validate 通过' ((Kb @('validate')).code -eq 0)
+  Check 'delete 忽略测试环境变量' ($r.code -ne 0 -and $r.text -match '交互终端') $r.text
+  Check '失败删除保留票据与目标笔记' ((Test-Path $ticketFile) -and (Test-Path (Join-Path $base '20_Digest\atoms\2026-10-20-a-0009.md')))
   # A note without frontmatter must be reported, not crash the validator.
   $broken = Join-Path $base '20_Digest\atoms\broken-note.md'
   [System.IO.File]::WriteAllText($broken, "# 没有 frontmatter`n", [System.Text.UTF8Encoding]::new($false))
@@ -368,6 +362,14 @@ updated: 2026-10-29
   Check 'search 无意义查询不误命中' ($r.code -eq 0 -and $none.total -eq 0) $r.text
   $r = Kb @('search', '--json')
   Check 'search 缺少 query 时报错' ($r.code -ne 0 -and $r.text -match '需要 --query') $r.text
+
+  Write-Host "`n[10.55] 触发词不误伤"
+  $r = Kb @('candidates', '--text', '这只是一段普通的笔记，个别地方需要检查。', '--json')
+  $plainNote = $r.text | ConvertFrom-Json
+  Check '“笔记/个别”不误触触发词' ($r.code -eq 0 -and $plainNote.gate.skip -eq $true) $r.text
+  $r = Kb @('candidates', '--text', '我的天，这个界面真好看。', '--json')
+  $plainMine = $r.text | ConvertFrom-Json
+  Check '“我的天”不误触触发词' ($r.code -eq 0 -and $plainMine.gate.skip -eq $true) $r.text
 
   Write-Host "`n[10.6] 脱敏"
   $fakeSk = 'sk-' + 'proj-abcdefghijklmnopqrstuvwx'
@@ -431,13 +433,13 @@ updated: 2026-10-29
   $env:KB_NONINTERACTIVE_TEST = '1'
   try {
     $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--write', '--json')
-    $attachWrite = $r.text | ConvertFrom-Json
-    $cfgWrite = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    $regWrite = Get-Content $registry -Raw | ConvertFrom-Json
+    $cfgAfter = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $regAfter = Get-Content $registry -Raw | ConvertFrom-Json
   } finally {
     if ($null -eq $oldNonInteractive) { Remove-Item Env:\KB_NONINTERACTIVE_TEST -ErrorAction SilentlyContinue } else { $env:KB_NONINTERACTIVE_TEST = $oldNonInteractive }
   }
-  Check 'attach --write 开启写入并登记 writable' ($r.code -eq 0 -and $attachWrite.writable -eq $true -and $attachWrite.wroteConfig -eq $true -and $cfgWrite.ingest.enabled -eq $true -and $cfgWrite.judge.enabled -eq $true -and $regWrite.projects[0].writable -eq $true) $r.text
+  Check 'attach --write 忽略测试环境变量' ($r.code -ne 0 -and $r.text -match '交互终端') $r.text
+  Check '失败的 attach --write 不改写权限' ($regAfter.projects[0].writable -eq $false -and $cfgAfter.ingest.enabled -eq $false -and $cfgAfter.judge.enabled -eq $false)
   $r = Kb @('--root', $store, 'attach', '--registry', $registry, '--read-only', '--json')
   $cfgReadOnly = Get-Content (Join-Path $store '_meta\config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   $regReadOnly = Get-Content $registry -Raw | ConvertFrom-Json

@@ -125,25 +125,58 @@ function newerTruth(a, b) {
 }
 
 /**
- * One current claim per `subject`. `validate` rejects two active atoms sharing
- * a subject, but old vaults and manual edits can still contain one; injection
- * must be safe even then. The newest active claim wins over heat: a stale hot
- * note must not outrank the claim that replaced it.
+ * One current claim per `subject` across entries from possibly different
+ * stores. `validate` rejects two active atoms sharing a subject inside one
+ * vault, but the global and project stores are validated independently; the
+ * same subject can therefore exist in both. Injection must arbitrate them
+ * together or the older claim can win.
+ *
+ * Entries are `{ note, ...metadata }`; metadata (source, rank) is preserved.
+ * Returned order is subject insertion order then subject-less entries, matching
+ * `currentTruthNotes`.
  */
-export function currentTruthNotes(notes, sessionScope = 'global') {
-  const injectable = (notes || []).filter((note) => isInjectable(note, sessionScope));
+export function currentTruthEntries(entries, sessionScope = 'global') {
+  const injectable = (entries || []).filter((entry) => entry && isInjectable(entry.note, sessionScope));
   const bySubject = new Map();
   const noSubject = [];
-  for (const note of injectable) {
-    const subject = String(note.subject || '').trim();
+  for (const entry of injectable) {
+    const subject = String(entry.note.subject || '').trim();
     if (!subject) {
-      noSubject.push(note);
+      noSubject.push(entry);
       continue;
     }
     const previous = bySubject.get(subject);
-    if (!previous || newerTruth(note, previous) > 0) bySubject.set(subject, note);
+    if (!previous || newerTruth(entry.note, previous.note) > 0) bySubject.set(subject, entry);
   }
   return [...bySubject.values(), ...noSubject];
+}
+
+/**
+ * One current claim per `subject`. Kept as the note-only façade used by
+ * `rankMemories` and the panel fallback.
+ */
+export function currentTruthNotes(notes, sessionScope = 'global') {
+  return currentTruthEntries((notes || []).map((note) => ({ note })), sessionScope).map((entry) => entry.note);
+}
+
+/**
+ * Apply source-aware budgets after cross-store arbitration. `entries` must
+ * already be deduped (normally by `currentTruthEntries`) and carry a source and
+ * a rank; the rank preserves each store's own heat order.
+ */
+export function pickBySource(entries, options = {}) {
+  const limit = (value) => Math.max(0, Number(value) || 0);
+  const globalLimit = limit(options.globalLimit);
+  const projectLimit = limit(options.projectLimit);
+  const pick = (source, cap) => (entries || [])
+    .filter((entry) => entry.source === source)
+    .sort((a, b) => (Number(a.rank) || 0) - (Number(b.rank) || 0))
+    .slice(0, cap)
+    .map((entry) => entry.note);
+  return {
+    globalPicked: pick('global', globalLimit),
+    projectPicked: pick('project', projectLimit),
+  };
 }
 
 /**

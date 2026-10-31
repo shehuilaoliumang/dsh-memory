@@ -90,7 +90,7 @@ function defaultConfig() {
       idle_seconds: 300,
       max_delay_seconds: 1200,
       every_turns: 20,
-      trigger_words: ['记住', '决定', '以后', '不要', '其实'],
+      trigger_words: ['记住', '记一下', '别忘', '决定', '以后', '不要', '喜欢', '讨厌', '我希望', '我要求', '我偏好'],
       meta_keywords: ['知识库', 'kb.mjs', '_meta/', 'catalog', 'schema.md'],
       meta_threshold: 2,
     },
@@ -796,11 +796,11 @@ function oneLine(value, max) {
 /**
  * Destructive/authorizing commands need a human at the terminal. This is a
  * speed bump, not a security boundary: a same-user agent can write files
- * directly. Smoke tests opt out explicitly so the rules themselves stay
- * testable in CI where no TTY exists.
+ * directly, and no environment variable may bypass it. Smoke tests cover the
+ * rejection path only; successful mutation paths are exercised manually in a
+ * real TTY or by lower-level unit tests.
  */
 function requireInteractive(where) {
-  if (process.env.KB_NONINTERACTIVE_TEST === '1') return;
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(`${where} 必须在交互终端运行：需要人在场确认（非 TTY 拒绝）`);
   }

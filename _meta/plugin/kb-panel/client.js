@@ -30,6 +30,12 @@ window.__ModuleLoader__.load({
     const REFRESH_EVENT = 'kb:refresh';
 
     const LAYER_LABEL = { raw: '原文', digest: '摘要', canon: '结论' };
+    /** Raw conversation captures and session logs are not memories. */
+    const isRawNote = (note) => note.level === 'raw' || note.type === 'session';
+    const isWorkNote = (note) => note.type === 'work';
+    const isMemoryNote = (note) => !isRawNote(note) && !isWorkNote(note);
+    const memoryNotesOf = (data) => ((data && data.notes) || []).filter(isMemoryNote);
+    const rememberedNotesOf = (data) => memoryNotesOf(data).filter((note) => note.status === 'active' || note.status === 'canon');
     // P3.3: the Host rotates a per-process CSRF token; the panel snapshot is
     // the only same-origin place to read it. Every `/kb/*` POST echoes it.
     let kbCsrfToken = '';
@@ -51,29 +57,39 @@ window.__ModuleLoader__.load({
       };
     }
     /** Only pages that need to be told apart from atoms get an extra badge. */
-    const TYPE_LABEL = { work: '工作页' };
+    const TYPE_LABEL = {
+      work: '项目状态',
+      preference: '偏好',
+      decision: '决策',
+      principle: '原则',
+      progress: '进度',
+      operation: '操作',
+      fact: '事实',
+    };
     const STATUS_LABEL = {
-      inbox: '收件箱',
-      active: '活跃',
-      review: '待复查',
-      stale: '停滞',
-      promoted: '已晋升',
-      archived: '归档',
-      canon: '定稿',
+      inbox: '待确认',
+      active: '已记住',
+      review: '需复查',
+      stale: '待更新',
+      promoted: '已归档',
+      archived: '已归档',
+      canon: '结论',
     };
     const MODE_LABEL = {
-      on: '知识库开启',
-      off: '知识库关闭',
-      unknown: '知识库未判定',
+      on: '本会话会参考记忆',
+      off: '本会话不参考记忆',
+      unknown: '本会话未判定',
     };
     /** Scope shown in Chinese; project slug keeps its Latin name by design. */
     const scopeLabel = (scope) => {
       if (!scope) return '未分类';
-      if (scope === 'global') return '全局';
+      if (scope === 'global') return '所有项目';
       if (scope === 'system') return '系统';
       if (scope === 'unclassified') return '未分类';
-      return `项目 ${String(scope).replace(/^project:/, '')}`;
+      return `${String(scope).replace(/^project:/, '')} 项目`;
     };
+    /** In the reading surface, "unclassified" is noise rather than information. */
+    const scopeText = (scope) => (!scope || scope === 'unclassified' ? '' : scopeLabel(scope));
 
     /**
      * Bumped whenever this file changes. On activation the module reports it to
@@ -81,7 +97,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-10-29-c21';
+    const CLIENT_BUILD = '2026-10-30-c27';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -126,26 +142,32 @@ window.__ModuleLoader__.load({
       chevron: { width: '12px', height: '12px', flex: 'none', color: 'var(--dsw-alias-label-secondary)' },
       chevronOpen: { transform: 'rotate(180deg)' },
       panel: {
-        width: 'min(560px, calc(100vw - 32px))',
-        maxHeight: 'min(60vh, 520px)',
+        width: 'min(380px, calc(100vw - 32px))',
+        maxHeight: 'min(430px, 70vh)',
         overflowY: 'auto',
         boxSizing: 'border-box',
-        padding: '12px',
+        padding: '14px',
         fontSize: '12px',
         lineHeight: '20px',
         color: 'var(--dsw-alias-label-primary)',
         background: 'var(--dsw-alias-bg-overlay)',
         border: '0.5px solid var(--dsw-alias-border-l2)',
-        borderRadius: '16px',
+        borderRadius: '14px',
       },
-      head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' },
+      head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' },
       title: { fontSize: '14px', lineHeight: '20px', fontWeight: 500 },
       muted: { color: 'var(--dsw-alias-label-secondary)' },
       row: { display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '2px 0' },
+      stats: { display: 'flex', gap: '4px', margin: '10px 0 4px' },
+      stat: { flex: 1, minWidth: 0, padding: '6px 8px', borderRadius: '10px', background: 'var(--dsw-alias-bg-layer-2)' },
+      statValue: { fontSize: '18px', lineHeight: '24px', fontWeight: 500, fontVariantNumeric: 'tabular-nums' },
+      statLabel: { fontSize: '11px', lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' },
       section: { marginTop: '8px', paddingTop: '8px', borderTop: '0.5px solid var(--dsw-alias-border-l1)' },
       list: { margin: '4px 0 0', padding: 0, listStyle: 'none' },
-      item: { display: 'flex', gap: '8px', alignItems: 'baseline', padding: '3px 0' },
-      itemTitle: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      item: { display: 'flex', gap: '8px', alignItems: 'baseline', padding: '4px 0' },
+      itemTitle: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      itemTag: { flex: 'none', color: 'var(--dsw-alias-label-secondary)', fontSize: '11px' },
+      emptyLine: { marginTop: '8px', color: 'var(--dsw-alias-label-secondary)', fontSize: '12px' },
       id: { flex: 'none', color: 'var(--dsw-alias-label-secondary)', fontSize: '11px' },
       btn: {
         font: 'inherit',
@@ -160,6 +182,14 @@ window.__ModuleLoader__.load({
         cursor: 'pointer',
       },
       btnHover: { background: 'var(--dsw-alias-bg-layer-2)' },
+      btnPrimary: {
+        color: '#fff',
+        background:
+          'linear-gradient(135deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 78%, #fff) 0%, var(--dsw-alias-brand-primary) 58%, color-mix(in srgb, var(--dsw-alias-brand-primary) 82%, #000) 100%)',
+        borderColor: 'transparent',
+        boxShadow: '0 4px 14px color-mix(in srgb, var(--dsw-alias-brand-primary) 24%, transparent)',
+      },
+      btnPrimaryHover: { opacity: 0.92, boxShadow: '0 6px 18px color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent)' },
       core: {
         marginTop: '6px',
         paddingLeft: '12px',
@@ -289,20 +319,24 @@ window.__ModuleLoader__.load({
         display: 'flex',
         flexDirection: 'column',
         color: 'var(--dsw-alias-label-primary)',
-        background: 'var(--dsw-alias-bg-base)',
+        backgroundColor: 'var(--dsw-alias-bg-base)',
+        backgroundImage:
+          'radial-gradient(900px 520px at 8% -10%, color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent), transparent 62%), ' +
+          'radial-gradient(780px 460px at 100% 0%, color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent), transparent 58%)',
+        backgroundAttachment: 'fixed',
       },
       pageHead: {
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'space-between',
-        gap: '16px',
-        padding: '28px clamp(24px, 4vw, 48px) 16px',
+        gap: '20px',
+        padding: '24px 32px 14px',
         flex: 'none',
       },
-      pageTitle: { fontSize: '20px', lineHeight: '28px', fontWeight: 500 },
-      pageLead: { marginTop: '4px', fontSize: '13px', lineHeight: '20px', color: 'var(--dsw-alias-label-secondary)' },
-      pageMeta: { display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
-      pageBody: { display: 'flex', gap: '16px', padding: '0 clamp(24px, 4vw, 48px) 24px', flex: 1, minHeight: 0 },
+      pageTitle: { fontSize: '22px', lineHeight: '30px', fontWeight: 600, letterSpacing: '-0.01em' },
+      pageLead: { marginTop: '3px', fontSize: '12px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      pageMeta: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px 12px', flexWrap: 'wrap', fontSize: '12px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      pageBody: { display: 'flex', gap: '14px', padding: '0 32px 20px', flex: 1, minHeight: 0 },
       column: {
         boxSizing: 'border-box',
         display: 'flex',
@@ -323,8 +357,8 @@ window.__ModuleLoader__.load({
         lineHeight: '20px',
         padding: '0 10px',
         color: 'var(--dsw-alias-label-primary)',
-        background: 'var(--dsw-alias-bg-base)',
-        border: '0.5px solid var(--dsw-alias-border-l2)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 54%, transparent)',
         borderRadius: '12px',
         outline: 'none',
       },
@@ -347,6 +381,36 @@ window.__ModuleLoader__.load({
       chipOn: {
         color: 'var(--dsw-alias-label-primary)',
         background: 'var(--dsw-alias-bg-layer-2)',
+      },
+      tabs: { display: 'flex', gap: '2px', padding: '0 12px 10px', flexWrap: 'wrap', flex: 'none' },
+      tab: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        font: 'inherit',
+        fontSize: '12px',
+        lineHeight: '18px',
+        height: '26px',
+        padding: '0 9px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '13px',
+        cursor: 'pointer',
+      },
+      tabOn: { color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)' },
+      tabCount: { opacity: 0.6, fontVariantNumeric: 'tabular-nums' },
+      noteTop: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 },
+      noteTitle: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      noteSummary: {
+        marginTop: '2px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
       },
       noteList: { margin: 0, padding: '0 8px 10px', listStyle: 'none', overflowY: 'auto', flex: 1, minHeight: 0 },
       noteBtn: {
@@ -385,6 +449,251 @@ window.__ModuleLoader__.load({
       mdPara: { margin: '0 0 12px', whiteSpace: 'pre-wrap' },
       mdItem: { margin: '0 0 4px', paddingLeft: '18px', position: 'relative', whiteSpace: 'pre-wrap' },
       empty: { padding: '48px 20px', fontSize: '14px', lineHeight: '1.6', color: 'var(--dsw-alias-label-secondary)', textAlign: 'center' },
+      emptyTitle: { fontSize: '14px', lineHeight: '22px', color: 'var(--dsw-alias-label-primary)' },
+      emptyHint: { marginTop: '6px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', fontSize: '12px', lineHeight: '19px' },
+      callout: {
+        padding: '10px 12px',
+        borderRadius: '10px',
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-secondary)',
+        fontSize: '12px',
+        lineHeight: '19px',
+      },
+      calloutStrong: { color: 'var(--dsw-alias-label-primary)' },
+      details: { marginTop: '14px', fontSize: '12px', lineHeight: '19px', color: 'var(--dsw-alias-label-secondary)' },
+      summary: { cursor: 'pointer', color: 'var(--dsw-alias-label-secondary)' },
+      toast: {
+        position: 'fixed',
+        left: '50%',
+        bottom: '24px',
+        transform: 'translateX(-50%)',
+        zIndex: 100,
+        padding: '7px 12px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'var(--dsw-alias-bg-overlay)',
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        borderRadius: '8px',
+        boxShadow: '0 6px 20px rgba(0, 0, 0, 0.18)',
+      },
+
+      // --- reading surface -------------------------------------------------
+      shell: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        maxWidth: '1240px',
+        height: '100%',
+        minHeight: 0,
+        margin: '0 auto',
+      },
+      headText: { minWidth: 0, flex: '1 1 auto' },
+      headRight: { display: 'flex', alignItems: 'center', gap: '8px', flex: 'none' },
+      headStats: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '2px',
+        padding: '3px',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 62%, transparent)',
+        borderRadius: '12px',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 72%, transparent)',
+        backdropFilter: 'blur(14px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(14px) saturate(140%)',
+        boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 70%, transparent)',
+      },
+      stat: {
+        display: 'inline-flex',
+        alignItems: 'baseline',
+        gap: '5px',
+        height: '30px',
+        padding: '0 10px',
+        font: 'inherit',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '9px',
+        cursor: 'pointer',
+      },
+      statOn: { color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)' },
+      statStatic: { cursor: 'default' },
+      statValue: { fontSize: '15px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)' },
+      statLabel: { fontSize: '11px', lineHeight: '16px' },
+      statusStrip: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        flexWrap: 'wrap',
+        margin: '0 32px 14px',
+        padding: '9px 12px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 62%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 48%, transparent)',
+        borderRadius: '12px',
+        backdropFilter: 'blur(16px) saturate(135%)',
+        WebkitBackdropFilter: 'blur(16px) saturate(135%)',
+        boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 64%, transparent)',
+      },
+      statusGroup: { display: 'inline-flex', alignItems: 'center', gap: '7px', minWidth: 0 },
+      statusDot: { width: '6px', height: '6px', borderRadius: '999px', flex: 'none' },
+      statusStrong: { color: 'var(--dsw-alias-label-primary)' },
+      statusDivider: { width: '0.5px', height: '16px', background: 'var(--dsw-alias-border-l1)' },
+      statusNote: { marginLeft: 'auto', fontSize: '11px' },
+      statusTag: {
+        padding: '1px 6px',
+        fontSize: '10px',
+        lineHeight: '16px',
+        borderRadius: '999px',
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-secondary)',
+      },
+      listCard: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '360px',
+        flex: 'none',
+        minHeight: 0,
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 64%, transparent)',
+        borderRadius: '16px',
+        backgroundColor: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 78%, transparent)',
+        backgroundImage:
+          'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-overlay) 54%, transparent), transparent 120px)',
+        backdropFilter: 'blur(20px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+        boxShadow:
+          '0 18px 48px color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent), ' +
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 72%, transparent)',
+        overflow: 'hidden',
+      },
+      detailCard: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 64%, transparent)',
+        borderRadius: '16px',
+        backgroundColor: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 78%, transparent)',
+        backgroundImage:
+          'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-overlay) 54%, transparent), transparent 140px)',
+        backdropFilter: 'blur(20px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+        boxShadow:
+          '0 18px 48px color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent), ' +
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 72%, transparent)',
+        overflow: 'hidden',
+      },
+      listHead: { padding: '12px 12px 8px', flex: 'none' },
+      tabs2: {
+        display: 'flex',
+        gap: '2px',
+        flex: 'none',
+        margin: '0 12px 10px',
+        padding: '3px',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-2) 64%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 58%, transparent)',
+        borderRadius: '10px',
+      },
+      tab2: {
+        display: 'inline-flex',
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '4px',
+        font: 'inherit',
+        fontSize: '12px',
+        lineHeight: '18px',
+        height: '28px',
+        padding: '0 4px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '8px',
+        cursor: 'pointer',
+      },
+      tabOn2: {
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'var(--dsw-alias-bg-overlay)',
+        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
+      },
+      tabCount2: { fontSize: '10px', opacity: 0.55, fontVariantNumeric: 'tabular-nums' },
+      listScroll: { margin: 0, padding: '0 8px 10px', listStyle: 'none', overflowY: 'auto', flex: 1, minHeight: 0 },
+      noteBtn2: {
+        display: 'block',
+        width: '100%',
+        boxSizing: 'border-box',
+        textAlign: 'left',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        padding: '10px',
+        marginBottom: '2px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'transparent',
+        border: '0.5px solid transparent',
+        borderRadius: '10px',
+        cursor: 'pointer',
+      },
+      noteOn: {
+        backgroundColor: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, var(--dsw-alias-bg-layer-2))',
+        backgroundImage:
+          'linear-gradient(135deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, transparent), transparent 62%)',
+        borderColor: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 34%, transparent)',
+        boxShadow: '0 4px 14px color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)',
+      },
+      noteTitle2: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px', fontWeight: 500 },
+      noteSummary2: {
+        marginTop: '2px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      },
+      noteFooter: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '11px', lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' },
+      noteFooterLabel: { opacity: 0.9 },
+      detailHead2: {
+        padding: '20px 24px 14px',
+        flex: 'none',
+        borderBottom: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 48%, transparent)',
+        backgroundImage:
+          'linear-gradient(120deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent), transparent 55%)',
+      },
+      detailTitle2: { fontSize: '20px', lineHeight: '28px', fontWeight: 600 },
+      detailMeta: { display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', marginTop: '7px', fontSize: '11px', lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' },
+      detailIntro: { marginTop: '12px', padding: '10px 12px', borderRadius: '9px', background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-secondary)', fontSize: '12px', lineHeight: '18px' },
+      detailIntroStrong: { color: 'var(--dsw-alias-label-primary)', fontWeight: 500 },
+      detailActions: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' },
+      detailScroll: { overflowY: 'auto', flex: 1, minHeight: 0 },
+      detailInner: { maxWidth: '760px', margin: '0 auto', padding: '22px 28px 36px', fontSize: '14px', lineHeight: '1.75' },
+      pageFooter: { padding: '0 32px 12px', flex: 'none' },
+      footerDetails: { fontSize: '11px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      empty2: { padding: '64px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' },
+      emptyTitle2: { fontSize: '14px', lineHeight: '22px', color: 'var(--dsw-alias-label-primary)' },
+      emptyHint2: { marginTop: '6px', maxWidth: '360px', fontSize: '12px', lineHeight: '19px', color: 'var(--dsw-alias-label-secondary)' },
+      errorBar: { margin: '0 32px 12px', padding: '8px 12px', fontSize: '12px', lineHeight: '18px', color: 'var(--dsw-alias-state-error-primary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-state-error-primary)', borderRadius: '10px' },
+
+      // --- markdown --------------------------------------------------------
+      mdH1: { fontSize: '22px', lineHeight: '30px', fontWeight: 600, margin: '24px 0 10px' },
+      mdH2: { fontSize: '18px', lineHeight: '26px', fontWeight: 600, margin: '22px 0 8px' },
+      mdH3: { fontSize: '15px', lineHeight: '23px', fontWeight: 600, margin: '18px 0 6px' },
+      mdPara: { margin: '0 0 12px', whiteSpace: 'pre-wrap' },
+      mdUl: { margin: '0 0 12px', paddingLeft: '20px' },
+      mdOl: { margin: '0 0 12px', paddingLeft: '20px' },
+      mdLi: { margin: '0 0 5px' },
+      mdQuote: { margin: '0 0 12px', padding: '2px 0 2px 12px', borderLeft: '2px solid var(--dsw-alias-border-l2)', color: 'var(--dsw-alias-label-secondary)' },
+      mdCodeBlock: { margin: '0 0 14px', padding: '12px 14px', borderRadius: '10px', background: 'var(--dsw-alias-bg-layer-2)', fontSize: '12px', lineHeight: '1.6', overflowX: 'auto', whiteSpace: 'pre' },
+      mdCodeInline: { fontSize: '0.92em', padding: '1px 5px', borderRadius: '5px', background: 'var(--dsw-alias-bg-layer-2)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
+      mdLink: { color: 'var(--dsw-alias-brand-primary)', textDecoration: 'none' },
+      mdStrong: { fontWeight: 600 },
+      mdHr: { border: 'none', borderTop: '0.5px solid var(--dsw-alias-border-l1)', margin: '18px 0' },
 
       // --- pipeline health strip -------------------------------------------
       health: {
@@ -392,8 +701,8 @@ window.__ModuleLoader__.load({
         gap: '7px',
         flexWrap: 'wrap',
         alignItems: 'baseline',
-        margin: '0 24px 10px',
-        padding: '5px 10px',
+        margin: '8px 0 0',
+        padding: '8px 10px',
         fontSize: '11px',
         lineHeight: '18px',
         color: 'var(--dsw-alias-label-secondary)',
@@ -437,11 +746,14 @@ window.__ModuleLoader__.load({
     function KbButton(props) {
       const [hovered, setHovered] = useState(false);
       const disabled = props.disabled === true;
+      const primary = props.variant === 'primary';
+      const base = primary ? { ...S.btn, ...S.btnPrimary } : S.btn;
+      const hover = primary ? { ...base, ...S.btnPrimaryHover } : { ...base, ...S.btnHover };
       const style = disabled
-        ? { ...S.btn, opacity: 0.6, cursor: 'not-allowed' }
+        ? { ...base, opacity: 0.6, cursor: 'not-allowed' }
         : hovered
-          ? { ...S.btn, ...S.btnHover }
-          : S.btn;
+          ? hover
+          : base;
       return h(
         'button',
         {
@@ -467,10 +779,10 @@ window.__ModuleLoader__.load({
     }
 
     function modeText(session) {
-      if (!session || !session.id) return '无会话';
-      if (session.mode === 'on') return session.manual ? '本会话：知识库已手动开启' : '本会话：在知识库内，自动开启';
-      if (session.mode === 'off') return session.manual ? '本会话：知识库已手动关闭' : '本会话：库外项目，不注入记忆';
-      return '本会话：知识库未判定';
+      if (!session || !session.id) return '没有打开的会话';
+      if (session.mode === 'on') return session.manual ? '本会话手动开启记忆' : '本会话会参考记忆';
+      if (session.mode === 'off') return session.manual ? '本会话已关闭记忆' : '本会话不参考记忆';
+      return '本会话记忆未判定';
     }
 
     // --- session "..." menu rows --------------------------------------------
@@ -483,10 +795,10 @@ window.__ModuleLoader__.load({
 
     /** Visible label of the mode row, derived from the live session snapshot. */
     function menuRowLabel(session) {
-      if (!session) return '知识库：读取中…';
-      if (session.mode === 'on') return session.manual ? '知识库：已手动开启' : '知识库：已开启（自动）';
-      if (session.mode === 'off') return session.manual ? '知识库：已关闭' : '知识库：未启用（库外）';
-      return '知识库：未判定';
+      if (!session) return '记忆：读取中…';
+      if (session.mode === 'on') return session.manual ? '本会话：手动开启记忆' : '本会话：会参考记忆';
+      if (session.mode === 'off') return session.manual ? '本会话：已关闭记忆' : '本会话：不参考记忆';
+      return '本会话：记忆未判定';
     }
 
     /**
@@ -559,61 +871,73 @@ window.__ModuleLoader__.load({
 
     // --- composer chip ------------------------------------------------------
 
+    /** Short, human-facing tag for a note; omit it when it would just say "未分类". */
+    function noteTag(note) {
+      if (!note) return '';
+      if (TYPE_LABEL[note.type]) return TYPE_LABEL[note.type];
+      if (note.scope && note.scope !== 'unclassified') return scopeLabel(note.scope);
+      return '';
+    }
+
     function Panel({ data, onRefresh, onOpen, onDisable }) {
-      const layers = counts(data.layers, LAYER_LABEL);
-      const statuses = counts(data.statuses, STATUS_LABEL);
+      const remembered = rememberedNotesOf(data);
+      const inbox = Number(data.inbox) || 0;
+      const review = Number(data.review) || 0;
+      const recent = remembered
+        .slice()
+        .sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')))
+        .slice(0, 3);
+      const stat = (value, label) =>
+        h(
+          'div',
+          { style: S.stat },
+          h('div', { style: S.statValue }, String(value)),
+          h('div', { style: S.statLabel }, label),
+        );
       return h(
         'div',
         { style: S.panel },
         h(
           'div',
           { style: S.head },
-          h('span', { style: S.title }, '知识库 · memory/'),
-          h(
-            'span',
-            { style: { display: 'inline-flex', gap: '8px', alignItems: 'center' } },
-            h('span', { style: S.muted }, new Date(data.generatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })),
-            h(KbButton, { onClick: onRefresh }, '刷新'),
-          ),
+          h('span', { style: S.title }, '记忆'),
+          h(KbButton, { onClick: onRefresh }, '刷新'),
         ),
-        h(
-          'div',
-          { style: S.row },
-          h('span', null, `笔记 ${data.total}`),
-          h('span', { style: S.muted }, '·'),
-          h('span', null, `索引 ${data.catalog}`),
-          h('span', { style: S.muted }, '·'),
-          h('span', null, `归档 ${data.archive}`),
-          h('span', { style: S.muted }, '·'),
-          h('span', { style: data.review ? { color: 'var(--dsw-alias-state-warn-primary)' } : null }, `待复查 ${data.review}`),
-        ),
-        layers.length ? h('div', { style: S.row }, h('span', { style: S.muted }, '分层'), h('span', null, layers.join(' / '))) : null,
-        statuses.length ? h('div', { style: S.row }, h('span', { style: S.muted }, '状态'), h('span', null, statuses.join(' / '))) : null,
-        data.recent && data.recent.length
+        h('div', { style: S.stats }, stat(inbox, '待确认'), stat(remembered.length, '已记住'), stat(Number(data.injected) || 0, '本轮参考')),
+        review
+          ? h('div', { style: { ...S.muted, marginTop: '6px' } }, `${review} 条需要复查`)
+          : null,
+        inbox
+          ? h(
+              'div',
+              { style: { ...S.callout, display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' } },
+              h('span', { style: { ...S.calloutStrong, flex: 1 } }, `有 ${inbox} 条待确认的记忆`),
+              h(KbButton, { variant: 'primary', onClick: onOpen }, '去确认'),
+            )
+          : h('div', { style: S.emptyLine }, '没有待确认的记忆'),
+        recent.length
           ? h(
               'div',
               { style: S.section },
-              h('div', { style: S.muted }, '最近更新'),
+              h('div', { style: S.muted }, '最近记住'),
               h(
                 'ul',
                 { style: S.list },
-                data.recent.map((note) =>
+                recent.map((note) =>
                   h(
                     'li',
                     { key: note.id, style: S.item },
-                    h('span', { style: S.id }, note.id),
                     h('span', { style: S.itemTitle }, note.title || note.summary || note.id),
-                    h('span', { style: { ...S.muted, marginLeft: 'auto' } }, STATUS_LABEL[note.status] || note.status),
+                    noteTag(note) ? h('span', { style: S.itemTag }, noteTag(note)) : null,
                   ),
                 ),
               ),
             )
-          : null,
-        data.core ? h('div', { style: S.section }, h('div', { style: S.muted }, '核心记忆'), h('div', { style: S.core }, data.core)) : null,
+          : h('div', { style: S.emptyLine }, '还没有记住任何内容'),
         h(
           'div',
           { style: S.actions },
-          h(KbButton, { onClick: onOpen }, '打开知识库'),
+          h(KbButton, { variant: 'primary', onClick: onOpen }, '打开记忆'),
           onDisable ? h(KbButton, { onClick: onDisable }, '本会话关闭记忆') : null,
         ),
       );
@@ -668,7 +992,10 @@ window.__ModuleLoader__.load({
       // Outside the vault — or undecidable — the knowledge base leaves no trace.
       if (data.session.mode !== 'on') return null;
 
-      const label = data.session.manual ? '记忆 · 已开启' : '记忆';
+      const remembered = rememberedNotesOf(data);
+      const inbox = Number(data.inbox) || 0;
+      const label = '记忆';
+      const countText = inbox ? `已记住 ${remembered.length} · 待确认 ${inbox}` : `已记住 ${remembered.length}`;
       return h(
         'div',
         { style: S.wrap },
@@ -685,7 +1012,7 @@ window.__ModuleLoader__.load({
           },
           h('span', { style: { ...S.dot, background: 'var(--dsw-alias-state-success-primary)' } }),
           h('span', null, label),
-          h('span', { style: S.count }, `${data.total} 篇 / 索引 ${data.catalog}`),
+          h('span', { style: S.count }, countText),
           h(
             'svg',
             {
@@ -843,7 +1170,7 @@ window.__ModuleLoader__.load({
       if (!session || session.manual !== true) return null;
 
       return h(KbMenuRow, {
-        label: '恢复自动判定',
+        label: '恢复自动记忆',
         onSelect: () => {
           closeMenu();
           void submitModeReset(raw);
@@ -1075,32 +1402,125 @@ window.__ModuleLoader__.load({
 
     // --- knowledge-base page ------------------------------------------------
 
-    /** Minimal block renderer: headings, list items and paragraphs. No HTML. */
+    /**
+     * Inline markdown only: bold, inline code and safe http(s) links.
+     * Everything is rendered as React text, never as raw HTML.
+     */
+    function renderInline(text, prefix = 'i') {
+      if (!text) return [];
+      const nodes = [];
+      const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
+      let last = 0;
+      let match;
+      let index = 0;
+      while ((match = pattern.exec(text))) {
+        if (match.index > last) nodes.push(text.slice(last, match.index));
+        const token = match[0];
+        const key = `${prefix}-${index++}`;
+        if (token.startsWith('**')) {
+          nodes.push(h('strong', { key, style: S.mdStrong }, token.slice(2, -2)));
+        } else if (token.startsWith('`')) {
+          nodes.push(h('code', { key, style: S.mdCodeInline }, token.slice(1, -1)));
+        } else {
+          const link = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/.exec(token);
+          nodes.push(
+            link
+              ? h('a', { key, style: S.mdLink, href: link[2], target: '_blank', rel: 'noreferrer noopener' }, link[1])
+              : token,
+          );
+        }
+        last = match.index + token.length;
+      }
+      if (last < text.length) nodes.push(text.slice(last));
+      return nodes;
+    }
+
+    /** Block renderer for note bodies: headings, lists, quotes, code and links. */
     function renderBody(body) {
       if (!body) return [h('div', { key: 'empty', style: S.empty }, '（无正文）')];
       const nodes = [];
       const lines = body.split(/\r?\n/);
-      for (let index = 0; index < lines.length; index += 1) {
+      let index = 0;
+      let key = 0;
+      const isBlockStart = (line) =>
+        /^(#{1,6})\s+/.test(line) ||
+        /^\s*[-*+]\s+/.test(line) ||
+        /^\s*\d+\.\s+/.test(line) ||
+        /^\s*>\s?/.test(line) ||
+        /^\s*```/.test(line) ||
+        /^\s*(?:---+|\*\*\*+)\s*$/.test(line);
+      while (index < lines.length) {
         const line = lines[index];
-        const key = `l${index}`;
         if (!line.trim()) {
-          nodes.push(h('div', { key, style: { height: '6px' } }));
+          index += 1;
+          continue;
+        }
+        if (/^\s*```/.test(line)) {
+          const code = [];
+          index += 1;
+          while (index < lines.length && !/^\s*```/.test(lines[index])) code.push(lines[index++]);
+          index += 1;
+          nodes.push(h('pre', { key: `c${key++}`, style: S.mdCodeBlock }, h('code', null, code.join('\n'))));
           continue;
         }
         const heading = /^(#{1,6})\s+(.*)$/.exec(line);
         if (heading) {
-          nodes.push(h('div', { key, style: { ...S.mdHead, fontSize: heading[1].length <= 2 ? '18px' : '16px' } }, heading[2]));
+          const depth = heading[1].length;
+          const style = depth <= 1 ? S.mdH1 : depth === 2 ? S.mdH2 : S.mdH3;
+          nodes.push(h(depth <= 1 ? 'h2' : depth === 2 ? 'h3' : 'h4', { key: `h${key++}`, style }, renderInline(heading[2], `h${key}`)));
+          index += 1;
           continue;
         }
         if (/^\s*[-*+]\s+/.test(line)) {
-          nodes.push(h('div', { key, style: S.mdItem }, `• ${line.replace(/^\s*[-*+]\s+/, '')}`));
+          const items = [];
+          while (index < lines.length && /^\s*[-*+]\s+/.test(lines[index])) {
+            items.push(lines[index].replace(/^\s*[-*+]\s+/, ''));
+            index += 1;
+          }
+          nodes.push(
+            h(
+              'ul',
+              { key: `u${key++}`, style: S.mdUl },
+              items.map((item, itemIndex) => h('li', { key: `li${itemIndex}`, style: S.mdLi }, renderInline(item, `li${itemIndex}`))),
+            ),
+          );
+          continue;
+        }
+        if (/^\s*\d+\.\s+/.test(line)) {
+          const items = [];
+          while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+            items.push(lines[index].replace(/^\s*\d+\.\s+/, ''));
+            index += 1;
+          }
+          nodes.push(
+            h(
+              'ol',
+              { key: `o${key++}`, style: S.mdOl },
+              items.map((item, itemIndex) => h('li', { key: `li${itemIndex}`, style: S.mdLi }, renderInline(item, `oli${itemIndex}`))),
+            ),
+          );
           continue;
         }
         if (/^\s*>\s?/.test(line)) {
-          nodes.push(h('div', { key, style: { ...S.mdPara, paddingLeft: '12px', borderLeft: '2px solid var(--dsw-alias-border-l2)', color: 'var(--dsw-alias-label-secondary)' } }, line.replace(/^\s*>\s?/, '')));
+          const quote = [];
+          while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
+            quote.push(lines[index].replace(/^\s*>\s?/, ''));
+            index += 1;
+          }
+          nodes.push(h('blockquote', { key: `q${key++}`, style: S.mdQuote }, renderInline(quote.join('\n'), `q${key}`)));
           continue;
         }
-        nodes.push(h('p', { key, style: S.mdPara }, line));
+        if (/^\s*(?:---+|\*\*\*+)\s*$/.test(line)) {
+          nodes.push(h('hr', { key: `r${key++}`, style: S.mdHr }));
+          index += 1;
+          continue;
+        }
+        const paragraph = [];
+        while (index < lines.length && lines[index].trim() && !isBlockStart(lines[index])) {
+          paragraph.push(lines[index]);
+          index += 1;
+        }
+        nodes.push(h('p', { key: `p${key++}`, style: S.mdPara }, renderInline(paragraph.join('\n'), `p${key}`)));
       }
       return nodes;
     }
@@ -1109,7 +1529,7 @@ window.__ModuleLoader__.load({
       const [data, setData] = useState(null);
       const [failed, setFailed] = useState(false);
       const [query, setQuery] = useState('');
-      const [layer, setLayer] = useState('all');
+      const [tab, setTab] = useState('inbox');
       const [selected, setSelected] = useState(null);
       const [detail, setDetail] = useState(null);
       const [detailBusy, setDetailBusy] = useState(false);
@@ -1117,10 +1537,21 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false);
       /** Host rejection message; a failed action must never look successful. */
       const [actionError, setActionError] = useState('');
+      const [toast, setToast] = useState(null);
       const [health, setHealth] = useState(null);
       const [searchFocused, setSearchFocused] = useState(false);
-      const [hoveredFilter, setHoveredFilter] = useState(null);
       const [hoveredNote, setHoveredNote] = useState(null);
+      const toastTimer = useRef(null);
+      const pickedInitialTab = useRef(false);
+
+      const notify = useCallback((text) => {
+        setToast(String(text));
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(() => setToast(null), 2200);
+      }, []);
+      useEffect(() => () => {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+      }, []);
 
       const load = useCallback(async () => {
         try {
@@ -1203,6 +1634,7 @@ window.__ModuleLoader__.load({
           setStatusBusy(true);
           try {
             if (!(await postAction('/kb/atom', { id, status, scope, clearScope: clearScope === true }))) return;
+            notify(status === 'active' ? '已记住；后续对话可能会参考它' : status === 'archived' ? '已移出记忆；不会进入对话' : '已更新');
             await load();
             await openNote(id);
           } catch {
@@ -1211,27 +1643,7 @@ window.__ModuleLoader__.load({
             setStatusBusy(false);
           }
         },
-        [load, openNote, postAction],
-      );
-
-      /**
-       * Batch lifecycle transitions from the 整理 row: one request, one index
-       * rebuild on the Host side.
-       */
-      const batchApply = useCallback(
-        async (ids, status, scope) => {
-          if (!Array.isArray(ids) || !ids.length) return;
-          setBusy(true);
-          try {
-            if (!(await postAction('/kb/atoms/batch', { ids, status, scope }))) return;
-            await load();
-          } catch {
-            /* keep the previous view */
-          } finally {
-            setBusy(false);
-          }
-        },
-        [load, postAction],
+        [load, notify, openNote, postAction],
       );
 
       /**
@@ -1258,15 +1670,34 @@ window.__ModuleLoader__.load({
         [load],
       );
 
+      const humanNotes = useMemo(() => ((data && data.notes) || []).filter((note) => !isRawNote(note)), [data]);
+      const tabCounts = useMemo(
+        () => ({
+          inbox: humanNotes.filter((note) => note.status === 'inbox' && !isWorkNote(note)).length,
+          active: humanNotes.filter((note) => !isWorkNote(note) && ['active', 'canon', 'review'].includes(note.status)).length,
+          work: humanNotes.filter(isWorkNote).length,
+          all: humanNotes.length,
+        }),
+        [humanNotes],
+      );
       const notes = useMemo(() => {
-        const all = (data && data.notes) || [];
         const q = query.trim().toLowerCase();
-        return all.filter((note) => {
-          if (layer !== 'all' && note.level !== layer) return false;
+        return humanNotes.filter((note) => {
+          if (tab === 'inbox' && (note.status !== 'inbox' || isWorkNote(note))) return false;
+          if (tab === 'active' && (isWorkNote(note) || !['active', 'canon', 'review'].includes(note.status))) return false;
+          if (tab === 'work' && !isWorkNote(note)) return false;
           if (!q) return true;
-          const haystack = `${note.id} ${note.title} ${note.summary} ${(note.tags || []).join(' ')}`.toLowerCase();          return haystack.includes(q);
+          const haystack = `${note.id} ${note.title} ${note.summary} ${(note.tags || []).join(' ')}`.toLowerCase();
+          return haystack.includes(q);
         });
-      }, [data, query, layer]);
+      }, [humanNotes, query, tab]);
+
+      // First load only: with no pending candidates, "已记住" is the meaningful view.
+      useEffect(() => {
+        if (!data || pickedInitialTab.current) return;
+        pickedInitialTab.current = true;
+        if (data.inbox === 0) setTab('active');
+      }, [data]);
 
       useEffect(() => {
         if (!notes.length) {
@@ -1312,35 +1743,66 @@ window.__ModuleLoader__.load({
 
       const session = data && data.session;
       const canToggle = Boolean(session && session.id);
-      const layers = [['all', '全部'], ['raw', '原文'], ['digest', '摘要'], ['canon', '结论']];
+      const currentProject = ((data && Array.isArray(data.projects) ? data.projects : []) || []).find(
+        (project) => session && project.path === session.projectRoot,
+      ) || null;
+      const projectScope = currentProject ? `project:${currentProject.slug}` : session && String(session.scope || '').startsWith('project:') ? session.scope : '';
+      const confirmScopes = [projectScope, 'global'].filter((value, index, list) => value && list.indexOf(value) === index);
+      const defaultScope = detail && detail.scope && detail.scope !== 'unclassified' ? detail.scope : projectScope || 'global';
+
+      const statButton = (value, label, targetTab) => {
+        const activeTab = tab === targetTab;
+        return h(
+          'button',
+          {
+            type: 'button',
+            style: { ...S.stat, ...(activeTab ? S.statOn : null) },
+            onClick: () => setTab(targetTab),
+          },
+          h('span', { style: S.statValue }, value),
+          h('span', { style: S.statLabel }, label),
+        );
+      };
 
       const header = h(
         'div',
         { style: S.pageHead },
         h(
           'div',
-          null,
-          h('div', { style: S.pageTitle }, '知识库'),
-          h('div', { style: S.pageLead }, data ? data.workspace : '读取中…'),
+          { style: S.headText },
+          h('div', { style: S.pageTitle }, '记忆'),
+          h('div', { style: S.pageLead }, '只有你确认的内容才会进入对话。'),
         ),
         h(
           'div',
-          { style: S.pageMeta },
-          h('span', null, data ? `笔记 ${data.total} · 索引 ${data.catalog} · 注入 ${data.injected || 0} · 待确认 ${data.inbox || 0} · 待复查 ${data.review}` : ''),
+          { style: S.headRight },
+          h(
+            'div',
+            { style: S.headStats },
+            data ? statButton(tabCounts.inbox, '待确认', 'inbox') : h('span', { style: { ...S.stat, ...S.statStatic } }, '读取中…'),
+            data ? statButton(tabCounts.active, '已记住', 'active') : null,
+            data
+              ? h(
+                  'div',
+                  { style: { ...S.stat, ...S.statStatic } },
+                  h('span', { style: S.statValue }, data.injected || 0),
+                  h('span', { style: S.statLabel }, '本轮参考'),
+                )
+              : null,
+          ),
           h(KbButton, { onClick: load }, '刷新'),
         ),
       );
 
-      const sessionBar = h(
+      const statusBar = h(
         'div',
-        { style: S.sessionBar },
+        { style: S.statusStrip },
         h(
-          'span',
-          {
+          'div',
+          { style: S.statusGroup },
+          h('span', {
             style: {
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
+              ...S.statusDot,
               background:
                 session && session.mode === 'on'
                   ? 'var(--dsw-alias-state-success-primary)'
@@ -1349,74 +1811,175 @@ window.__ModuleLoader__.load({
                     : 'var(--dsw-alias-state-warn-primary)',
             },
           }),
-        h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, modeText(session)),
-        canToggle
+          h('span', { style: S.statusStrong }, modeText(session)),
+          canToggle
+            ? h(
+                KbButton,
+                { disabled: busy, onClick: () => toggleMode(!(session.mode === 'on')) },
+                session.mode === 'on' ? '关闭' : '开启',
+              )
+            : h('span', null, '打开一个会话后可切换'),
+          session && session.manual ? h(KbButton, { disabled: busy, onClick: resetMode }, '恢复自动') : null,
+        ),
+        canToggle && data && (data.scopes || []).length
           ? h(
-              KbButton,
-              { disabled: busy, onClick: () => toggleMode(!(session.mode === 'on')) },
-              session.mode === 'on' ? '关闭本会话记忆' : '在本会话启用记忆',
-            )
-          : h('span', null, '打开一个会话后可在这里切换注入'),
-        session && session.manual ? h(KbButton, { disabled: busy, onClick: resetMode }, '恢复自动判定') : null,
-        canToggle && data
-          ? h(
-              'span',
-              { style: { display: 'inline-flex', gap: '6px', alignItems: 'center' } },
-              h('span', null, '本会话范围'),
-              ['global'].concat(data.scopes || []).map((scope) =>
-                h(
-                  KbButton,
-                  { key: scope, disabled: busy, onClick: () => changeScope(scope) },
-                  `${(session.scope || 'global') === scope ? '✓ ' : ''}${scope === 'global' ? '全局' : scope.replace('project:', '')}`,
+              React.Fragment,
+              null,
+              h('span', { style: S.statusDivider }),
+              h(
+                'div',
+                { style: S.statusGroup },
+                h('span', null, '范围'),
+                ['global'].concat(data.scopes || []).map((scope) =>
+                  h(
+                    KbButton,
+                    { key: scope, disabled: busy, onClick: () => changeScope(scope) },
+                    `${(session.scope || 'global') === scope ? '✓ ' : ''}${scope === 'global' ? '所有项目' : `${scope.replace('project:', '')} 项目`}`,
+                  ),
                 ),
               ),
             )
           : null,
-        h('span', { style: S.sessionBarNote }, '关闭后该会话不再注入 core.md，也不影响其它会话'),
+        h('span', { style: S.statusDivider }),
+        h(
+          'div',
+          { style: S.statusGroup },
+          h('span', null, currentProject ? `项目 ${currentProject.slug}` : '未接入项目库'),
+          currentProject
+            ? h('span', { style: S.statusTag }, currentProject.writable ? '可写' : '只读')
+            : h('span', { style: S.statusTag }, '仅全局记忆'),
+        ),
+        h('span', { style: S.statusNote }, '只影响本会话'),
       );
 
-      const projectBar = h(
-        'div',
-        { style: { ...S.sessionBar, flexWrap: 'wrap' } },
-        h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '已接入项目：'),
-        (data && Array.isArray(data.projects) ? data.projects : []).length
-          ? (data.projects || []).map((project) =>
-              h(
-                'span',
-                {
-                  key: project.slug,
-                  title: project.path,
-                  style: {
-                    color:
-                      session && project.path === session.projectRoot
-                        ? 'var(--dsw-alias-label-primary)'
-                        : 'var(--dsw-alias-label-secondary)',
-                  },
-                },
-                `${session && project.path === session.projectRoot ? '当前 ' : ''}${project.slug} · ${project.writable ? '可写' : '只读'}`,
-              ),
+      const emptyTitle = query.trim()
+        ? '没有匹配的记忆'
+        : tab === 'inbox'
+          ? '没有待确认的记忆'
+          : tab === 'active'
+            ? '还没有已记住的内容'
+            : tab === 'work'
+              ? '还没有项目状态页'
+              : '还没有记忆';
+      const emptyHint = query.trim()
+        ? '换个关键词试试，或切换到“全部”。'
+        : tab === 'inbox'
+          ? '从对话里整理出的候选会先出现在这里；确认后才会参与对话。'
+          : tab === 'active'
+            ? '待确认的记忆确认后会出现在这里，并可能进入后续对话。'
+            : tab === 'work'
+              ? '项目进行中会自动维护状态页，作为项目上下文保留。'
+              : '这个知识库还没有可展示的记忆。';
+
+      const detailKind = detail
+        ? isWorkNote(detail)
+          ? '项目状态'
+          : detail.status === 'inbox'
+            ? '候选记忆'
+            : detail.status === 'review'
+              ? '需要复查'
+              : detail.status === 'archived'
+                ? '已归档'
+                : detail.status === 'canon'
+                  ? '结论'
+                  : '已记住'
+        : '';
+      const detailHint = detail
+        ? isWorkNote(detail)
+          ? '项目状态页不参与对话，只用于记录项目进展。'
+          : detail.status === 'inbox'
+            ? '从对话里整理出来，还没进入记忆。确认后才会参与对话。'
+            : detail.status === 'review'
+              ? '可能已经过期或与当前结论冲突，建议复查。'
+              : detail.status === 'archived'
+                ? '已移出记忆，不会参与对话。'
+                : '已经记住；只有范围和会话匹配时才会参与对话。'
+        : '';
+      const scopeName = (scope) => (scope === 'global' ? '所有项目' : `${String(scope).replace(/^project:/, '')} 项目`);
+      const scopeActionLabel = (scope) => {
+        if (detail && detail.status === 'inbox') return `记住到${scopeName(scope)}`;
+        if (detail && detail.status === 'archived') return `重新记住到${scopeName(scope)}`;
+        return detail && detail.scope === scope ? `✓ ${scopeName(scope)}` : scopeName(scope);
+      };
+      const detailActions = !detail
+        ? null
+        : isWorkNote(detail)
+          ? h(
+              'div',
+              { style: S.confirmRow },
+              h(KbButton, {
+                disabled: statusBusy,
+                onClick: () => applyStatus(detail.id, detail.status === 'active' ? 'archived' : 'active'),
+              }, detail.status === 'active' ? '不再显示在项目状态' : '恢复项目状态'),
             )
-          : h('span', null, '无；在项目库运行 kb attach 显式接入'),
-        data && data.globalRoot
-          ? h('span', { style: S.sessionBarNote }, `全局库 ${data.globalRoot}`)
-          : null,
-      );
+          : detail.status === 'inbox'
+            ? h(
+                'div',
+                { style: S.confirmRow },
+                confirmScopes.map((scope) =>
+                  h(
+                    KbButton,
+                    { key: scope, variant: scope === defaultScope ? 'primary' : undefined, disabled: statusBusy, onClick: () => applyStatus(detail.id, 'active', scope) },
+                    scopeActionLabel(scope),
+                  ),
+                ),
+                h(KbButton, { disabled: statusBusy, onClick: () => applyStatus(detail.id, 'archived') }, '不需要'),
+              )
+            : detail.status === 'archived'
+              ? h(
+                  'div',
+                  { style: S.confirmRow },
+                  confirmScopes.map((scope) =>
+                    h(
+                      KbButton,
+                      { key: scope, disabled: statusBusy, onClick: () => applyStatus(detail.id, 'active', scope) },
+                      scopeActionLabel(scope),
+                    ),
+                  ),
+                )
+              : h(
+                  'div',
+                  { style: S.confirmRow },
+                  h('span', { style: { ...S.muted, fontSize: '11px' } }, '在哪些会话可用：'),
+                  confirmScopes.map((scope) =>
+                    h(
+                      KbButton,
+                      { key: scope, disabled: statusBusy, onClick: () => applyStatus(detail.id, 'active', scope) },
+                      scopeActionLabel(scope),
+                    ),
+                  ),
+                  h(KbButton, { disabled: statusBusy, onClick: () => applyStatus(detail.id, 'archived') }, '不再记住'),
+                );
+
+      const dotColor = (status) =>
+        status === 'inbox'
+          ? 'var(--dsw-alias-brand-primary)'
+          : status === 'review'
+            ? 'var(--dsw-alias-state-warn-primary)'
+            : status === 'archived' || status === 'promoted'
+              ? 'var(--dsw-alias-state-idle-primary)'
+              : 'var(--dsw-alias-state-success-primary)';
 
       const body = failed
-        ? h('div', { style: { ...S.empty, padding: '24px' } }, '读取失败：Host 接口 /kb/panel.json 不可用')
+        ? h(
+            'div',
+            { style: { ...S.empty2, flex: 1 } },
+            h('div', { style: S.emptyTitle2 }, '读取失败'),
+            h('div', { style: S.emptyHint2 }, 'Host 接口 /kb/panel.json 暂时不可用，请稍后刷新。'),
+          )
         : h(
             'div',
             { style: S.pageBody },
             h(
               'div',
-              { style: { ...S.column, width: '320px', flex: 'none' } },
+              { style: S.listCard },
               h(
                 'div',
-                { style: S.searchWrap },
+                { style: S.listHead },
                 h('input', {
                   style: searchFocused ? { ...S.input, ...S.inputFocus } : S.input,
                   value: query,
-                  placeholder: '搜索 id / 标题 / 摘要 / 标签',
+                  placeholder: '搜索记忆…',
                   onChange: (event) => setQuery(event.target.value),
                   onFocus: () => setSearchFocused(true),
                   onBlur: () => setSearchFocused(false),
@@ -1424,52 +1987,30 @@ window.__ModuleLoader__.load({
               ),
               h(
                 'div',
-                { style: S.filters },
-                layers.map(([value, text]) =>
+                { style: S.tabs2 },
+                [
+                  ['inbox', '待确认'],
+                  ['active', '已记住'],
+                  ['work', '项目状态'],
+                  ['all', '全部'],
+                ].map(([value, text]) =>
                   h(
                     'button',
                     {
                       key: value,
                       type: 'button',
-                      style: { ...S.chip, ...(layer === value ? S.chipOn : hoveredFilter === value ? S.chipHover : null) },
-                      onMouseEnter: () => setHoveredFilter(value),
-                      onMouseLeave: () => setHoveredFilter(null),
-                      onClick: () => setLayer(value),
+                      style: { ...S.tab2, ...(tab === value ? S.tabOn2 : null) },
+                      onClick: () => setTab(value),
                     },
-                    text,
+                    h('span', null, text),
+                    h('span', { style: S.tabCount2 }, tabCounts[value]),
                   ),
                 ),
               ),
-              (() => {
-                // Frequently recalled notes come from access.jsonl via the Host.
-                // Only ids that are still in the index are offered.
-                const known = new Map(((data && data.notes) || []).map((note) => [note.id, note]));
-                const hot = ((data && data.hot) || []).filter((row) => known.has(row.id)).slice(0, 4);
-                return hot.length
-                  ? h(
-                      'div',
-                      { style: S.hotRow },
-                      h('span', { style: { ...S.muted, fontSize: '11px', flex: 'none' } }, '常读'),
-                      hot.map((row) =>
-                        h(
-                          'button',
-                          {
-                            key: row.id,
-                            type: 'button',
-                            style: S.chip,
-                            title: `${row.id} · 召回 ${row.count} 次`,
-                            onClick: () => openNote(row.id),
-                          },
-                          `${(known.get(row.id).title || row.id).slice(0, 10)} ×${row.count}`,
-                        ),
-                      ),
-                    )
-                  : null;
-              })(),
               notes.length
                 ? h(
                     'ul',
-                    { style: S.noteList },
+                    { style: S.listScroll },
                     notes.map((note) =>
                       h(
                         'li',
@@ -1478,122 +2019,96 @@ window.__ModuleLoader__.load({
                           'button',
                           {
                             type: 'button',
-                            style: { ...S.noteBtn, ...(selected === note.id || hoveredNote === note.id ? S.noteHover : null) },
+                            style: {
+                              ...S.noteBtn2,
+                              ...(selected === note.id ? S.noteOn : null),
+                              ...(hoveredNote === note.id && selected !== note.id ? S.noteHover : null),
+                            },
                             onMouseEnter: () => setHoveredNote(note.id),
                             onMouseLeave: () => setHoveredNote(null),
                             onClick: () => openNote(note.id),
                           },
-                          h('div', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, note.title || note.id),
                           h(
                             'div',
-                            { style: S.noteMeta },
-                            h('span', { style: S.badge }, LAYER_LABEL[note.level] || note.level || '—'),
-                            note.type === 'work' ? h('span', { style: S.badge }, TYPE_LABEL.work) : null,
-                            h('span', { style: S.badge }, STATUS_LABEL[note.status] || note.status || '—'),
-                            h('span', { style: S.noteId }, note.id),
+                            { style: S.noteTop },
+                            h('span', { style: S.noteTitle2 }, note.title || note.summary || note.id),
+                            note.status === 'inbox'
+                              ? h('span', { style: { ...S.statusDot, background: 'var(--dsw-alias-brand-primary)' } })
+                              : null,
+                          ),
+                          note.summary && note.summary !== note.title ? h('div', { style: S.noteSummary2 }, note.summary) : null,
+                          h(
+                            'div',
+                            { style: S.noteFooter },
+                            h('span', { style: { ...S.statusDot, background: dotColor(note.status) } }),
+                            h('span', { style: S.noteFooterLabel }, STATUS_LABEL[note.status] || note.status || '—'),
+                            scopeText(note.scope) ? h('span', { style: { opacity: 0.65 } }, scopeText(note.scope)) : null,
+                            isWorkNote(note) ? h('span', { style: { opacity: 0.65 } }, TYPE_LABEL.work) : null,
                           ),
                         ),
                       ),
                     ),
                   )
-                : h('div', { style: S.empty }, '没有匹配的笔记'),
+                : h(
+                    'div',
+                    { style: { ...S.empty2, flex: 1 } },
+                    h('div', { style: S.emptyTitle2 }, emptyTitle),
+                    h('div', { style: S.emptyHint2 }, emptyHint),
+                  ),
             ),
             h(
               'div',
-              { style: { ...S.column, flex: 1 } },
+              { style: S.detailCard },
               detailBusy
-                ? h('div', { style: S.empty }, '读取中…')
+                ? h('div', { style: { ...S.empty2, flex: 1 } }, '读取中…')
                 : detail
                   ? h(
                       React.Fragment,
                       null,
                       h(
                         'div',
-                        { style: S.detailHead },
-                        h('div', { style: S.detailTitle }, detail.title || detail.id),
+                        { style: S.detailHead2 },
+                        h('div', { style: S.detailTitle2 }, detail.title || detail.summary || detail.id),
                         h(
                           'div',
-                          { style: { ...S.noteMeta, marginTop: '4px' } },
-                          h('span', { style: S.badge }, LAYER_LABEL[detail.level] || detail.level || '—'),
-                          detail.type === 'work' ? h('span', { style: S.badge }, TYPE_LABEL.work) : null,
-                          h('span', { style: S.badge }, STATUS_LABEL[detail.status] || detail.status || '—'),
-                          h('span', { style: S.badge }, scopeLabel(detail.scope)),
-                          h('span', null, detail.id),
-                          h('span', null, detail.updated || ''),
-                          h('span', { style: { marginLeft: 'auto' } }, detail.file),
+                          { style: S.detailMeta },
+                          h('span', { style: { ...S.statusDot, background: dotColor(detail.status) } }),
+                          h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, STATUS_LABEL[detail.status] || detail.status || '—'),
+                          scopeText(detail.scope) ? h('span', null, scopeText(detail.scope)) : null,
+                          isWorkNote(detail) ? h('span', null, TYPE_LABEL.work) : null,
+                          detail.updated ? h('span', null, detail.updated) : null,
                         ),
-                        detail.level === 'digest' && detail.type !== 'work'
-                          ? h(
-                              'div',
-                              { style: S.confirmRow },
-                              h(
-                                'span',
-                                { style: { ...S.muted, fontSize: '11px' } },
-                                detail.status === 'active'
-                                  ? '归类（误点可直接改）：'
-                                  : detail.status === 'archived'
-                                    ? '已归档，可恢复或改归类：'
-                                    : detail.status === 'inbox'
-                                      ? '未确认，不会进入对话：'
-                                      : '当前状态不会进入对话：',
-                              ),
-                              ['global', 'system']
-                                .concat(data && Array.isArray(data.scopes) ? data.scopes : [])
-                                .map((scope) =>
-                                  h(
-                                    KbButton,
-                                    {
-                                      key: scope,
-                                      disabled: statusBusy,
-                                      onClick: () => applyStatus(detail.id, 'active', scope),
-                                    },
-                                    `${detail.scope === scope ? '✓ ' : ''}${scope === 'global' ? '全局' : scope === 'system' ? '系统' : scope.replace('project:', '')}`,
-                                  ),
-                                ),
-                              detail.scope
-                                ? h(
-                                    KbButton,
-                                    { disabled: statusBusy, onClick: () => applyStatus(detail.id, 'active', '', true) },
-                                    detail.scope === 'global' ? '取消全局' : '取消范围',
-                                  )
-                                : null,
-                              h(
-                                KbButton,
-                                { disabled: statusBusy, onClick: () => applyStatus(detail.id, 'inbox', detail.scope || '') },
-                                '退回待确认',
-                              ),
-                              h(
-                                KbButton,
-                                { disabled: statusBusy, onClick: () => applyStatus(detail.id, 'archived') },
-                                '归档',
-                              ),
-                            )
-                          : null,
-                        detail.type === 'work'
-                          ? h(
-                              'div',
-                              { style: S.confirmRow },
-                              h(
-                                'span',
-                                { style: { ...S.muted, fontSize: '11px' } },
-                                detail.status === 'active'
-                                  ? '工作页不注入；项目结束可归档，文件与历史保留：'
-                                  : '已归档；恢复后重新出现在工作页列表：',
-                              ),
-                              h(
-                                KbButton,
-                                {
-                                  disabled: statusBusy,
-                                  onClick: () => applyStatus(detail.id, detail.status === 'active' ? 'archived' : 'active'),
-                                },
-                                detail.status === 'active' ? '归档' : '恢复为活跃',
-                              ),
-                            )
-                          : null,
+                        h(
+                          'div',
+                          { style: S.detailIntro },
+                          h('span', { style: S.detailIntroStrong }, detailKind),
+                          h('span', { style: { display: 'block', marginTop: '2px' } }, detailHint),
+                        ),
+                        h('div', { style: S.detailActions }, detailActions),
                       ),
-                      h('div', { style: S.detailBody }, renderBody(detail.body)),
+                      h(
+                        'div',
+                        { style: S.detailScroll },
+                        h(
+                          'div',
+                          { style: S.detailInner },
+                          renderBody(detail.body),
+                          h(
+                            'details',
+                            { style: S.details },
+                            h('summary', { style: S.summary }, '详情'),
+                            h('div', { style: { marginTop: '6px' } }, `ID ${detail.id}`),
+                            h('div', null, `文件 ${detail.file}`),
+                          ),
+                        ),
+                      ),
                     )
-                  : h('div', { style: S.empty }, notes.length ? '选择左侧一篇笔记' : '还没有笔记'),
+                  : h(
+                      'div',
+                      { style: { ...S.empty2, flex: 1 } },
+                      h('div', { style: S.emptyTitle2 }, notes.length ? '选择一条记忆' : emptyTitle),
+                      h('div', { style: S.emptyHint2 }, notes.length ? '左侧列表里的内容会显示在这里。' : emptyHint),
+                    ),
             ),
           );
 
@@ -1632,48 +2147,28 @@ window.__ModuleLoader__.load({
           )
         : null;
 
-      const pendingIds = (data && data.pendingIds) || [];
-      const reviewIds = (data && data.reviewIds) || [];
-      const tidyBar =
-        data && (pendingIds.length || reviewIds.length)
-          ? h(
-              'div',
-              { style: S.health },
-              h('span', { style: { ...S.muted } }, '整理'),
-              pendingIds.length ? h('span', null, `待确认 ${pendingIds.length}`) : null,
-              pendingIds.length
-                ? h(KbButton, { disabled: busy, onClick: () => batchApply(pendingIds, 'active', 'global') }, '批量确认为全局')
-                : null,
-              pendingIds.length ? h(KbButton, { disabled: busy, onClick: () => batchApply(pendingIds, 'archived') }, '批量归档') : null,
-              reviewIds.length ? h('span', null, `待复查 ${reviewIds.length}`) : null,
-              reviewIds.length ? h(KbButton, { disabled: busy, onClick: () => batchApply(reviewIds, 'active') }, '恢复 active') : null,
-              reviewIds.length ? h(KbButton, { disabled: busy, onClick: () => batchApply(reviewIds, 'archived') }, '批量归档') : null,
-            )
-          : null;
+      const runStatus = healthBar
+        ? h(
+            'details',
+            { style: { ...S.details, margin: '0 0 8px' } },
+            h('summary', { style: S.summary }, '运行状态'),
+            healthBar,
+          )
+        : null;
 
       return h(
         'div',
         { style: S.page },
-        header,
-        sessionBar,
-        projectBar,
-        tidyBar,
-        actionError
-          ? h(
-              'div',
-              {
-                style: {
-                  color: 'var(--dsw-alias-state-error-primary)',
-                  fontSize: '12px',
-                  lineHeight: '1.5',
-                  margin: '4px 0',
-                },
-              },
-              actionError,
-            )
-          : null,
-        healthBar,
-        body,
+        h(
+          'div',
+          { style: S.shell },
+          header,
+          statusBar,
+          actionError ? h('div', { style: S.errorBar }, actionError) : null,
+          body,
+          runStatus ? h('div', { style: S.pageFooter }, runStatus) : null,
+        ),
+        toast ? h('div', { style: S.toast }, toast) : null,
       );
     }
 
@@ -1704,7 +2199,7 @@ window.__ModuleLoader__.load({
               name: 'sidebar.workspaces.session.menu.item',
               id: 'kb-memory',
               order: 500,
-              label: () => '知识库',
+              label: () => '本会话记忆',
             },
             KbMemoryMenuItem,
           );
@@ -1713,13 +2208,13 @@ window.__ModuleLoader__.load({
               name: 'sidebar.workspaces.session.menu.item',
               id: 'kb-memory-reset',
               order: 510,
-              label: () => '恢复自动判定',
+              label: () => '恢复自动记忆',
             },
             KbMemoryResetMenuItem,
           );
         });
         ctx.slots.inject('sidebar.panellist', () =>
-          ctx.slots.register({ name: 'sidebar.panellist', id: 'kb', order: 5, label: () => '知识库' }, KbIcon),
+          ctx.slots.register({ name: 'sidebar.panellist', id: 'kb', order: 5, label: () => '记忆' }, KbIcon),
         );
         ctx.slots.inject('sidebar.footer.action', () =>
           ctx.slots.register(

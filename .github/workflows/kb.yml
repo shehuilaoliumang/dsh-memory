@@ -49,19 +49,31 @@ jobs:
         shell: pwsh
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'public-snapshot'
-          # Negative regression for the export gate (round 12 seam: suffix-bound
-          # patterns let `access.jsonl.bak` through). Plant telemetry files with
-          # the live and a backup suffix, then prove the export drops both.
-          $planted = @('_meta/access-test.jsonl', '_meta/access-test.jsonl.bak')
+          # Negative regressions for the export gate:
+          #  (a) round 12 seam: suffix-bound patterns let `access.jsonl.bak` through;
+          #  (b) round 13 seam: 6-7 hex short session ids passed the 8-hex floor.
+          # Plant both classes, then prove the export drops (a) and sanitizes (b).
+          $planted = @('_meta/access-test.jsonl', '_meta/access-test.jsonl.bak', '_meta/rules/session-test.md')
           foreach ($p in $planted) {
             New-Item -Path $p -ItemType File -Force | Out-Null
-            Set-Content -Path $p -Value '{"id":"planted-telemetry"}' -Encoding UTF8
+            if ($p -like '*session-test.md') {
+              Set-Content -Path $p -Value 'short session-<redacted> and long session-<redacted>fd77e6' -Encoding UTF8
+            } else {
+              Set-Content -Path $p -Value '{"id":"planted-telemetry"}' -Encoding UTF8
+            }
           }
           node _meta/scripts/export-public.mjs --out $out
           if ($LASTEXITCODE -ne 0) { exit 1 }
           foreach ($p in $planted) {
             Remove-Item -Path $p -Force -ErrorAction SilentlyContinue
-            if (Test-Path (Join-Path $out $p)) {
+            if ($p -like '*session-test.md') {
+              $exported = Join-Path $out $p
+              if (-not (Test-Path $exported)) { Write-Error "export lost the planted text fixture: $p"; exit 1 }
+              if ((Get-Content $exported -Raw) -match 'session-[0-9a-f]{6}') {
+                Write-Error "export failed to sanitize the short session id fixture"
+                exit 1
+              }
+            } elseif (Test-Path (Join-Path $out $p)) {
               Write-Error "public snapshot exported planted telemetry: $p"
               exit 1
             }
@@ -88,7 +100,7 @@ jobs:
             $bad | ForEach-Object { Write-Error "public snapshot contains a forbidden file: $($_.FullName)" }
             exit 1
           }
-          $ids = Get-ChildItem $out -Recurse -File | Select-String -Pattern 'session-[0-9a-f]{8}' -List
+          $ids = Get-ChildItem $out -Recurse -File | Select-String -Pattern 'session-[0-9a-f]{6}' -List
           if ($ids) {
             $ids | ForEach-Object { Write-Error "public snapshot leaks a session id: $($_.Path)" }
             exit 1

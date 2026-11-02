@@ -69,7 +69,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 用 PowerShell 而非 `node:test`：DSH 沙箱禁止 node 子进程用管道 stdio 再 spawn（EPERM），而 kb.mjs 是独立脚本、需要真实执行。
 
-管理页（`@local/kb-panel` v1.19.3，客户端 c36，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
+管理页（`@local/kb-panel` v1.19.4，客户端 c36，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
 
 ## 发布
 
@@ -82,7 +82,7 @@ node _meta/scripts/publish-public.mjs --dir D:\dsh-memory-public [--repo owner/n
 node _meta/scripts/publish-public.mjs --dir D:\dsh-memory-public --orphan
 ```
 
-`export-public.mjs` 的排除名单与 `.gitignore` 同源：`access*` 任意后缀（含 `access.jsonl.bak` 这类备份；v1.19.3 起不再只绑 `.jsonl`）、`_meta/state/`、`10_Raw/`、`PROJECT_PLAN.md` 都不进公开快照；导出后还会断言这些文件不存在，发现即中止。**导出同时清洗运行时标识**（`stripRuntimeIds`）：session UUID → `session-<redacted>`、裸 UUID → `<uuid>`、原文路径 → `10_Raw/sessions/<redacted>.md`，导出后再断言没有残留；CI「Build sanitized public snapshot」步骤会再查一遍禁止文件与 session id，并做**植入式负向回归**（先写入 `_meta/access-test.jsonl` 与 `.jsonl.bak`，导出后断言两者都不在快照，再清理）。`publish-public.mjs` 在发布前再跑一遍硬闸（同样拒绝 `access*` 任意后缀等文件），并支持 `--orphan`（等价 `--force`）用干净树新建无父提交、重置 `main` 历史——用于清除已泄漏的遥测文件；`--force` 也可单独用。
+`export-public.mjs` 的排除名单与 `.gitignore` 同源：`access*` 任意后缀（含 `access.jsonl.bak` 这类备份；v1.19.3 起不再只绑 `.jsonl`）、`_meta/state/`、`10_Raw/`、`PROJECT_PLAN.md` 都不进公开快照；导出后还会断言这些文件不存在，发现即中止。**导出同时清洗运行时标识**（`stripRuntimeIds`）：session UUID → `session-<redacted>`、裸 UUID → `<uuid>`、原文路径 → `10_Raw/sessions/<redacted>.md`，导出后再断言没有残留；**session id 的清洗/断言 hex 下限为 6**（v1.19.4 起，6–7 位短 id 如 `session-<redacted>` 也会被清洗）。CI「Build sanitized public snapshot」步骤会再查一遍禁止文件与 session id（下限同为 6），并做**植入式负向回归**：先写入 `_meta/access-test.jsonl` 与 `.jsonl.bak`（导出后断言不在快照）以及 `_meta/rules/session-test.md`（含短/长 id，导出后断言内容已被清洗），再清理。`publish-public.mjs` 在发布前再跑一遍硬闸（同样拒绝 `access*` 任意后缀等文件），并支持 `--orphan`（等价 `--force`）用干净树新建无父提交、重置 `main` 历史——用于清除已泄漏的遥测文件；`--force` 也可单独用。
 
 ## 加载形状闸门
 

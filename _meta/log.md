@@ -19,54 +19,54 @@
 2026-10-20 01:00 | ui | 面板首版验证：/kb/panel.json 200（16 篇 / 索引 16 / 分层 2-9-5），conversation.composer.dock 的 kb-memory 已激活
 2026-10-20 01:00 | fix | 面板快照排除 core.md 固定文件：重载后 notes 17→16
 2026-10-20 01:00 | patch | schema v1.2：新增 _meta/plugin/ 与 §12 界面层插件，未决 6 关闭
-2026-10-20 01:41 | extract | session-<redacted> 候选 3 条 → judge 队列（idle）
-2026-10-20 01:54 | extract | session-<redacted> 候选 14 条 → judge 队列（idle）
-2026-10-20 02:03 | extract | session-<redacted> 候选 20 条 → judge 队列（idle）
-2026-10-20 02:07 | extract | session-<redacted> 候选 9 条 → judge 队列（idle）
-2026-10-20 02:08 | extract | session-<redacted> 候选 14 条 → judge 队列（idle）
-2026-10-20 02:10 | extract | session-<redacted> 候选 16 条 → judge 队列（idle）
-2026-10-20 20:21 | extract | session-<redacted> 候选 16 条 → judge 队列（catch-up）
-2026-10-20 20:31 | extract | session-<redacted> 候选 11 条 → judge 队列（idle）
-2026-10-20 20:42 | extract | session-<redacted> 候选 7 条 → judge 队列（idle）
-2026-10-20 20:44 | extract | session-<redacted> 候选 8 条 → judge 队列（idle）
-2026-10-20 20:46 | extract | session-<redacted> 候选 4 条 → judge 队列（idle）
-2026-10-20 21:10 | extract | session-<redacted> 候选 8 条 → judge 队列（idle）
-2026-10-20 22:08 | extract | session-<redacted> 候选 20 条 → judge 队列（manual）
+2026-10-20 01:41 | extract | session-<redacted>3c-746c-4c64-908c-9f4e09561a6f 候选 3 条 → judge 队列（idle）
+2026-10-20 01:54 | extract | session-<redacted>3c-746c-4c64-908c-9f4e09561a6f 候选 14 条 → judge 队列（idle）
+2026-10-20 02:03 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 20 条 → judge 队列（idle）
+2026-10-20 02:07 | extract | session-<redacted>8e-3acb-4d19-8aec-1fe4b567f427 候选 9 条 → judge 队列（idle）
+2026-10-20 02:08 | extract | session-<redacted>de-efec-4651-bd7b-2c04e86f8a9c 候选 14 条 → judge 队列（idle）
+2026-10-20 02:10 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 16 条 → judge 队列（idle）
+2026-10-20 20:21 | extract | session-<redacted>3c-746c-4c64-908c-9f4e09561a6f 候选 16 条 → judge 队列（catch-up）
+2026-10-20 20:31 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 11 条 → judge 队列（idle）
+2026-10-20 20:42 | extract | session-<redacted>de-efec-4651-bd7b-2c04e86f8a9c 候选 7 条 → judge 队列（idle）
+2026-10-20 20:44 | extract | session-<redacted>3c-746c-4c64-908c-9f4e09561a6f 候选 8 条 → judge 队列（idle）
+2026-10-20 20:46 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 4 条 → judge 队列（idle）
+2026-10-20 21:10 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 8 条 → judge 队列（idle）
+2026-10-20 22:08 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 20 条 → judge 队列（manual）
 2026-10-20 22:08 | atom | 2026-10-20-a-0009（preference）界面文案用简体中文，系统路径保持英文
 2026-10-20 22:08 | atom | 2026-10-20-a-0010（decision）记忆条改为无边框紧凑按钮
-2026-10-20 22:19 | extract | session-<redacted> 候选 14 条 → judge 队列（idle）
-2026-10-20 22:25 | extract | session-<redacted> 候选 7 条 → judge 队列（idle）
+2026-10-20 22:19 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 14 条 → judge 队列（idle）
+2026-10-20 22:25 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 7 条 → judge 队列（idle）
 2026-10-20 22:29 | atom | 2026-10-20-a-0011（preference）希望自行确认页面版本
 2026-10-20 22:34 | atom | 2026-10-20-a-0012（task）kb-panel 三界面视觉对齐宿主
 2026-10-20 22:34 | atom | 2026-10-20-a-0013（task）知识库触发器行为验证未完成
-2026-10-20 22:35 | extract | session-<redacted> 候选 3 条 → judge 队列（idle）
+2026-10-20 22:35 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 3 条 → judge 队列（idle）
 2026-10-20 22:38 | atom | 2026-10-20-a-0014（decision）知识库校验改用二次确认
 2026-10-20 22:38 | atom | 2026-10-20-a-0015（question）原子增多后自动提议晋升/降权
-2026-10-20 22:47 | extract | session-<redacted> 候选 19 条 → judge 队列（idle）
+2026-10-20 22:47 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 19 条 → judge 队列（idle）
 2026-10-20 22:47 | atom | 2026-10-20-a-0016（principle）知识库不应沦为施工日志
 2026-10-20 23:18 | consolidate | 整理：新增 c-0006/c-0007 记忆隔离决策；a-0001/2/3/4/5/6/7/8/16 晋升并补 up 回指；a-0012/13 归档；t-0001 主题页补全 21 条 related 与 v1.7 结论。uncovered 归零。
-2026-10-20 23:22 | extract | session-<redacted> 候选 20 条 → judge 队列（max-delay）
-2026-10-20 23:33 | extract | session-<redacted> 候选 20 条 → judge 队列（manual）
+2026-10-20 23:22 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 20 条 → judge 队列（max-delay）
+2026-10-20 23:33 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 20 条 → judge 队列（manual）
 2026-10-20 23:37 | delete | 2026-10-20-a-0010, 2026-10-20-a-0012, 2026-10-20-a-0013, 2026-10-20-a-0014, 2026-10-20-a-0015（物理删除，票据 del-mvguiy37-ae1fdf）
 2026-10-20 23:40 | delete | 2026-10-20-a-0001, 2026-10-20-a-0002, 2026-10-20-a-0003, 2026-10-20-a-0004, 2026-10-20-a-0005, 2026-10-20-a-0006, 2026-10-20-a-0007, 2026-10-20-a-0008（物理删除，票据 del-mvgumskp-d3c3fa）
-2026-10-28 21:23 | extract | session-<redacted> 候选 17 条 → judge 队列（catch-up）
+2026-10-28 21:23 | extract | session-<redacted>ed-f709-4bca-ae02-8ce7b4e08925 候选 17 条 → judge 队列（catch-up）
 2026-10-28 21:28 | atom | 2026-10-28-a-0001（principle）知识库不物理删除，只降权或归档
 2026-10-28 21:28 | atom | 2026-10-28-a-0002（decision）删除笔记须票据加人工输入密钥
-2026-10-29 00:13 | extract | session-<redacted> 候选 20 条 → judge 队列（idle）
+2026-10-29 00:13 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 20 条 → judge 队列（idle）
 2026-10-29 00:17 | atom | 2026-10-29-a-0001（decision）记忆写入需用户确认
 2026-10-29 00:26 | work | 工作层落地：type=work + 20_Digest/work/ + work-new/work-brief + 恢复简报注入（不占记忆预算）+ 整理诊断；schema v1.4
-2026-10-29 00:32 | extract | session-<redacted> 候选 8 条 → judge 队列（idle）
+2026-10-29 00:32 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 8 条 → judge 队列（idle）
 2026-10-29 00:40 | archive | 2026-10-29-a-0001 归档（与 c-0007 语义重复，裁判去重已增加 canon 上下文）
-2026-10-29 00:41 | extract | session-<redacted> 候选 5 条 → judge 队列（idle）
+2026-10-29 00:41 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 5 条 → judge 队列（idle）
 2026-10-29 00:47 | work | 审计修复 1-6：validate 工作页唯一性、简报多条聚合、面板归档/恢复、注入规则单测、裁判 canon 上下文与审计字段、冒烟基线断言
-2026-10-29 00:55 | extract | session-<redacted> 候选 4 条 → judge 队列（catch-up）
+2026-10-29 00:55 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 4 条 → judge 队列（catch-up）
 2026-10-29 01:01 | work | 独立审查第 2 轮：工作页恢复冲突守卫、batch 预校验、brief 总长上限、状态变更写日志、validate 类型-id 校验、PS5.1 BOM/命令、文档一致性（id 格式/scope 口径/删除命令/模板）
 2026-10-29 01:09 | write | c-0008 架构总览：分层+五步管线+双闸门注入+工作层+单写通道，串起 c-0001~c-0007
-2026-10-29 01:15 | extract | session-<redacted> 候选 13 条 → judge 队列（idle）
+2026-10-29 01:15 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 13 条 → judge 队列（idle）
 2026-10-29 01:18 | publish | GitHub public 脱敏快照已发布：https://github.com/shehuilaoliumang/dsh-memory（51 文件，无 10_Raw/state）
 2026-10-29 01:18 | atom | 2026-10-29-a-0002（fact）知识库仓库公开前的敏感内容边界
-2026-10-29 01:23 | extract | session-<redacted> 候选 3 条 → judge 队列（idle）
-2026-10-29 09:50 | extract | session-<redacted> 候选 20 条 → judge 队列（catch-up）
+2026-10-29 01:23 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 3 条 → judge 队列（idle）
+2026-10-29 09:50 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 20 条 → judge 队列（catch-up）
 2026-10-29 09:52 | status | 2026-10-29-a-0002 → archived
 2026-10-29 11:25 | work | Phase 1 当前真相：subject/supersedes/superseded、pending 取代边、consolidate truth、shadow 排序；7 篇存量原子补 subject
 2026-10-29 11:54 | phase2 | Phase 2: golden set 100, precision 1.000, promptVersion/breaker/feedback, tests 88/88, smoke 69/69
@@ -78,8 +78,8 @@
 2026-10-31 11:50 | publish | 1.11.0 公开快照：发布 commit 87f228b、tree da0591a、77 文件；CI run 41165962008 全绿
 2026-10-31 13:50 | ui | 安全刷新：软刷新（不卸载页面）+ 完整重载空闲执行/忙时排队；客户端 c21；v1.11.1；插件 114/114、冒烟 90/90
 2026-10-31 15:49 | phase7 | 审计清偿：N5 同 subject 唯一 active、redact 中文/短值/URL/手机/身份证、attach --write/delete TTY、项目库裁判禁止 global、registry 故障注入；插件 122/122、冒烟 98/98；c-0015；v1.12.0 待发布
-2026-10-31 17:26 | extract | session-<redacted> 候选 1 条 → judge 队列（idle）
-2026-10-31 17:32 | extract | session-<redacted> 候选 2 条 → judge 队列（idle）
+2026-10-31 17:26 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 1 条 → judge 队列（idle）
+2026-10-31 17:32 | extract | session-<redacted>5e-d410-44e2-8d36-9c6ca997755c 候选 2 条 → judge 队列（idle）
 2026-10-31 17:49 | phase8 | 记忆交互改版与 90+ 质量加固完成；N6 跨库仲裁、TTY 无后门、触发词短语化；测试 127/100
 2026-10-31 18:50 | phase10 | 多工作区隔离查看：workspace 读/写解析、前端选择器、只读目标 403、legacy 5 条补位、init 默认触发词 20/meta 10；插件 129/129、冒烟 102/102；c-0017；1.14.0 已发布（public `3a70778`，CI `41195129561`）
 2026-11-02 10:50 | phase11 | 工作区独立记忆库创建/接入：POST /kb/workspace/attach、session.workspace、UI 创建/接入卡片、默认只读、c-0018；测试 129/129、冒烟 102/102；1.15.0 待发布
@@ -102,7 +102,9 @@
 2026-11-02 18:00 | docs | 决策编号避让：重置后首条决策 2026-11-02-c-0001 → 2026-11-02-c-1001（新系列从 c-1001 起，旧号停用；正文补与 c-0015 适用范围）；代码注释与 schema/AGENTS/README/index/PROJECT_PLAN 引用同步；1.19.1 待发布
 2026-11-02 18:12 | release | 1.19.1 公开快照已用孤儿提交重发：public commit 2cd38f6（tree 3d0953e）、CI run 41426653086 全绿；main 历史由 --orphan --force 重开，1.19.0 的 506279b/dc43eb2 不在可达历史；导出已排除 access*.jsonl/state/10_Raw，公开树复核无禁止路径
 2026-11-02 18:33 | release | 1.19.1 发布记录回填已推送：public commit 0ab310b（tree af20108，父 2cd38f6）、CI run 41429548520 全绿；公开 main 头=0ab310b，README 已无
-2026-11-02 18:56 | audit | 1.19.2 自审公开可见卫生：公开 _meta/log.md 清洗 session UUID/原文路径（export stripRuntimeIds + 导出后断言）；CI 导出快照新增禁止文件与 session id 检查；README/schema 区分本地完整库 3 篇/2 行与公开快照 2 篇/1 行；README/CHANGELOG 旧决策悬空引用清理与 c-0001→c-1001 改名说明；fixture 真实 session 片段改合成 id session-<redacted>；1.19.2 待发布
+2026-11-02 18:56 | audit | 1.19.2 自审公开可见卫生：公开 _meta/log.md 清洗 session UUID/原文路径（export stripRuntimeIds + 导出后断言）；CI 导出快照新增禁止文件与 session id 检查；README/schema 区分本地完整库 3 篇/2 行与公开快照 2 篇/1 行；README/CHANGELOG 旧决策悬空引用清理与 c-0001→c-1001 改名说明；fixture 真实 session 片段改合成 id session-<redacted>cd-ef01；1.19.2 待发布
 2026-11-02 19:03 | release | 1.19.2 公开快照已发布：public commit 55844c3（tree b8aa813）、CI run 41433455297 全绿；自审修复（log session UUID/原文路径清洗+导出断言、CI 快照禁止文件/session id 检查、数字口径、悬空引用、fixture/文本去真实标识）；远端复核 log 无 session id、README 无待发布、树无禁止路径
 2026-11-02 19:05 | audit | 第十二轮四条小缝清偿：export/publish 对 access* 任意后缀（含 .jsonl.bak）拒绝 + CI 植入式负向回归；validate 本地/公开口径已在 1.19.2 拆分关闭；df14e3 集中声明为本地私有历史（公开仓库不可解析）；orphan/force-push 对象残余披露（只保证 main 可达历史）；1.19.3 待发布
 2026-11-02 19:05 | audit | 修正上条转义：`bdf14e3` 为本地私有历史（公开仓库不可解析）；第十二轮四条小缝 = access* 任意后缀闸门 + CI 植入式负向回归、validate 口径已在 1.19.2 关闭、本地历史声明、orphan 对象残余披露；1.19.3 待发布
+2026-11-02 19:10 | release | 1.19.3 公开快照已发布：public commit 4b020ac（tree 058cc5d）、CI run 41434489680 全绿；负向回归通过（植入 access-test.jsonl 与 .jsonl.bak 均未被导出）；远端复核 log 无 session id/控制字符、README 无待发布、树无 access*/state/10_Raw/PROJECT_PLAN
+2026-11-02 19:19 | audit | 第十三轮理论缝关闭：session id 清洗/断言 hex 下限 {8}->{6}（6-7 位短 id 也清洗），CI 快照检查同步 session-[0-9a-f]{6} + 植入 _meta/rules/session-test.md（短/长 id）断言被清洗；1.19.4 为最后一个补丁版，程序性项全部关闭、下一步结构性方向（架构面/可继承性）

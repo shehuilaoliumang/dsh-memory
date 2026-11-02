@@ -114,7 +114,7 @@ function stripRawSources(text) {
 // Runtime identifiers are not document content: session UUIDs and raw session
 // file names appear in `_meta/log.md` and must not travel with the public repo
 // (same class as the access-*.jsonl telemetry leak; found by the self-audit).
-const SESSION_ID_PATTERN = /session-[0-9a-f]{8}(?:-[0-9a-f]{4}){0,3}(?:-[0-9a-f]{1,12})?/gi;
+const SESSION_ID_PATTERN = /session-[0-9a-f]{6}(?:-[0-9a-f]{4}){0,3}(?:-[0-9a-f]{1,12})?/gi;
 const BARE_UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 const RAW_SESSION_PATH_PATTERN = /10_Raw\/sessions\/[0-9A-Za-z_./-]+\.md/g;
 function stripRuntimeIds(text) {
@@ -125,7 +125,7 @@ function stripRuntimeIds(text) {
 }
 
 // Non-global copies for a final assertion after sanitization.
-const SESSION_ID_FORBIDDEN = /session-[0-9a-f]{8}/i;
+const SESSION_ID_FORBIDDEN = /session-[0-9a-f]{6}/i;
 const BARE_UUID_FORBIDDEN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 const RAW_SESSION_PATH_FORBIDDEN = /10_Raw\/sessions\/[0-9A-Za-z_./-]+\.md/;
 function assertNoRuntimeIds(rel, text) {

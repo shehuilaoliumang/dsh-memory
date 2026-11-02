@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.19.3
+title: 知识库规范 v1.19.4
 status: canon
 updated: 2026-11-02
 ---
 
-# 知识库规范 v1.19.3
+# 知识库规范 v1.19.4
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -425,7 +425,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v1.19.3）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期；`check-plugin-load.mjs` 是**静态加载形状检查**（JSON 解析/禁 BOM/manifest 与文件存在/patch 形状/`node --check`），不替代真实 DSH Host 启动。**版本号纪律**：UI/文档补丁走 patch，只有行为变更才升 minor。
+已知限制（v1.19.4）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期；`check-plugin-load.mjs` 是**静态加载形状检查**（JSON 解析/禁 BOM/manifest 与文件存在/patch 形状/`node --check`），不替代真实 DSH Host 启动。**版本号纪律**：UI/文档补丁走 patch，只有行为变更才升 minor。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -547,9 +547,9 @@ node _meta/scripts/smoke.ps1   # 冒烟 106/106（夹具自包含）；插件 14
 | 简化 ingest | 先测量接管、自检、去重与失败窗口的故障率再删代码；`test/FAULT-INJECTION.md` 把每类机制映射到测试，删掉会失败；保留 raw 追加这一最小路径 |
 | HTTP 本机令牌 | `index.js` 每次启动生成 local token 写 `_meta/state/http-token`（0600）；非浏览器写请求需 `x-kb-local-token`，loopback 之外的连接一律 403 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 1.19.3；`node _meta/scripts/check-plugin-load.mjs` 通过（5 个 JSON 配置、14 个 manifest 文件、2 个 locale、15 个 JS 语法；带 BOM 的 JSON 负向自测 exit 1）；`init` 可重复执行并给项目库写自忽略 `.gitignore`；同一分钟两个会话 validate 通过；`stores` 自动建库判定/已有库不自动接入、`store_id` 补写与文件夹改名重定位/复制库需确认、`autoWritable`/`autoGranted` 授权来源与收回、`folderBirthtimeMs` 双信号迁移、ingest 外部 `--root` 路由测试、N5 同 subject 冲突与跨库仲裁测试、promote 5 条全局提升测试通过；`add-atom --json-file` 的 `note` 落到「## 备注」；新项目库首次 `set-status` 自动创建 `_meta/log.md`；冒烟 106/106、插件 144/144；**本地完整库** `validate` 3 篇（core.md + 自动捕获的 10_Raw 会话 + c-1001）/2 行、0 警告；**公开快照**（无 `10_Raw/`）`validate` 2 篇（core.md + c-1001）/1 行、0 警告；**公开快照不得含 `access*`（任意后缀）/`_meta/state/`/`10_Raw/`/`PROJECT_PLAN.md`（export 排除 + publish 硬闸双重）**；CI「Build sanitized public snapshot」做植入式负向回归（写入 `_meta/access-test.jsonl` 与 `.jsonl.bak`，导出后断言均不在快照并清理）；导出会把 session UUID/原文路径清洗为 `session-<redacted>`/`10_Raw/sessions/<redacted>.md`，CI 在导出快照上再查一遍禁止文件与 session id。
+验收：`node _meta/scripts/kb.mjs version` 输出 1.19.4；`node _meta/scripts/check-plugin-load.mjs` 通过（5 个 JSON 配置、14 个 manifest 文件、2 个 locale、15 个 JS 语法；带 BOM 的 JSON 负向自测 exit 1）；`init` 可重复执行并给项目库写自忽略 `.gitignore`；同一分钟两个会话 validate 通过；`stores` 自动建库判定/已有库不自动接入、`store_id` 补写与文件夹改名重定位/复制库需确认、`autoWritable`/`autoGranted` 授权来源与收回、`folderBirthtimeMs` 双信号迁移、ingest 外部 `--root` 路由测试、N5 同 subject 冲突与跨库仲裁测试、promote 5 条全局提升测试通过；`add-atom --json-file` 的 `note` 落到「## 备注」；新项目库首次 `set-status` 自动创建 `_meta/log.md`；冒烟 106/106、插件 144/144；**本地完整库** `validate` 3 篇（core.md + 自动捕获的 10_Raw 会话 + c-1001）/2 行、0 警告；**公开快照**（无 `10_Raw/`）`validate` 2 篇（core.md + c-1001）/1 行、0 警告；**公开快照不得含 `access*`（任意后缀）/`_meta/state/`/`10_Raw/`/`PROJECT_PLAN.md`（export 排除 + publish 硬闸双重）**；CI「Build sanitized public snapshot」做植入式负向回归（写入 `_meta/access-test.jsonl` 与 `.jsonl.bak`，导出后断言均不在快照并清理）；导出会把 session UUID/原文路径清洗为 `session-<redacted>`/`10_Raw/sessions/<redacted>.md`，**session id 清洗与断言的 hex 下限为 6**（6–7 位短 id 也清洗），CI 在导出快照上再查一遍禁止文件与 session id，并植入 `_meta/rules/session-test.md`（短/长 id）断言必须被清洗。这是最后一个补丁版：程序性项全部关闭，后续为结构性方向（架构面/可继承性）。
 
-## 17. 多项目记忆库与全局偏好（v1.10 新增，v1.11 外部写入，v1.12 审计清偿，v1.13 跨库仲裁，v1.16 自动建库，v1.17 全局提升，v1.18 改名迁移，v1.18.2 层叠修复，v1.18.3 不透明度，v1.18.4 改名对话框，v1.19 授权/迁移信任硬化，v1.19.1 导出卫生/编号避让，v1.19.2 公开可见卫生，v1.19.3 闸门后缀/本地历史声明）
+## 17. 多项目记忆库与全局偏好（v1.10 新增，v1.11 外部写入，v1.12 审计清偿，v1.13 跨库仲裁，v1.16 自动建库，v1.17 全局提升，v1.18 改名迁移，v1.18.2 层叠修复，v1.18.3 不透明度，v1.18.4 改名对话框，v1.19 授权/迁移信任硬化，v1.19.1 导出卫生/编号避让，v1.19.2 公开可见卫生，v1.19.3 闸门后缀/本地历史声明，v1.19.4 短 session id 下限）
 
 ### 17.1 目标
 
@@ -698,7 +698,7 @@ node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tm
 
 验收：插件 144/144（stores 20）；对 project/legacy 工作区改名只变 `project.json.title`、slug/scope 不变，global 改名被拒（400）；改名走自绘对话框（Electron 无 window.prompt，Enter 保存 / Escape 取消）；选择器显示 `project.json.title`（legacy 显示实际名称如 “DSH Memory”），下拉菜单浮于内容卡之上（状态条 z-index），玻璃表面不透明度 ≥90%（92–96%）；自动建库 `provision.autoWritable=false` 时只读、`autoGranted` 记录/清除与 `--read-only` 收回归档；文件夹改名（旧路径消失 + `folderBirthtimeMs` 一致）自动重定位且保留 `writable`/`autoGranted`；复制/克隆或无 birthtime 的旧行需人工确认（确认后保留 `writable`、去掉 `autoGranted`）；未注册 clone 库不自动绑定；`validate` 3 篇/2 行、0 警告。
 
-## 18. 审计清偿与跨库加固（v1.12 新增，v1.13–v1.19.3 扩展）
+## 18. 审计清偿与跨库加固（v1.12 新增，v1.13–v1.19.4 扩展）
 
 - 同一 `subject` 最多一条 `active`；`validate` 是硬门禁，写入 API 在落盘前拦截；替换必须显式 `supersedes`，注入/面板统一按 subject 取最新 active。
 - 跨库同一 subject 冲突由 `selectInjection` 先合并仲裁、再按 source 预算；注入与 `injected` 计数共用该函数，不能先单库截断再拼接（c-0016）。

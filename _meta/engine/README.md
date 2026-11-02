@@ -13,6 +13,14 @@ node _meta/engine/bin/kb.mjs --root <store> add-atom --json-file spec.json --jso
 
 仓库内兼容入口保持 `_meta/scripts/kb.mjs`（默认 root = 本仓库 vault）。
 
+## 任意根与约定根
+
+- 引擎只要求根目录有 `_meta/config.json`（`init --root <dir>` 可创建）；它**不要求**
+  根目录名必须是 `.dsh-memory`，也不是只能服务本仓库。
+- `<project>/.dsh-memory` 是 DSH 适配层的约定（自动建库/接入的目标），不是引擎约束。
+  对非约定根，引擎按普通 store 处理，宿主可自行决定如何命名与发现。
+- 因此「仓库外任意目录跑通全链路」是设计内能力；警告只表示宿主约定未满足，不是失败。
+
 ## 模块
 
 - `lib/stores.mjs` — 多库 registry、store_id、attach/relocate、自动建库目标判定

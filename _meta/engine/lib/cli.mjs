@@ -236,7 +236,9 @@ function todayPlus(days) {
 }
 
 // ------------------------------------------------------- frontmatter 解析
-// 单一实现：`_meta/plugin/kb-panel/shared/frontmatter.mjs`。本文件只导入，不再维护第二份。
+// 单一实现：`_meta/engine/lib/shared/frontmatter.mjs`（本文件从它导入）。
+// 插件 `_meta/plugin/kb-panel/shared/frontmatter.mjs` 只是 re-export shim，
+// 不再维护第二份解析逻辑。
 
 
 function splitLinks(value) {

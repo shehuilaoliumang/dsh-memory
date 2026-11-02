@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v1.19.4
+title: 知识库规范 v2.0.0
 status: canon
 updated: 2026-11-02
 ---
 
-# 知识库规范 v1.19.4
+# 知识库规范 v2.0.0
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -388,7 +388,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：chip 显示“已记住 N · 待确认 N”，弹层显示三项计数与最近记住；侧栏“记忆”页四页签（待确认/已记住/项目状态/全部），默认待确认，隐藏 raw/session，详情按状态给确认/归档/改范围，正文 Markdown 渲染；工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，客户端 c36：胶囊触发钮、玻璃菜单、选中品牌色、外点/Escape 关闭、`aria-haspopup/listbox/option`；状态条 `position: relative` + `z-index: 40` 保证下拉浮于内容卡之上；玻璃表面底不透明度 92–96%，≥90% 并保留 `backdrop-filter`；改名用自绘玻璃对话框，Enter 保存 / Escape 或点遮罩取消，Electron 无 `window.prompt`），显示各库 `project.json.title`（legacy 同）；已确认 digest 原子详情提供「提升为全局」（c30，§17.10）；project 与 legacy 可写工作区显示「改名」、迁移候选时显示「重新定位到当前路径」卡片（c36 起区分「已迁移」与「未确认副本」两种文案）；`sidebar.footer.action` 的「刷新界面」主按钮只重读面板快照（软刷新，不卸载页面），右侧菜单的「完整重载界面」空闲即重载、忙时排队到全部会话空闲后自动重载，绝不强制中断 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
-| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测十个文件共 144 条（含 stores 20 自动建库判定与改名/迁移/授权来源、promote 5 全局提升、ingest 外部 `--root` 路由、N5 冲突、跨库仲裁/预算与 redact 断言） |
+| 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测十个文件共 149 条（含 stores 20 自动建库判定与改名/迁移/授权来源、context 5 上下文/写权限、promote 5 全局提升、ingest 外部 `--root` 路由、N5 冲突、跨库仲裁/预算与 redact 断言） |
 
 已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板展示已接入项目及当前/可写/只读状态，创建/接入卡片用于已有库或仓库自带库（新库由 Host 自动创建，§17.9），没有独立的授权管理页。自动写入在 Host 侧触发器，不在面板操作里。软刷新只更新已挂载面板的数据，不加载新版前端代码；完整重载始终以 `/kb/busy` 为准，忙时不强制。浏览器原生 `Ctrl+R` 仍是可绕过 busy 检查的兜底，本功能不改变这一点。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
 
@@ -396,7 +396,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 
 ## 11. 规则层（v1.1 新增）
 
-实现：`_meta/scripts/kb.mjs`（零依赖 Node ≥ 20）+ `_meta/config.json`（参数外置）。决策见 c-0005。
+实现：`_meta/engine/`（`@local/kb-engine`，零依赖 Node ≥ 20，宿主无关）+ `_meta/config.json`（参数外置）；`_meta/scripts/kb.mjs` 是兼容包装（默认 root = 本仓库 vault）。决策见 c-0005、c-1002。
 
 | 命令 | 管线步骤 | 说明 |
 |---|---|---|
@@ -425,7 +425,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v1.19.4）：frontmatter 解析已收敛到插件共享模块（`shared/frontmatter.mjs`），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），脚本本身不感知会话生命周期；`check-plugin-load.mjs` 是**静态加载形状检查**（JSON 解析/禁 BOM/manifest 与文件存在/patch 形状/`node --check`），不替代真实 DSH Host 启动。**版本号纪律**：UI/文档补丁走 patch，只有行为变更才升 minor。
+已知限制（v2.0.0）：frontmatter 解析已收敛到引擎共享模块（`_meta/engine/lib/shared/frontmatter.mjs`，插件同名文件为 shim），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），引擎本身不感知会话生命周期；`check-plugin-load.mjs` 是**静态加载形状检查**（JSON 解析/禁 BOM/manifest 与文件存在/patch 形状/`node --check`），不替代真实 DSH Host 启动。**版本号纪律**：UI/文档补丁走 patch，行为变更才 minor，结构性模块/依赖变化走 major（2.0.0 即结构性 major，行为不变）。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -527,7 +527,7 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 node _meta/scripts/kb.mjs search --query "界面 中文" --limit 5
 node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/http-guard.test.mjs
-node _meta/scripts/smoke.ps1   # 冒烟 106/106（夹具自包含）；插件 144/144
+node _meta/scripts/smoke.ps1   # 冒烟 106/106（夹具自包含）；插件 149/149
 ```
 
 非目标（v1.8 明确不做）：多用户/公网部署、进程级认证、密钥保险库、自动语义检索、对已提交 git 历史的清洗。
@@ -538,8 +538,8 @@ node _meta/scripts/smoke.ps1   # 冒烟 106/106（夹具自包含）；插件 14
 |---|---|
 | 版本 | 根目录 `VERSION` 是唯一版本号；`kb.mjs version` 读取它；`CHANGELOG.md` 按阶段记录；插件 `package.json` 同步版本 |
 | 初始化 | `kb.mjs init` 幂等创建 `10_Raw/sessions`、`20_Digest/atoms|topics|work`、`30_Canon/decisions` 与 `_meta/state` 骨架；项目库另写自忽略 `.dsh-memory/.gitignore`；不覆盖已有文件 |
-| frontmatter | 统一用 `_meta/plugin/kb-panel/shared/frontmatter.mjs`；CLI 与插件不得各自维护 parser |
-| 工作页节名 | `shared/work-sections.mjs` 的 `WORK_SECTIONS` 是唯一来源；模板、brief、validate 共用；改节名必须同步模板与迁移 |
+| frontmatter | 统一用 `_meta/engine/lib/shared/frontmatter.mjs`；插件 `_meta/plugin/kb-panel/shared/frontmatter.mjs` 只是 re-export shim；CLI 与插件不得各自维护 parser |
+| 工作页节名 | `_meta/engine/lib/shared/work-sections.mjs` 的 `WORK_SECTIONS` 是唯一来源；插件同名 shim 只 re-export；模板、brief、validate 共用；改节名必须同步模板与迁移 |
 | 空目录 scope | vault 外会话、cwd slug 为空时回落 `unclassified`，不再默认 `global`；fail closed |
 | 会话 id | 同一分钟新建会话时同时检查文件名与 frontmatter id，冲突加 `-2`/`-3` 后缀；`SESSION_ID` 允许可选数字后缀 |
 | 遥测轮转 | `access.jsonl` 超行数/字节阈值时轮转到 `access-<stamp>.jsonl` 后继续写；轮转文件不提交、不删除 |
@@ -547,9 +547,9 @@ node _meta/scripts/smoke.ps1   # 冒烟 106/106（夹具自包含）；插件 14
 | 简化 ingest | 先测量接管、自检、去重与失败窗口的故障率再删代码；`test/FAULT-INJECTION.md` 把每类机制映射到测试，删掉会失败；保留 raw 追加这一最小路径 |
 | HTTP 本机令牌 | `index.js` 每次启动生成 local token 写 `_meta/state/http-token`（0600）；非浏览器写请求需 `x-kb-local-token`，loopback 之外的连接一律 403 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 1.19.4；`node _meta/scripts/check-plugin-load.mjs` 通过（5 个 JSON 配置、14 个 manifest 文件、2 个 locale、15 个 JS 语法；带 BOM 的 JSON 负向自测 exit 1）；`init` 可重复执行并给项目库写自忽略 `.gitignore`；同一分钟两个会话 validate 通过；`stores` 自动建库判定/已有库不自动接入、`store_id` 补写与文件夹改名重定位/复制库需确认、`autoWritable`/`autoGranted` 授权来源与收回、`folderBirthtimeMs` 双信号迁移、ingest 外部 `--root` 路由测试、N5 同 subject 冲突与跨库仲裁测试、promote 5 条全局提升测试通过；`add-atom --json-file` 的 `note` 落到「## 备注」；新项目库首次 `set-status` 自动创建 `_meta/log.md`；冒烟 106/106、插件 144/144；**本地完整库** `validate` 3 篇（core.md + 自动捕获的 10_Raw 会话 + c-1001）/2 行、0 警告；**公开快照**（无 `10_Raw/`）`validate` 2 篇（core.md + c-1001）/1 行、0 警告；**公开快照不得含 `access*`（任意后缀）/`_meta/state/`/`10_Raw/`/`PROJECT_PLAN.md`（export 排除 + publish 硬闸双重）**；CI「Build sanitized public snapshot」做植入式负向回归（写入 `_meta/access-test.jsonl` 与 `.jsonl.bak`，导出后断言均不在快照并清理）；导出会把 session UUID/原文路径清洗为 `session-<redacted>`/`10_Raw/sessions/<redacted>.md`，**session id 清洗与断言的 hex 下限为 6**（6–7 位短 id 也清洗），CI 在导出快照上再查一遍禁止文件与 session id，并植入 `_meta/rules/session-test.md`（短/长 id）断言必须被清洗。这是最后一个补丁版：程序性项全部关闭，后续为结构性方向（架构面/可继承性）。
+验收：`node _meta/scripts/kb.mjs version` 输出 2.0.0；`node _meta/engine/bin/kb.mjs --root . validate` 通过（engine 直连，零 DSH 依赖）；`node _meta/scripts/check-plugin-load.mjs` 通过（6 个 JSON 配置、14 个 manifest 文件、11 个 engine 文件、2 个 locale、25 个 JS 语法；带 BOM 的 JSON 负向自测 exit 1）；`init` 可重复执行并给项目库写自忽略 `.gitignore`；同一分钟两个会话 validate 通过；`stores` 自动建库判定/已有库不自动接入、`store_id` 补写与文件夹改名重定位/复制库需确认、`autoWritable`/`autoGranted` 授权来源与收回、`folderBirthtimeMs` 双信号迁移、ingest 外部 `--root` 路由测试、N5 同 subject 冲突与跨库仲裁测试、promote 5 条全局提升测试通过；`add-atom --json-file` 的 `note` 落到「## 备注」；新项目库首次 `set-status` 自动创建 `_meta/log.md`；冒烟 106/106、插件 149/149（含 `context.test.mjs` 5 条：legacy/可写项目/只读/未接入/kind 信任边界）；**本地完整库** `validate` 4 篇（core.md + 自动捕获的 10_Raw 会话 + c-1001 + c-1002）/3 行、0 警告；**公开快照**（无 `10_Raw/`）`validate` 3 篇（core.md + c-1001 + c-1002）/2 行、0 警告；**公开快照不得含 `access*`（任意后缀）/`_meta/state/`/`10_Raw/`/`PROJECT_PLAN.md`（export 排除 + publish 硬闸双重）**；CI「Build sanitized public snapshot」做植入式负向回归（写入 `_meta/access-test.jsonl` 与 `.jsonl.bak`，导出后断言均不在快照并清理）；导出会把 session UUID/原文路径清洗为 `session-<redacted>`/`10_Raw/sessions/<redacted>.md`，**session id 清洗与断言的 hex 下限为 6**（6–7 位短 id 也清洗），CI 在导出快照上再查一遍禁止文件与 session id，并植入 `_meta/rules/session-test.md`（短/长 id）断言必须被清洗；engine 不 import DSH/插件，依赖方向单向（plugin → engine）。
 
-## 17. 多项目记忆库与全局偏好（v1.10 新增，v1.11 外部写入，v1.12 审计清偿，v1.13 跨库仲裁，v1.16 自动建库，v1.17 全局提升，v1.18 改名迁移，v1.18.2 层叠修复，v1.18.3 不透明度，v1.18.4 改名对话框，v1.19 授权/迁移信任硬化，v1.19.1 导出卫生/编号避让，v1.19.2 公开可见卫生，v1.19.3 闸门后缀/本地历史声明，v1.19.4 短 session id 下限）
+## 17. 多项目记忆库与全局偏好（v1.10 新增，v1.11 外部写入，v1.12 审计清偿，v1.13 跨库仲裁，v1.16 自动建库，v1.17 全局提升，v1.18 改名迁移，v1.18.2 层叠修复，v1.18.3 不透明度，v1.18.4 改名对话框，v1.19 授权/迁移信任硬化，v1.19.1 导出卫生/编号避让，v1.19.2 公开可见卫生，v1.19.3 闸门后缀/本地历史声明，v1.19.4 短 session id 下限，v2.0 引擎解耦/上下文收敛）
 
 ### 17.1 目标
 
@@ -684,7 +684,7 @@ node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tm
 - **失败回滚（v1.18.5）**：全局副本写入成功、源条 `set-status promoted` 失败时 fail-closed——把**刚写入的非重复全局副本**置为 `archived`（duplicate 情况不回滚，避免改动既有全局条目），避免源条与全局条双活，然后向调用方返回失败，可重试。
 - **客户端**：build `2026-11-02-c36` 提供按钮；Host 热重载后需刷新页面才可见。
 
-验收：插件 144/144（promote 5 条）；对 active 项目原子提升后全局库新增 `scope: global` 原子、来源备注正确、源条 `status: promoted`；同 summary 再提升返回 duplicate 且不新增副本；inbox 原子 / 工作页 / 只读库提升被拒绝；源条置 `promoted` 失败时新全局副本被回滚为 `archived`（duplicate 不回滚）；`validate` 0 警告。
+验收：插件 149/149（promote 5 条）；对 active 项目原子提升后全局库新增 `scope: global` 原子、来源备注正确、源条 `status: promoted`；同 summary 再提升返回 duplicate 且不新增副本；inbox 原子 / 工作页 / 只读库提升被拒绝；源条置 `promoted` 失败时新全局副本被回滚为 `archived`（duplicate 不回滚）；`validate` 0 警告。
 
 ### 17.11 工作区改名与文件夹迁移（v1.18）
 
@@ -696,9 +696,9 @@ node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tm
 - **与历史 c-0015 的关系**：迁移自动重绑只是让已有授权跟随同一目录、不新增信任；与「授权与破坏同权」的适用范围见 c-1001。
 - **客户端**：build `2026-11-02-c36`（自绘玻璃工作区选择器；状态条 `position: relative` + `z-index: 40` 让下拉菜单浮于内容卡之上，触发钮去原生 focus 外框；玻璃表面底不透明度 92–96%，≥90%；改名用自绘玻璃对话框，Enter 保存 / Escape 取消；迁移卡片区分「已迁移」与「未确认副本」两种文案/按钮）；Host 热重载后需刷新页面才见新 UI。
 
-验收：插件 144/144（stores 20）；对 project/legacy 工作区改名只变 `project.json.title`、slug/scope 不变，global 改名被拒（400）；改名走自绘对话框（Electron 无 window.prompt，Enter 保存 / Escape 取消）；选择器显示 `project.json.title`（legacy 显示实际名称如 “DSH Memory”），下拉菜单浮于内容卡之上（状态条 z-index），玻璃表面不透明度 ≥90%（92–96%）；自动建库 `provision.autoWritable=false` 时只读、`autoGranted` 记录/清除与 `--read-only` 收回归档；文件夹改名（旧路径消失 + `folderBirthtimeMs` 一致）自动重定位且保留 `writable`/`autoGranted`；复制/克隆或无 birthtime 的旧行需人工确认（确认后保留 `writable`、去掉 `autoGranted`）；未注册 clone 库不自动绑定；`validate` 3 篇/2 行、0 警告。
+验收：插件 149/149（stores 20 与 context 5）；对 project/legacy 工作区改名只变 `project.json.title`、slug/scope 不变，global 改名被拒（400）；改名走自绘对话框（Electron 无 window.prompt，Enter 保存 / Escape 取消）；选择器显示 `project.json.title`（legacy 显示实际名称如 “DSH Memory”），下拉菜单浮于内容卡之上（状态条 z-index），玻璃表面不透明度 ≥90%（92–96%）；自动建库 `provision.autoWritable=false` 时只读、`autoGranted` 记录/清除与 `--read-only` 收回归档；文件夹改名（旧路径消失 + `folderBirthtimeMs` 一致）自动重定位且保留 `writable`/`autoGranted`；复制/克隆或无 birthtime 的旧行需人工确认（确认后保留 `writable`、去掉 `autoGranted`）；未注册 clone 库不自动绑定；`validate` 3 篇/2 行、0 警告。
 
-## 18. 审计清偿与跨库加固（v1.12 新增，v1.13–v1.19.4 扩展）
+## 18. 审计清偿与跨库加固（v1.12 新增，v1.13–v2.0.0 扩展）
 
 - 同一 `subject` 最多一条 `active`；`validate` 是硬门禁，写入 API 在落盘前拦截；替换必须显式 `supersedes`，注入/面板统一按 subject 取最新 active。
 - 跨库同一 subject 冲突由 `selectInjection` 先合并仲裁、再按 source 预算；注入与 `injected` 计数共用该函数，不能先单库截断再拼接（c-0016）。
@@ -711,3 +711,13 @@ node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tm
 - 全局记忆只经记忆页「提升为全局」显式增长：项目裁判 `allowGlobal=false` 与提升接口的源库/全局库写授权校验共同保证项目不会自动写全局；跨库链接不复制、只记来源备注（c-0019 + c-0020，§17.10）。
 - 工作区改名只改 `project.json.title`，不动 slug/scope；文件夹迁移靠 `store_id` 认库：旧路径消失才自动重定向 registry，旧路径仍在必须人工确认，不扫盘、不接受客户端路径（c-0021，§17.11）。
 - 未做项（进程级认证、跨库锁/队列）在 c-0015 记录“不做+理由”；连续复审若仍列为必须项，下一轮 CHANGELOG 必须显式回应，不能静默略过。
+
+## 19. 引擎包与上下文收敛（v2.0）
+
+- **引擎包**：规则层实现位于 `_meta/engine/`（`@local/kb-engine`）：`bin/kb.mjs` → `lib/cli.mjs`（全部 CLI 命令），`lib/stores.mjs`/`work-brief.mjs`/`redact.mjs`/`promote.mjs`/`context.mjs`/`shared/*`/`index.mjs`，加 `package.json`（`bin` + `exports` 子路径）与 README。零 DSH/插件 import，root 由 `--root`/`KB_ROOT`/`KB_DEFAULT_ROOT` 决定。
+- **兼容层**：`_meta/scripts/kb.mjs` 是 20 行兼容包装（默认 root = 本仓库 vault，转 engine CLI）；插件 `stores.js`/`work-brief.js`/`redact.js`/`promote.js`/`shared/*.mjs` 是 engine 的 re-export shim。依赖方向固定为 **engine ← plugin**；新集成直接用 engine。
+- **上下文语义（context.mjs）**：`describeStore()` 统一 global/legacy/project 同形描述（`root`/`kind`/`slug`/`scope`/`writable`）；`resolveContext(cwd, opts)` 返回 stores + scope + writeTarget；`resolveWriteTarget()` 是唯一写权限——可写且已接入的 project 优先，其次 cwd 位于显式 legacy vault 内写 legacy，否则 `null`（fail closed，不隐式建库）。legacy 是数据（`kind`）而非散落路径特判；插件 mode/scope/turn-end 路由/external ingestor 谓词/attach/relocate/workspaceState 全部经它，删除插件本地 `within` 复制与 `writableProjectStore` 重复判断。
+- **公开接口**：CLI（`node _meta/engine/bin/kb.mjs --root <store> validate|rebuild|add-atom|…`）与模块导出（`lib/index.mjs`：context/stores/work-brief/promote/redact/shared；`package.json.exports` 支持子路径 import）。
+- **闸门与覆盖**：`check-plugin-load.mjs` 校验 engine 清单/版本一致/11 个 engine 文件存在/全部 JS 语法；`context.test.mjs` 5 条覆盖 legacy、可写项目、只读、未接入与 kind 信任边界；行为不变量见 §17–§18。
+
+验收：`node _meta/engine/bin/kb.mjs --root . validate` 通过（engine 直连，零 DSH 依赖）；`node _meta/scripts/kb.mjs` 旧命令输出与 v1.19.4 一致；插件 149/149（含 context 5）、冒烟 106/106、本地 `validate` 4 篇/3 行、公开快照 3 篇/2 行、0 警告；engine 无 DSH/插件 import，依赖单向（plugin → engine）。

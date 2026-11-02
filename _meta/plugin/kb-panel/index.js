@@ -46,11 +46,11 @@ import {
   syncRegistryStoreIds,
   uniqueWorkspaceSlug,
   updateProjectTitle,
-  writableProjectStore,
 } from './stores.js';
 import { parseFrontmatterData as parseFrontmatter } from './shared/frontmatter.mjs';
 import { globalAtomSpec, isGlobalPromotable, localDateStamp } from './promote.js';
 import { briefText, currentTruthEntries, currentTruthNotes, pickBySource, rankMemories } from './work-brief.js';
+import { isInsideLegacy, resolveContext, resolveWriteTarget } from '../../engine/lib/context.mjs';
 
 export const inject = ['webServer', 'systemPrompt'];
 
@@ -84,19 +84,6 @@ function commandError(result) {
   const text = String((result && (result.stderr || result.stdout)) || '').trim();
   const match = /(?:^|\n)Error: ([^\n]+)/.exec(text);
   return (match ? match[1] : text).replace(/\s+/g, ' ').trim().slice(0, 200);
-}
-
-/** True when `child` is `parent` itself or sits underneath it. */
-function within(parent, child) {
-  if (!child) return false;
-  let rel;
-  try {
-    rel = path.relative(parent, child);
-  } catch {
-    return false;
-  }
-  if (rel === '') return true;
-  return !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
 function sendJson(res, status, value) {
@@ -329,7 +316,7 @@ export function apply(ctx, config = {}) {
     if (id && overrides.has(id)) return overrides.get(id) ? 'on' : 'off';
     const cwd = cwdOf(agent);
     if (!cwd) return 'unknown';
-    return within(root, cwd) ? 'on' : 'off';
+    return isInsideLegacy(cwd, root) ? 'on' : 'off';
   };
 
   const isKbSession = (agent) => modeOf(agent) === 'on';
@@ -341,7 +328,7 @@ export function apply(ctx, config = {}) {
     if (id && overrides.has(id)) return overrides.get(id) ? 'on' : 'off';
     const cwd = cwdOfSession(session);
     if (!cwd) return 'unknown';
-    return within(root, cwd) ? 'on' : 'off';
+    return isInsideLegacy(cwd, root) ? 'on' : 'off';
   };
   const isKbSessionRecord = (session) => modeOfSession(session) === 'on';
 
@@ -362,21 +349,25 @@ export function apply(ctx, config = {}) {
     if (stored && /^project:[a-z0-9][a-z0-9-]*$/.test(stored)) return stored;
     try {
       const cwd = cwdOf(agent);
-      const stores = storesFor(agent);
-      if (stores && stores.project && !stores.project.legacy) {
-        return `project:${stores.project.meta.slug}`;
-      }
-      if (cwd && !within(root, cwd)) {
-        const slug = path
-          .basename(cwd)
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '');
-        if (slug) return `project:${slug}`;
-        // Outside the vault but with no usable directory name: fail closed.
-        // Falling back to `global` would inject this session's unclassified
-        // memories into every project, so nothing may be inferred.
-        return 'unclassified';
+      if (cwd) {
+        // One resolver decides stores + scope (context.mjs), so the prompt path,
+        // the write path and the panel cannot drift apart.
+        const context = resolveContext(cwd, { legacyRoot: root, globalRoot, registryFile });
+        if (context.project && context.project.isProject && context.project.slug) {
+          return context.project.scope;
+        }
+        if (!context.legacy) {
+          const slug = path
+            .basename(cwd)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+          if (slug) return `project:${slug}`;
+          // Outside the vault but with no usable directory name: fail closed.
+          // Falling back to `global` would inject this session's unclassified
+          // memories into every project, so nothing may be inferred.
+          return 'unclassified';
+        }
       }
     } catch {
       /* fall back to global */
@@ -439,26 +430,23 @@ export function apply(ctx, config = {}) {
           console.warn('[kb-ingest] turn/end listener failed', error);
         });
       };
+      const captureFor = (target) => {
+        if (!target) return false;
+        capture(target.kind === 'legacy' ? ingestor : externalRuntimeFor({ root: target.root }).ingestor);
+        return true;
+      };
       try {
-        const project = cwd
-          ? writableProjectStore(cwd, { legacyRoot: root, globalRoot, registryFile })
-          : null;
-        if (project) {
-          capture(externalRuntimeFor(project).ingestor);
-          return;
-        }
-        if (!cwd || within(root, cwd)) {
+        // Single write-authority decision (context.mjs): a writable project
+        // store wins over the legacy vault; no other path is considered.
+        if (captureFor(resolveWriteTarget(cwd, { legacyRoot: root, registryFile }))) return;
+        if (!cwd) {
           capture(ingestor);
           return;
         }
         // A renamed workspace folder keeps its store; rebind it before deciding
         // that this turn needs a brand-new one.
         ensureWorkspaceBinding(cwd);
-        const rebound = writableProjectStore(cwd, { legacyRoot: root, globalRoot, registryFile });
-        if (rebound) {
-          capture(externalRuntimeFor(rebound).ingestor);
-          return;
-        }
+        if (captureFor(resolveWriteTarget(cwd, { legacyRoot: root, registryFile }))) return;
       } catch (error) {
         console.warn('[kb-ingest] writable project resolution failed', error);
         return;
@@ -469,8 +457,8 @@ export function apply(ctx, config = {}) {
       void ensureWorkspaceStore(cwd)
         .then((created) => {
           if (!created) return;
-          const project = writableProjectStore(cwd, { legacyRoot: root, globalRoot, registryFile });
-          if (project) capture(externalRuntimeFor(project).ingestor);
+          const target = resolveWriteTarget(cwd, { legacyRoot: root, registryFile });
+          if (target) captureFor(target);
         })
         .catch((error) => console.warn('[kb-ingest] workspace provisioning failed', error));
     });
@@ -596,7 +584,7 @@ export function apply(ctx, config = {}) {
    */
   const ensureWorkspaceBinding = (cwd) => {
     const result = { bound: false, candidate: null };
-    if (!cwd || within(root, cwd)) return result;
+    if (!cwd || isInsideLegacy(cwd, root)) return result;
     const storeRoot = path.join(path.resolve(cwd), '.dsh-memory');
     if (!isStoreRoot(storeRoot)) return result;
     const registered = readProjectRegistry(registryFile).has(path.resolve(storeRoot));
@@ -717,10 +705,10 @@ export function apply(ctx, config = {}) {
       isKbSession: (session) => {
         try {
           const cwd = cwdOfSession(session);
-          const found = cwd
-            ? writableProjectStore(cwd, { legacyRoot: root, globalRoot, registryFile })
+          const target = cwd
+            ? resolveWriteTarget(cwd, { legacyRoot: root, registryFile })
             : null;
-          return Boolean(found && path.resolve(found.root) === storeRoot);
+          return Boolean(target && target.kind === 'project' && path.resolve(target.root) === storeRoot);
         } catch {
           return false;
         }
@@ -976,7 +964,7 @@ export function apply(ctx, config = {}) {
   /** State of the current session's directory as a (potential) project store. */
   const workspaceStateFor = (cwd) => {
     if (!cwd) return null;
-    const legacy = within(root, cwd);
+    const legacy = isInsideLegacy(cwd, root);
     const storeRoot = legacy ? null : path.join(cwd, '.dsh-memory');
     let meta = null;
     let entry = null;
@@ -1010,7 +998,7 @@ export function apply(ctx, config = {}) {
       error.statusCode = 400;
       throw error;
     }
-    if (within(root, cwd)) {
+    if (isInsideLegacy(cwd, root)) {
       const error = new Error('知识库本体使用旧版记忆库，请在项目工作区里创建独立记忆库');
       error.statusCode = 400;
       throw error;
@@ -1591,7 +1579,7 @@ export function apply(ctx, config = {}) {
             sendJson(res, 400, { error: '当前会话没有工作目录' });
             return;
           }
-          if (within(root, cwd)) {
+          if (isInsideLegacy(cwd, root)) {
             sendJson(res, 400, { error: '知识库本体不需要迁移' });
             return;
           }

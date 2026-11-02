@@ -1,1 +1,2 @@
 {"id":"2026-11-02-c-1001","path":"30_Canon/decisions/2026-11-02-c-1001.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"自动建库默认记录可配置；文件夹迁移需双信号确认。","updated":"2026-11-02"}
+{"id":"2026-11-02-c-1002","path":"30_Canon/decisions/2026-11-02-c-1002.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"统一上下文解析与写权限，规则层解耦为 engine 包，旧路径变 shim。","updated":"2026-11-02"}

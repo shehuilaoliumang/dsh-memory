@@ -58,10 +58,11 @@
 
 ## 工具
 
-规则层在 `_meta/scripts/kb.mjs`（零依赖 Node，DSH 自带运行时）：
+规则层实现是宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）；`_meta/scripts/kb.mjs` 是**兼容入口**（默认 root = 本仓库 vault，内部转 engine CLI，所有文档/插件/测试/冒烟仍用它）。非 DSH 环境或需要显式指定库根时直接用 engine：
 
 ```powershell
-node _meta/scripts/kb.mjs validate              # 改协议/索引后必跑
+node _meta/scripts/kb.mjs validate              # 改协议/索引后必跑（兼容入口）
+node _meta/engine/bin/kb.mjs --root <库> validate   # engine 直连（脚本/其它宿主）
 node _meta/scripts/check-plugin-load.mjs        # 插件加载形状闸门（CI 第一步：BOM/JSON/manifest/patch/语法）
 node _meta/scripts/kb.mjs rebuild               # 索引禁止手改，只能重建
 node _meta/scripts/kb.mjs consolidate --json    # 每日整理：review/stale/未归主题/重复/热度/truth
@@ -82,7 +83,9 @@ node _meta/scripts/kb.mjs --root <库> attach [--write|--read-only]   # 显式�
 node _meta/scripts/export-public.mjs --out D:\dsh-memory-public   # 生成脱敏公开快照（排除原文/状态，重建索引）
 ```
 
-同一个 `session_id` 续写同一篇原文；同一分钟新建多个会话时 `id`/文件名加 `-2`/`-3` 后缀，`validate` 同时检查 id 唯一。frontmatter 解析统一用 `_meta/plugin/kb-panel/shared/frontmatter.mjs`，CLI 与插件不得各自维护；工作页节名以 `shared/work-sections.mjs` 为准。`access.jsonl` 超阈值自动轮转为 `access-<stamp>.jsonl`，不删除遥测。ingest 的接管/去重/自检/失败窗口机制见 `_meta/plugin/kb-panel/test/FAULT-INJECTION.md`，删减前先跑对应故障注入测试。
+同一个 `session_id` 续写同一篇原文；同一分钟新建多个会话时 `id`/文件名加 `-2`/`-3` 后缀，`validate` 同时检查 id 唯一。frontmatter 解析统一用 `_meta/engine/lib/shared/frontmatter.mjs`（插件 `_meta/plugin/kb-panel/shared/frontmatter.mjs` 只是 re-export shim），CLI 与插件不得各自维护；工作页节名以 `_meta/engine/lib/shared/work-sections.mjs` 的 `WORK_SECTIONS` 为准（插件同名 shim 只 re-export）。`access.jsonl` 超阈值自动轮转为 `access-<stamp>.jsonl`，不删除遥测。ingest 的接管/去重/自检/失败窗口机制见 `_meta/plugin/kb-panel/test/FAULT-INJECTION.md`，删减前先跑对应故障注入测试。
+
+**依赖方向**：engine ← plugin（`engine` 不 import DSH/插件；插件 `stores.js`/`work-brief.js`/`redact.js`/`promote.js`/`shared/*.mjs` 是 engine 的兼容 shim）。仓库结构：`_meta/engine/`（引擎）+ `_meta/scripts/`（兼容入口与 CI 脚本）+ `_meta/plugin/kb-panel/`（DSH 适配层）。
 
 规则层冒烟测试（把 vault 复制到临时目录跑全部命令，不碰真实库）：
 

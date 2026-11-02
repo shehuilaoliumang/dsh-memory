@@ -2,6 +2,18 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 2.0.0 — 2026-11-02
+
+结构性 major：A 面收敛（单一上下文与写权限）与 B 引擎解耦（`@local/kb-engine`）；用户数据、CLI 命令与注入行为不变。
+
+- **B：引擎解耦**：规则层从 DSH 插件抽出为宿主无关的 `_meta/engine/`（`@local/kb-engine`）：`bin/kb.mjs` → `lib/cli.mjs`（CLI 全量迁移），`lib/stores.mjs`/`work-brief`/`redact`/`promote`/`context`/`shared/*`/`index.mjs` + `package.json`/README；零 DSH import，root 由 `--root`/`KB_ROOT`/`KB_DEFAULT_ROOT` 决定；CLI 与模块导出双接口。
+- **兼容包装/shim**：`_meta/scripts/kb.mjs` 变 20 行包装（默认 root = 本仓库 vault，转 engine CLI）；`_meta/plugin/kb-panel/{stores,work-brief,redact,promote}.js` 与 `shared/*.mjs` 变 re-export shim；依赖方向固定为 **engine ← plugin**。
+- **A：上下文收敛**：`_meta/engine/lib/context.mjs` 成为唯一上下文/写权限决策：`describeStore()` 统一 global/legacy/project 同形描述（`root`/`kind`/`slug`/`scope`/`writable`），`resolveContext()` 返回 stores + scope + writeTarget，`resolveWriteTarget()` 单一写权限（可写 project 优先、其次 legacy、否则 `null` fail closed）；插件 mode/scope 路由、turn-end 写入路由、external ingestor 谓词、attach/relocate、workspaceState 全部改用它；删除插件本地的 `within` 复制与 `writableProjectStore` 重复判断。
+- **行为不变量**：vault 内 5 条注入、外部项目 core+3+brief+global 2、写入路由、rename/relocate/promote/delete 语义不变；两个 ingestor 实例仍按 store 各建一个（实现细节），路由只由 context 决定。
+- **路径变化（breaking，仅内部实现位置）**：旧实现路径变为包装/shim——`_meta/scripts/kb.mjs` 是兼容包装；插件 `stores.js`/`work-brief.js`/`redact.js`/`promote.js`/`shared/*.mjs` 是 engine 的 re-export shim。CLI 命令、`--json` 输出与用户数据不变；major 的原因是模块位置与依赖方向 breaking（外部按旧路径 import 会拿到 shim 而非实现）。
+- **闸门/测试**：`check-plugin-load.mjs` 增加 engine 清单/版本/语法检查（当前 6 JSON / 14 manifest / 11 engine / 2 locale / 25 JS）；新增 `context.test.mjs` 5 条 → 单测 149/149；冒烟 106/106；`validate` 本地 4 篇/3 行（core.md + 自动捕获的 `10_Raw` 会话 + c-1001 + c-1002）、公开快照 3 篇/2 行、0 警告。
+- ADR `30_Canon/decisions/2026-11-02-c-1002.md`《记忆模型 v2：单一上下文解析与引擎解耦》。
+
 ## 1.19.4 — 2026-11-02
 
 第十三轮复审唯一理论缝关闭：短 session id 下限。**这是最后一个补丁版；程序性项全部关闭，下一步是结构性方向（架构面/可继承性）**，不再以 patch 线推进。

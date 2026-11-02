@@ -146,7 +146,47 @@ if (pkg) {
   }
   notes.push(`${declared.size} manifest file(s) verified`);
 
-  // 3) Bundle patch: plain YAML, names the package, no BOM.
+  // 2b) Engine package (v2.0): the rule layer is host-agnostic, so it must have
+// the same parse/version/existence guarantees as the plugin that depends on it.
+const enginePkg = readJsonStrict('_meta/engine/package.json');
+if (enginePkg) {
+  const engineDir = path.join(ROOT, '_meta', 'engine');
+  if (enginePkg.name !== '@local/kb-engine') fail(`engine name must be @local/kb-engine, got ${enginePkg.name}`);
+  if (enginePkg.type !== 'module') fail('engine package.json must declare "type": "module"');
+  const versionBuf = readBytes(path.join(ROOT, 'VERSION'));
+  const version = versionBuf ? versionBuf.toString('utf8').trim() : '';
+  if (version && enginePkg.version !== version) {
+    fail(`engine version ${enginePkg.version} != VERSION ${version}`);
+  }
+  if (!enginePkg.exports || typeof enginePkg.exports !== 'object') fail('engine package.json is missing exports');
+  const engineDeclared = new Set();
+  const expandEngineEntry = (rel) => {
+    if (!rel.includes('*')) return [rel];
+    const star = rel.indexOf('*');
+    const dir = path.posix.dirname(rel.slice(0, star) + 'placeholder');
+    const suffix = rel.slice(star + 1);
+    let names = [];
+    try {
+      names = fs.readdirSync(path.join(engineDir, dir));
+    } catch {
+      return [];
+    }
+    return names.filter((name) => name.endsWith(suffix)).map((name) => path.posix.join(dir, name));
+  };
+  for (const rel of Object.values(enginePkg.exports)) {
+    if (typeof rel !== 'string' || !rel.startsWith('./')) continue;
+    for (const file of expandEngineEntry(rel.slice(2))) engineDeclared.add(file);
+  }
+  for (const rel of enginePkg.files || []) {
+    for (const file of expandEngineEntry(String(rel))) engineDeclared.add(file);
+  }
+  for (const rel of engineDeclared) {
+    if (!fs.existsSync(path.join(engineDir, rel))) fail(`engine manifest points at missing file: ${rel}`);
+  }
+  notes.push(`${engineDeclared.size} engine file(s) verified`);
+}
+
+// 3) Bundle patch: plain YAML, names the package, no BOM.
   const patchRel = String((pkg.dsh.bundle && pkg.dsh.bundle.patch) || 'cordis.patch.yml').replace(/^\.\//, '');
   const patchFile = path.join(PLUGIN_DIR, patchRel);
   const patchBuf = readBytes(patchFile);
@@ -186,6 +226,16 @@ const sources = [
   '_meta/plugin/kb-panel/promote.js',
   '_meta/plugin/kb-panel/shared/frontmatter.mjs',
   '_meta/plugin/kb-panel/shared/work-sections.mjs',
+  '_meta/engine/bin/kb.mjs',
+  '_meta/engine/lib/cli.mjs',
+  '_meta/engine/lib/index.mjs',
+  '_meta/engine/lib/context.mjs',
+  '_meta/engine/lib/stores.mjs',
+  '_meta/engine/lib/work-brief.mjs',
+  '_meta/engine/lib/promote.mjs',
+  '_meta/engine/lib/redact.mjs',
+  '_meta/engine/lib/shared/frontmatter.mjs',
+  '_meta/engine/lib/shared/work-sections.mjs',
 ];
 for (const rel of sources) checkSyntax(rel);
 notes.push(`${sources.length} JS file(s) syntax-checked`);

@@ -1,6 +1,6 @@
 # _meta/scripts
 
-知识库规则层。零依赖，Node ≥ 20（DSH 自带运行时即可）。
+知识库命令行入口与维护脚本。规则层实现在 `_meta/engine/`（`@local/kb-engine`，v2.0 起宿主无关）；本目录的 `kb.mjs` 是**兼容包装**（设置默认 root = 本仓库 vault 后转 engine CLI），其余脚本是 CI/发布/维护工具。零依赖，Node ≥ 20（DSH 自带运行时即可）。
 
 ## 命令
 
@@ -46,6 +46,14 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - 默认只读注入；`attach --write` 在 registry 写 `writable:true` 并同步该库 `_meta/config.json` 的 ingest/judge，插件才会按会话 cwd 为该库建外部 ingestor/judge；`--read-only` 收回。`--write` 与 `delete` 要求真实 TTY，非交互拒绝，**没有环境变量旁路**。规则见 `_meta/schema.md` §17–§18、决策 `2026-10-30-c-0013` / `2026-10-31-c-0015` / `2026-10-31-c-0016`。
 - 全局库只经记忆页「提升为全局」显式增长（v1.17）：Host 把单条已确认 digest 原子经 `add-atom --json-file` 写到全局库（`scope: global`、`active`），源库 `set-status --status promoted`；跨库链接不复制，备注写来源；全局库同 type+summary 命中 duplicate 时复用 id（c-0020）。
 
+## engine 包（@local/kb-engine）
+
+- **位置**：规则层实现全部在 `_meta/engine/`：`bin/kb.mjs` → `lib/cli.mjs`（全部 CLI 命令），`lib/{stores,work-brief,redact,promote,context,index}.mjs`、`lib/shared/*`、`package.json`、`README.md`。零 DSH/插件 import；root 由 `--root`/`KB_ROOT`/`KB_DEFAULT_ROOT` 决定。
+- **CLI**：`node _meta/engine/bin/kb.mjs --root <库> <command>`（命令与参数同 `_meta/scripts/kb.mjs`）；用于脚本、其它宿主与显式指定库根的场景。
+- **模块**：`_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）可被宿主进程内 import。
+- **兼容层**：`_meta/scripts/kb.mjs`（默认 root=本仓库）与插件 `stores.js`/`work-brief.js`/`redact.js`/`promote.js`/`shared/*.mjs` 都是 engine 的包装/shim；依赖方向 **engine ← plugin**。
+- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 6 JSON / 14 manifest / 11 engine / 2 locale / 25 JS）；插件单测 149 条（含 context 5 条）。
+
 ## 设计约束
 
 - **只写派生物和原文追加**：不删除、不移动、不改已有正文；summary/tags 这类元数据修正需人工确认后单独提交。
@@ -69,7 +77,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 用 PowerShell 而非 `node:test`：DSH 沙箱禁止 node 子进程用管道 stdio 再 spawn（EPERM），而 kb.mjs 是独立脚本、需要真实执行。
 
-管理页（`@local/kb-panel` v1.19.4，客户端 c36，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
+管理页（`@local/kb-panel` v2.0.0，客户端 c36，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
 
 ## 发布
 
@@ -86,7 +94,7 @@ node _meta/scripts/publish-public.mjs --dir D:\dsh-memory-public --orphan
 
 ## 加载形状闸门
 
-`node _meta/scripts/check-plugin-load.mjs`（零依赖；CI 第一步，在 validate 之前）：严格解析仓库内全部 JSON 配置并禁止 UTF-8 BOM（对应 1.14.0 的 BOM outage 类问题）；校验插件 manifest 的 `name`/`type`/`dsh.bundle.patch`/`dsh.client.platform`/`version`（与根 `VERSION` 一致），并确认 `exports`/`files` 指向的 14 个文件都存在；校验 bundle patch 无 BOM、形如 loader patch 列表且含 `@local/kb-panel`；对引擎与插件的 15 个 JS 跑 `node --check`。它是**静态加载形状检查**（不启动 DSH Host），保证“loader 会碰的东西都存在且能解析”；CI 在 `validate` 前先跑它，本地改插件/清单后也应先跑一次。
+`node _meta/scripts/check-plugin-load.mjs`（零依赖；CI 第一步，在 validate 之前）：严格解析仓库内全部 JSON 配置并禁止 UTF-8 BOM（对应 1.14.0 的 BOM outage 类问题）；校验插件 manifest 的 `name`/`type`/`dsh.bundle.patch`/`dsh.client.platform`/`version`（与根 `VERSION` 一致）与 engine manifest（`@local/kb-engine`/version 与根 `VERSION` 一致），并确认 `exports`/`files` 指向的文件（含 11 个 engine 文件）都存在；校验 bundle patch 无 BOM、形如 loader patch 列表且含 `@local/kb-panel`；对引擎与插件的 25 个 JS 跑 `node --check`。它是**静态加载形状检查**（不启动 DSH Host），保证“loader 会碰的东西都存在且能解析”；CI 在 `validate` 前先跑它，本地改插件/engine/清单后也应先跑一次。
 
 ## 插件单测
 
@@ -102,7 +110,8 @@ node _meta/plugin/kb-panel/test/redact.test.mjs
 node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 node _meta/plugin/kb-panel/test/stores.test.mjs
 node _meta/plugin/kb-panel/test/promote.test.mjs
-# 共 144 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 26 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 20
+node _meta/plugin/kb-panel/test/context.test.mjs
+# 共 149 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 26 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 20 / context 5
 ```
 
 不要用 `node --test`：沙箱不允许它用管道 stdio 再 spawn 子进程。

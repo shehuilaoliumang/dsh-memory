@@ -114,7 +114,7 @@ function makeExec(root) {
       const text = fs.readFileSync(textFile, 'utf8');
       const slug = args[args.indexOf('--slug') + 1];
       const title = args[args.indexOf('--title') + 1];
-      const rel = `10_Raw/sessions/2026/10/2026-10-20-0130-${slug}.md`;
+      const rel = `10_Raw/sessions/fixture-${slug}.md`;
       if (exec.failAppendRole === role && exec.failAppendTimes > 0) {
         exec.failAppendTimes -= 1;
         return { code: 3, stdout: '', stderr: 'append failed (injected)' };
@@ -311,7 +311,7 @@ test('messageText only extracts text blocks', () => {
 });
 
 test('session slug/title are stable ASCII-friendly values', () => {
-  assert.equal(sessionSlug('session-9560413c-746c'), 'session-9560413c746c');
+  assert.equal(sessionSlug('session-fixture-abcd'), 'session-fixtureabcd');
   const when = new Date('2026-10-20T01:30:00+08:00');
   assert.equal(sessionTitle('决定：路径用英文\n第二行', when), '决定：路径用英文');
   const localDay = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`;

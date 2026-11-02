@@ -51,7 +51,7 @@ Obsidian Vault/memory
 
 管理页顶部有“正在查看”选择器，可浏览 global、legacy 和已接入项目；浏览其他工作区只读，不会改变当前会话使用哪个项目库，也不会启动该库的捕获/裁判。读接口与单条写入都按选中的 workspace 解析，任意路径或未接入 slug 一律拒绝。`v1.16` 起，外部项目工作区的新库由宿主自动创建并默认记录；管理页保留“创建/接入”卡片，用于已有库与仓库自带库。只按该会话的 cwd 写入 `<cwd>/.dsh-memory`，不接受客户端传路径，也不后台扫描磁盘或批量建库。
 
-**全局记忆只经人工提升增长**：记忆页对单条**已确认的 digest 原子**提供「提升为全局」按钮（客户端 c30，`POST /kb/atom/to-global`）；Host 把该条复制到 `~/.dsh-memory/global`（`scope: global`、`status: active`），源库条目置 `promoted`、不再注入。跨库链接（source/related/up/supersedes）一律不复制，只在新全局原子的「## 备注」写来源；全局库已有同 type+summary 时复用已有 id。不自动、不批量，项目裁判仍不能产出 `scope: global`（v1.17，见 `30_Canon/decisions/2026-11-02-c-0020.md`）。
+**全局记忆只经人工提升增长**：记忆页对单条**已确认的 digest 原子**提供「提升为全局」按钮（客户端 c30，`POST /kb/atom/to-global`）；Host 把该条复制到 `~/.dsh-memory/global`（`scope: global`、`status: active`），源库条目置 `promoted`、不再注入。跨库链接（source/related/up/supersedes）一律不复制，只在新全局原子的「## 备注」写来源；全局库已有同 type+summary 时复用已有 id。不自动、不批量，项目裁判仍不能产出 `scope: global`（v1.17；该历史决策编号 c-0020，笔记已随 2026-11-02 记忆层重置删除，见 git `bdf14e3`）。
 
 **工作区改名与文件夹迁移**（v1.18 起，v1.19 双信号，客户端 c36）：记忆页“正在查看”旁的「改名」只对可写 project/legacy 工作区显示，`POST /kb/workspace/rename` 只改 `project.json.title`，slug 与 `project:<slug>` scope 不变；每个库在 `project.json` 里有稳定 `store_id`、registry 行里有 `storeId` 与 attach 时的目录创建时间 `folderBirthtimeMs`。文件夹改名后只有「旧路径已消失 **且** 目录创建时间一致（容差 5s）」才自动把 registry 指向新路径（保留写授权与 `autoGranted`，title 未自定义则跟随新文件夹名）；复制/克隆（新创建时间或旧路径仍在）或旧行无 `folderBirthtimeMs` 时，面板显示「检测到一个未确认的记忆库副本」/「检测到已迁移的记忆库」，人工确认后才重定位（确认后保留 `writable`、去掉 `autoGranted`）。不扫盘、不接受客户端路径、不改 slug（见 `30_Canon/decisions/2026-11-02-c-1001.md`）。
 
@@ -113,7 +113,7 @@ node _meta/plugin/kb-panel/test/stores.test.mjs
 node _meta/plugin/kb-panel/test/promote.test.mjs
 ```
 
-当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 144 条全过；`validate` 3 篇（core.md + 自动捕获的 `10_Raw` 会话 + c-1001）/2 行、0 警告（`30_Canon/decisions` 更早历史见 git `bdf14e3`）。
+当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 144 条全过；**本地完整库** `validate` 3 篇（core.md + 自动捕获的 `10_Raw` 会话 + c-1001）/2 行、0 警告；**公开快照**（无 `10_Raw/`）`validate` 2 篇（core.md + c-1001）/1 行、0 警告——CI 在导出快照上跑同一套检查。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
 
 ## 裁判评估
 
@@ -131,11 +131,11 @@ node _meta/scripts/eval-judge.mjs --golden _meta/rules/golden.jsonl `
 
 ## 本地接口
 
-`@local/kb-panel` 的 `/kb/*` 的 handler 拒绝非 loopback 连接，但监听地址仍由 DSH Host 决定。写接口要求同源 `Origin`、拒绝 `sec-fetch-site: cross-site`、只接受 `content-type: application/json`，并校验 Host 启动时生成、由 `/kb/panel.json` 下发的 `x-kb-csrf` token；非浏览器写请求还必须带 `_meta/state/http-token`（0600）里的 `x-kb-local-token`。这挡住恶意网页借浏览器跨站写库，也提高随手脚本的门槛；但能读 token 文件、或伪造 `sec-fetch-site` 后先 GET panel 的同用户进程仍可写。它不是操作系统的进程级鉴权。威胁模型与残余风险见 `30_Canon/decisions/2026-10-29-c-0010.md` 与 c-0012。
+`@local/kb-panel` 的 `/kb/*` 的 handler 拒绝非 loopback 连接，但监听地址仍由 DSH Host 决定。写接口要求同源 `Origin`、拒绝 `sec-fetch-site: cross-site`、只接受 `content-type: application/json`，并校验 Host 启动时生成、由 `/kb/panel.json` 下发的 `x-kb-csrf` token；非浏览器写请求还必须带 `_meta/state/http-token`（0600）里的 `x-kb-local-token`。这挡住恶意网页借浏览器跨站写库，也提高随手脚本的门槛；但能读 token 文件、或伪造 `sec-fetch-site` 后先 GET panel 的同用户进程仍可写。它不是操作系统的进程级鉴权。威胁模型与残余风险的历史决策编号 c-0010 / c-0012，笔记已随 2026-11-02 记忆层重置删除，见 git `bdf14e3`。
 
 ## 公开快照说明
 
-公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*.jsonl`、`PROJECT_PLAN.md` 并重建索引），`publish-public.mjs` 发布前再做一次硬闸；1.19.0 的公开提交 `506279b` 因混入运行时遥测文件（`_meta/access-*.jsonl`）已弃用，当前公开状态为 **1.19.1**（public commit `2cd38f6`、tree `3d0953e`、CI `41426653086` 全绿；main 历史已由干净提交重开，1.19.0 的 `506279b` 不在可达历史中）。
+公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*.jsonl`、`PROJECT_PLAN.md` 并重建索引；**导出还会清洗 session UUID 与原文文件名**（`session-<redacted>` / `10_Raw/sessions/<redacted>.md`），CI 在导出快照上再查一遍禁止文件与 session id），`publish-public.mjs` 发布前再做一次硬闸。1.19.1 已发布（public commit `2cd38f6`、tree `3d0953e`、CI `41426653086` 全绿，另有一次 follow-up `0ab310b`；main 历史已由干净提交重开，1.19.0 的 `506279b` 不在可达历史中）；因公开可见卫生问题（log 中 session UUID/原文文件名、数字口径、悬空引用）修复后，当前公开状态为 **1.19.2**（自审修复随本次快照重发；导出清洗 session UUID/原文文件名，CI 在导出快照上复跑 validate=2 篇/1 行；发布提交与 CI 结果见本仓库 main 历史）。
 
 ## 隐私说明
 

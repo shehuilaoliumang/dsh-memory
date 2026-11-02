@@ -2,6 +2,16 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 1.19.2 — 2026-11-02
+
+公开可见卫生自审：修复公开快照里的运行时标识泄漏、数字口径与历史悬空引用（与第十一轮复审同类问题）。
+
+- **公开 `_meta/log.md` 泄漏 session UUID 与原文文件名**：公开快照含约 30 处 `session-<uuid>` / `10_Raw/sessions/...`。`export-public.mjs` 增加 `stripRuntimeIds`（session UUID → `session-<redacted>`、裸 UUID → `<uuid>`、原文路径 → `10_Raw/sessions/<redacted>.md`）并在导出后断言；CI「Build sanitized public snapshot」步骤新增禁止文件检查（`access*`/`_meta/state/`/`10_Raw/`/`PROJECT_PLAN.md`）与 session id 泄漏检查。
+- **数字口径**：README 原写公开快照 `validate` 3 篇/2 行，但公开仓库无 `10_Raw/`，实测 **2 篇/1 行**（core.md + c-1001）；已改为区分「本地完整库 3 篇/2 行 / 公开快照 2 篇/1 行（CI 在导出快照上跑同一 validate）」。
+- **旧决策悬空引用**：README 移除指向已删除笔记的路径（原 c-0010/c-0012/c-0020 等），统一改为「历史决策编号，笔记已随 2026-11-02 重置删除，见 git `bdf14e3`」；CHANGELOG 1.19.0 条目补注「1.19.1 起文件名/id 改为 `2026-11-02-c-1001.md`」。
+- **同一类泄漏的自审补充**（本轮自审额外发现）：测试 fixture 曾用真实 session 片段 → 改为合成 id（`session-<fixture>`，不含真实标识）；schema「历史勘误」段去掉两个真实原文文件名（改为“两篇早期原文（`10_Raw/sessions/…`，具体文件名不随公开快照分发）”）。
+- 版本 1.19.2；插件 144/144、冒烟 106/106、本地 `validate` 3 篇/2 行、公开快照 2 篇/1 行、0 警告。
+
 ## 1.19.1 — 2026-11-02
 
 导出卫生与编号避让：公开快照曾混入运行时遥测（第十一轮复审），本轮修复导出/发布两道闸并重开干净历史；重置后首条决策改用 c-1001。
@@ -20,7 +30,7 @@
 - 文件夹迁移改为**双信号**自动重定位：旧路径已不存在 **且** 工作区目录创建时间与 attach 时记录的 `folderBirthtimeMs` 一致（容差 5s）才自动。改名保留创建时间 → 自动，保留 `writable` 与 `autoGranted`；复制/克隆（新创建时间或旧路径仍在）→ 不自动，面板显示「检测到一个未确认的记忆库副本」，人工确认后重定位（保留 `writable`、去掉 `autoGranted`）。
 - 旧 registry 行首次迁移一律人工确认（无 `folderBirthtimeMs` 时 fail safe）；插件启动 `syncRegistryStoreIds` 为仍存在的已接入库补写创建时间。
 - 客户端 build `2026-11-02-c36`：迁移卡片区分「已迁移」与「未确认副本」两种文案/按钮。
-- 新增决策 `30_Canon/decisions/2026-11-02-c-0001.md`「工作区记忆库的自动授权与迁移边界」（status canon、scope global；记忆层重置后的首条架构决策）。
+- 新增决策 `30_Canon/decisions/2026-11-02-c-0001.md`「工作区记忆库的自动授权与迁移边界」（status canon、scope global；记忆层重置后的首条架构决策；1.19.1 起文件名/id 改为 `2026-11-02-c-1001.md`）。
 - 新增 `_meta/scripts/publish-public.mjs`（GitHub REST API 发布路径，替代沙箱内不可用的本机 git HTTPS 凭据；读 export 产物、只做 blob/tree/commit/ref 更新并再检一次本地路径泄漏，需 `GH_TOKEN`）。
 - 插件单测 144/144（stores 20，新增 `autoGranted`、`folderBirthtimeMs`、复制且旧路径消失需确认等）；冒烟 106/106（夹具自包含）；`validate` 3 篇/2 行/0 警告。
 - 冒烟兼容全新检出：副本内先补建 `10_Raw/sessions`、`20_Digest/atoms|topics|work`、`30_Canon/decisions|principles`、`_meta/state` 空目录，公开快照/新克隆（git 不跟踪空目录）也能回归（公开仓库首次 CI 曾因缺 `20_Digest/atoms` 失败，修正后 106/106）。

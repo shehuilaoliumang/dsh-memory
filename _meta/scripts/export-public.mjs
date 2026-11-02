@@ -110,8 +110,32 @@ function stripRawSources(text) {
   return text.replace(/\[\[10_Raw\/[^\]]*\]\]/g, '');
 }
 
+// Runtime identifiers are not document content: session UUIDs and raw session
+// file names appear in `_meta/log.md` and must not travel with the public repo
+// (same class as the access-*.jsonl telemetry leak; found by the self-audit).
+const SESSION_ID_PATTERN = /session-[0-9a-f]{8}(?:-[0-9a-f]{4}){0,3}(?:-[0-9a-f]{1,12})?/gi;
+const BARE_UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const RAW_SESSION_PATH_PATTERN = /10_Raw\/sessions\/[0-9A-Za-z_./-]+\.md/g;
+function stripRuntimeIds(text) {
+  return text
+    .replace(SESSION_ID_PATTERN, 'session-<redacted>')
+    .replace(BARE_UUID_PATTERN, '<uuid>')
+    .replace(RAW_SESSION_PATH_PATTERN, '10_Raw/sessions/<redacted>.md');
+}
+
+// Non-global copies for a final assertion after sanitization.
+const SESSION_ID_FORBIDDEN = /session-[0-9a-f]{8}/i;
+const BARE_UUID_FORBIDDEN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+const RAW_SESSION_PATH_FORBIDDEN = /10_Raw\/sessions\/[0-9A-Za-z_./-]+\.md/;
+function assertNoRuntimeIds(rel, text) {
+  if (SESSION_ID_FORBIDDEN.test(text) || BARE_UUID_FORBIDDEN.test(text) || RAW_SESSION_PATH_FORBIDDEN.test(text)) {
+    throw new Error(`导出中止：${rel} 仍含 session UUID / 原文文件标识`);
+  }
+}
+
 function sanitizeText(rel, text) {
   if (rel.endsWith('.md')) text = stripRawSources(text);
+  text = stripRuntimeIds(text);
   const prefixes = [root, path.dirname(root)];
   for (const prefix of prefixes) {
     text = text.split(prefix).join('<vault>');
@@ -173,6 +197,7 @@ for (const rel of files) {
   const text = sanitizeText(rel, buffer.toString('utf8'));
   assertNoSecrets(rel, text);
   assertNoLocalPaths(rel, text);
+  assertNoRuntimeIds(rel, text);
   fs.writeFileSync(target, text, 'utf8');
 }
 

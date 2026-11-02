@@ -1,0 +1,2864 @@
+/**
+ * Client half of the knowledge-base panel bundle.
+ *
+ * Four surfaces, all fed by the Host half's read-only endpoints:
+ *   conversation.composer.dock  memory pill — rendered ONLY inside a vault
+ *                               session; outside the vault it renders nothing,
+ *                               so other projects see zero knowledge-base UI.
+ *   sidebar.workspaces.session.menu.item
+ *                               the manual entry point: rows inside one session's
+ *                               "..." menu, mounted only while that menu is open,
+ *                               so an out-of-vault session carries zero
+ *                               knowledge-base UI until it is asked for.
+ *   sidebar.panellist           knowledge-base icon, always available.
+ *   main (key 'kb')             the knowledge-base page: search, layer filter,
+ *                               note list, note body.
+ *
+ * Text is Simplified Chinese only, matching the rest of this bundle.
+ */
+window.__ModuleLoader__.load({
+  id: '@local/kb-panel',
+  factory(require) {
+    const React = require('react');
+    const h = React.createElement;
+    const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+    /**
+     * Soft-refresh event: mounted panel surfaces re-read their read-only Host
+     * snapshots without unloading the page or touching any running session.
+     */
+    const REFRESH_EVENT = 'kb:refresh';
+
+    const LAYER_LABEL = { raw: '原文', digest: '摘要', canon: '结论' };
+    /** Raw conversation captures and session logs are not memories. */
+    const isRawNote = (note) => note.level === 'raw' || note.type === 'session';
+    const isWorkNote = (note) => note.type === 'work';
+    const isMemoryNote = (note) => !isRawNote(note) && !isWorkNote(note);
+    const memoryNotesOf = (data) => ((data && data.notes) || []).filter(isMemoryNote);
+    const rememberedNotesOf = (data) => memoryNotesOf(data).filter((note) => note.status === 'active' || note.status === 'canon');
+    // P3.3: the Host rotates a per-process CSRF token; the panel snapshot is
+    // the only same-origin place to read it. Every `/kb/*` POST echoes it.
+    let kbCsrfToken = '';
+    const nativeFetch = typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : null;
+    function rememberCsrf(data) {
+      if (data && data.csrfToken) kbCsrfToken = String(data.csrfToken);
+      return data;
+    }
+    if (nativeFetch) {
+      window.fetch = (input, init = {}) => {
+        const url = typeof input === 'string' ? input : String((input && input.url) || '');
+        const method = String((init && init.method) || 'GET').toUpperCase();
+        if (url.startsWith('/kb/') && method === 'POST' && kbCsrfToken) {
+          const headers = new Headers(init.headers || {});
+          headers.set('x-kb-csrf', kbCsrfToken);
+          init = { ...init, headers };
+        }
+        return nativeFetch(input, init);
+      };
+    }
+    /** Only pages that need to be told apart from atoms get an extra badge. */
+    const TYPE_LABEL = {
+      work: '项目状态',
+      preference: '偏好',
+      decision: '决策',
+      principle: '原则',
+      progress: '进度',
+      operation: '操作',
+      fact: '事实',
+    };
+    const STATUS_LABEL = {
+      inbox: '待确认',
+      active: '已记住',
+      review: '需复查',
+      stale: '待更新',
+      promoted: '已归档',
+      archived: '已归档',
+      canon: '结论',
+    };
+    const MODE_LABEL = {
+      on: '本会话会参考记忆',
+      off: '本会话不参考记忆',
+      unknown: '本会话未判定',
+    };
+    /** Scope shown in Chinese; project slug keeps its Latin name by design. */
+    const scopeLabel = (scope) => {
+      if (!scope) return '未分类';
+      if (scope === 'global') return '所有项目';
+      if (scope === 'system') return '系统';
+      if (scope === 'unclassified') return '未分类';
+      return `${String(scope).replace(/^project:/, '')} 项目`;
+    };
+    /** In the reading surface, "unclassified" is noise rather than information. */
+    const scopeText = (scope) => (!scope || scope === 'unclassified' ? '' : scopeLabel(scope));
+
+    /**
+     * Bumped whenever this file changes. On activation the module reports it to
+     * the Host, because there is no browser control here: without this the only
+     * way to tell whether a page reload picked up new client code is to ask the
+     * user what they see.
+     */
+    const CLIENT_BUILD = '2026-11-02-c36';
+
+    /**
+     * panel.json URL that also carries this build. The Host records it, so the
+     * live client version stays observable across plugin reloads (the one-shot
+     * activation report is lost when the Host restarts, this poll is not).
+     */
+    function panelUrl(sessionId, workspace) {
+      const params = new URLSearchParams();
+      if (sessionId) params.set('session', String(sessionId));
+      if (workspace) params.set('workspace', String(workspace));
+      params.set('build', CLIENT_BUILD);
+      return `/kb/panel.json?${params.toString()}`;
+    }
+
+    /** Set by the composer chip; the page reads it to address this session. */
+    let currentSessionId = null;
+    /** Client layout service, captured in apply(). */
+    let layout = null;
+    /** In-flight panel reads, one per session, shared by the two menu rows. */
+    const sessionPanelPending = new Map();
+    /** Session-mode change listeners; the chip reloads its own session only. */
+    const modeWatchers = new Set();
+
+    const S = {
+      wrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' },
+      pill: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '1px 8px',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '8px',
+        cursor: 'pointer',
+      },
+      pillHover: { background: 'var(--dsw-alias-bg-layer-2)' },
+      dot: { width: '6px', height: '6px', borderRadius: '50%', flex: 'none' },
+      count: { color: 'var(--dsw-alias-label-secondary)', fontVariantNumeric: 'tabular-nums' },
+      chevron: { width: '12px', height: '12px', flex: 'none', color: 'var(--dsw-alias-label-secondary)' },
+      chevronOpen: { transform: 'rotate(180deg)' },
+      panel: {
+        width: 'min(380px, calc(100vw - 32px))',
+        maxHeight: 'min(430px, 70vh)',
+        overflowY: 'auto',
+        boxSizing: 'border-box',
+        padding: '14px',
+        fontSize: '12px',
+        lineHeight: '20px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'var(--dsw-alias-bg-overlay)',
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        borderRadius: '14px',
+      },
+      head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' },
+      title: { fontSize: '14px', lineHeight: '20px', fontWeight: 500 },
+      muted: { color: 'var(--dsw-alias-label-secondary)' },
+      row: { display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '2px 0' },
+      stats: { display: 'flex', gap: '4px', margin: '10px 0 4px' },
+      stat: { flex: 1, minWidth: 0, padding: '6px 8px', borderRadius: '10px', background: 'var(--dsw-alias-bg-layer-2)' },
+      statValue: { fontSize: '18px', lineHeight: '24px', fontWeight: 500, fontVariantNumeric: 'tabular-nums' },
+      statLabel: { fontSize: '11px', lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' },
+      section: { marginTop: '8px', paddingTop: '8px', borderTop: '0.5px solid var(--dsw-alias-border-l1)' },
+      list: { margin: '4px 0 0', padding: 0, listStyle: 'none' },
+      item: { display: 'flex', gap: '8px', alignItems: 'baseline', padding: '4px 0' },
+      itemTitle: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      itemTag: { flex: 'none', color: 'var(--dsw-alias-label-secondary)', fontSize: '11px' },
+      emptyLine: { marginTop: '8px', color: 'var(--dsw-alias-label-secondary)', fontSize: '12px' },
+      id: { flex: 'none', color: 'var(--dsw-alias-label-secondary)', fontSize: '11px' },
+      btn: {
+        font: 'inherit',
+        fontSize: '12px',
+        lineHeight: '18px',
+        height: '28px',
+        padding: '0 10px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        borderRadius: '8px',
+        cursor: 'pointer',
+      },
+      btnHover: { background: 'var(--dsw-alias-bg-layer-2)' },
+      btnPrimary: {
+        color: '#fff',
+        background:
+          'linear-gradient(135deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 78%, #fff) 0%, var(--dsw-alias-brand-primary) 58%, color-mix(in srgb, var(--dsw-alias-brand-primary) 82%, #000) 100%)',
+        borderColor: 'transparent',
+        boxShadow: '0 4px 14px color-mix(in srgb, var(--dsw-alias-brand-primary) 24%, transparent)',
+      },
+      btnPrimaryHover: { opacity: 0.92, boxShadow: '0 6px 18px color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent)' },
+      core: {
+        marginTop: '6px',
+        paddingLeft: '12px',
+        borderLeft: '2px solid var(--dsw-alias-border-l2)',
+        color: 'var(--dsw-alias-label-secondary)',
+        whiteSpace: 'pre-wrap',
+      },
+      actions: { display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' },
+
+      // --- session "..." menu rows ------------------------------------------
+      // Host menu-item metrics, kept local so this package does not require
+      // ui-primitives: one row is one plain `role="menuitem"` button.
+      menuItem: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        width: '100%',
+        minHeight: '34px',
+        padding: '6px 8px',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        textAlign: 'left',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '12px',
+        cursor: 'pointer',
+      },
+      menuItemHover: { background: 'var(--dsw-alias-bg-layer-2)' },
+      menuItemDisabled: { opacity: 0.4, cursor: 'not-allowed' },
+      menuIcon: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: 'none',
+        width: '14px',
+        height: '14px',
+        color: 'var(--dsw-alias-label-secondary)',
+      },
+      menuLabel: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+
+      // --- sidebar footer action --------------------------------------------
+      // Metrics match the adjacent Settings row: 34px tall, 6px/8px padding,
+      // 13px text. The collapsed sidebar (56px) shows the icon alone.
+      reloadBtn: {
+        boxSizing: 'border-box',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '8px',
+        minHeight: '34px',
+        padding: '6px 8px',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        textAlign: 'left',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '12px',
+        cursor: 'pointer',
+      },
+      reloadBtnCollapsed: { justifyContent: 'center' },
+      reloadBtnHover: { background: 'var(--dsw-alias-bg-layer-2)' },
+      // Armed state: unmistakable, so nobody mistakes it for the plain button.
+      reloadBtnArmed: {
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-state-warn-primary)',
+        outline: '1px solid var(--dsw-alias-state-warn-primary)',
+      },
+      reloadIcon: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: 'none',
+        width: '16px',
+        height: '16px',
+        color: 'var(--dsw-alias-label-secondary)',
+      },
+      reloadLabel: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      // The reload action is a split control: the main button is always a
+      // non-destructive soft refresh; the caret exposes the guarded full reload.
+      reloadWrap: { position: 'relative', display: 'flex', alignItems: 'center', gap: '2px' },
+      reloadCaret: {
+        boxSizing: 'border-box',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: 'none',
+        width: '24px',
+        minHeight: '34px',
+        padding: 0,
+        font: 'inherit',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '12px',
+        cursor: 'pointer',
+      },
+      reloadMenu: {
+        position: 'absolute',
+        left: 0,
+        bottom: 'calc(100% + 6px)',
+        zIndex: 30,
+        width: '248px',
+        boxSizing: 'border-box',
+        padding: '6px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'var(--dsw-alias-bg-overlay)',
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        borderRadius: '12px',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+      },
+      reloadMenuNote: {
+        padding: '6px 8px',
+        fontSize: '11px',
+        lineHeight: '16px',
+        color: 'var(--dsw-alias-label-secondary)',
+      },
+
+      // --- page -------------------------------------------------------------
+      page: {
+        boxSizing: 'border-box',
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        color: 'var(--dsw-alias-label-primary)',
+        backgroundColor: 'var(--dsw-alias-bg-base)',
+        backgroundImage:
+          'radial-gradient(900px 520px at 8% -10%, color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent), transparent 62%), ' +
+          'radial-gradient(780px 460px at 100% 0%, color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent), transparent 58%)',
+        backgroundAttachment: 'fixed',
+      },
+      pageHead: {
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: '20px',
+        padding: '24px 32px 14px',
+        flex: 'none',
+      },
+      pageTitle: { fontSize: '22px', lineHeight: '30px', fontWeight: 600, letterSpacing: '-0.01em' },
+      pageLead: { marginTop: '3px', fontSize: '12px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      pageMeta: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px 12px', flexWrap: 'wrap', fontSize: '12px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      pageBody: { display: 'flex', gap: '14px', padding: '0 32px 20px', flex: 1, minHeight: 0 },
+      column: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        borderRadius: '20px',
+        background: 'var(--dsw-alias-bg-layer-1)',
+        overflow: 'hidden',
+      },
+      searchWrap: { padding: '12px 12px 8px', flex: 'none' },
+      input: {
+        boxSizing: 'border-box',
+        width: '100%',
+        height: '36px',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        padding: '0 10px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 54%, transparent)',
+        borderRadius: '12px',
+        outline: 'none',
+      },
+      inputFocus: { borderColor: 'var(--dsw-alias-brand-primary)' },
+      filters: { display: 'flex', gap: '8px', padding: '0 12px 10px', flexWrap: 'wrap', flex: 'none' },
+      chip: {
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        height: '28px',
+        padding: '0 10px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '14px',
+        cursor: 'pointer',
+      },
+      chipHover: { background: 'var(--dsw-alias-bg-layer-2)' },
+      chipOn: {
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'var(--dsw-alias-bg-layer-2)',
+      },
+      tabs: { display: 'flex', gap: '2px', padding: '0 12px 10px', flexWrap: 'wrap', flex: 'none' },
+      tab: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        font: 'inherit',
+        fontSize: '12px',
+        lineHeight: '18px',
+        height: '26px',
+        padding: '0 9px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '13px',
+        cursor: 'pointer',
+      },
+      tabOn: { color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)' },
+      tabCount: { opacity: 0.6, fontVariantNumeric: 'tabular-nums' },
+      noteTop: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 },
+      noteTitle: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      noteSummary: {
+        marginTop: '2px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      },
+      noteList: { margin: 0, padding: '0 8px 10px', listStyle: 'none', overflowY: 'auto', flex: 1, minHeight: 0 },
+      noteBtn: {
+        display: 'block',
+        width: '100%',
+        boxSizing: 'border-box',
+        textAlign: 'left',
+        font: 'inherit',
+        fontSize: '14px',
+        lineHeight: '22px',
+        padding: '8px',
+        marginBottom: '2px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '12px',
+        cursor: 'pointer',
+      },
+      noteHover: { background: 'var(--dsw-alias-bg-layer-2)' },
+      noteMeta: { display: 'flex', gap: '6px', alignItems: 'baseline', marginTop: '2px', fontSize: '12px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      noteId: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      badge: {
+        flex: 'none',
+        fontSize: '11px',
+        lineHeight: '17px',
+        padding: '1px 8px',
+        borderRadius: '999px',
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        color: 'var(--dsw-alias-label-secondary)',
+      },
+      detailHead: { padding: '16px 20px 10px', flex: 'none', borderBottom: '0.5px solid var(--dsw-alias-border-l1)' },
+      confirmRow: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '10px' },
+      detailTitle: { fontSize: '18px', lineHeight: '26px', fontWeight: 500 },
+      detailBody: { padding: '16px 20px 24px', overflowY: 'auto', flex: 1, minHeight: 0, fontSize: '14px', lineHeight: '1.6' },
+      mdHead: { fontWeight: 600, margin: '20px 0 8px', fontSize: '16px', lineHeight: '1.5' },
+      mdPara: { margin: '0 0 12px', whiteSpace: 'pre-wrap' },
+      mdItem: { margin: '0 0 4px', paddingLeft: '18px', position: 'relative', whiteSpace: 'pre-wrap' },
+      empty: { padding: '48px 20px', fontSize: '14px', lineHeight: '1.6', color: 'var(--dsw-alias-label-secondary)', textAlign: 'center' },
+      emptyTitle: { fontSize: '14px', lineHeight: '22px', color: 'var(--dsw-alias-label-primary)' },
+      emptyHint: { marginTop: '6px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', fontSize: '12px', lineHeight: '19px' },
+      callout: {
+        padding: '10px 12px',
+        borderRadius: '10px',
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-secondary)',
+        fontSize: '12px',
+        lineHeight: '19px',
+      },
+      calloutStrong: { color: 'var(--dsw-alias-label-primary)' },
+      details: { marginTop: '14px', fontSize: '12px', lineHeight: '19px', color: 'var(--dsw-alias-label-secondary)' },
+      summary: { cursor: 'pointer', color: 'var(--dsw-alias-label-secondary)' },
+      toast: {
+        position: 'fixed',
+        left: '50%',
+        bottom: '24px',
+        transform: 'translateX(-50%)',
+        zIndex: 100,
+        padding: '7px 12px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'var(--dsw-alias-bg-overlay)',
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        borderRadius: '8px',
+        boxShadow: '0 6px 20px rgba(0, 0, 0, 0.18)',
+      },
+
+      // --- rename dialog ---------------------------------------------------
+      // A small glass card instead of window.prompt (Electron has no prompt).
+      renameOverlay: {
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        background: 'color-mix(in srgb, #000 28%, transparent)',
+        backdropFilter: 'blur(3px)',
+        WebkitBackdropFilter: 'blur(3px)',
+      },
+      renameCard: {
+        boxSizing: 'border-box',
+        width: 'min(360px, calc(100vw - 48px))',
+        padding: '18px',
+        color: 'var(--dsw-alias-label-primary)',
+        background:
+          'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-overlay) 96%, transparent), color-mix(in srgb, var(--dsw-alias-bg-layer-1) 94%, transparent))',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 56%, transparent)',
+        borderRadius: '20px',
+        backdropFilter: 'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        boxShadow:
+          '0 24px 60px color-mix(in srgb, #000 24%, transparent), ' +
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 88%, transparent)',
+      },
+      renameTitle: { fontSize: '14px', lineHeight: '20px', fontWeight: 600 },
+      renameHint: { marginTop: '4px', fontSize: '11px', lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' },
+      renameInput: {
+        boxSizing: 'border-box',
+        width: '100%',
+        height: '36px',
+        marginTop: '12px',
+        padding: '0 10px',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 62%, transparent)',
+        borderRadius: '12px',
+        outline: 'none',
+      },
+      renameActions: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '14px' },
+
+      // --- reading surface -------------------------------------------------
+      shell: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        maxWidth: '1240px',
+        height: '100%',
+        minHeight: 0,
+        margin: '0 auto',
+      },
+      headText: { minWidth: 0, flex: '1 1 auto' },
+      headRight: { display: 'flex', alignItems: 'center', gap: '8px', flex: 'none' },
+      headStats: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '2px',
+        padding: '3px',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 62%, transparent)',
+        borderRadius: '12px',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent)',
+        backdropFilter: 'blur(14px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(14px) saturate(140%)',
+        boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 70%, transparent)',
+      },
+      stat: {
+        display: 'inline-flex',
+        alignItems: 'baseline',
+        gap: '5px',
+        height: '30px',
+        padding: '0 10px',
+        font: 'inherit',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '9px',
+        cursor: 'pointer',
+      },
+      statOn: { color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)' },
+      statStatic: { cursor: 'default' },
+      statValue: { fontSize: '15px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)' },
+      statLabel: { fontSize: '11px', lineHeight: '16px' },
+      statusStrip: {
+        // The picker menu is an absolutely positioned child of this strip. Both
+        // the strip and the cards use backdrop-filter (a stacking context), so
+        // without an explicit level the cards that come later in the DOM paint
+        // over the open menu. Lift the strip above the page body (c32 fix).
+        position: 'relative',
+        zIndex: 40,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        flexWrap: 'wrap',
+        margin: '0 32px 14px',
+        padding: '9px 12px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 48%, transparent)',
+        borderRadius: '18px',
+        backdropFilter: 'blur(18px) saturate(150%)',
+        WebkitBackdropFilter: 'blur(18px) saturate(150%)',
+        boxShadow:
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 72%, transparent), ' +
+          '0 6px 20px color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent)',
+      },
+      statusGroup: { display: 'inline-flex', alignItems: 'center', gap: '7px', minWidth: 0 },
+      statusDot: { width: '6px', height: '6px', borderRadius: '999px', flex: 'none' },
+      statusStrong: { color: 'var(--dsw-alias-label-primary)' },
+      statusDivider: { width: '0.5px', height: '16px', background: 'var(--dsw-alias-border-l1)' },
+      statusNote: { marginLeft: 'auto', fontSize: '11px' },
+      statusTag: {
+        padding: '1px 6px',
+        fontSize: '10px',
+        lineHeight: '16px',
+        borderRadius: '999px',
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-secondary)',
+      },
+      readonlyNote: {
+        marginTop: '12px',
+        padding: '8px 10px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-2) 92%, transparent)',
+        borderRadius: '8px',
+      },
+      setupCard: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        flexWrap: 'wrap',
+        margin: '0 32px 14px',
+        padding: '12px 14px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 60%, transparent)',
+        borderRadius: '12px',
+      },
+      setupText: { flex: 1, minWidth: '240px' },
+      setupTitle: { color: 'var(--dsw-alias-label-primary)', fontWeight: 600 },
+      setupHint: { marginTop: '2px' },
+      setupPath: { marginTop: '3px', fontSize: '10px', opacity: 0.55, wordBreak: 'break-all' },
+      setupActions: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
+      select: {
+        maxWidth: '240px',
+        height: '26px',
+        padding: '0 26px 0 9px',
+        fontSize: '12px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent)',
+        border: '1px solid var(--dsw-alias-border-l2)',
+        borderRadius: '8px',
+        cursor: 'pointer',
+      },
+      // --- workspace picker (custom; the native <select> popup cannot be styled) ---
+      pickerWrap: { position: 'relative', display: 'inline-flex' },
+      pickerTrigger: {
+        boxSizing: 'border-box',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '7px',
+        height: '30px',
+        maxWidth: '268px',
+        padding: '0 12px',
+        font: 'inherit',
+        fontSize: '12.5px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-primary)',
+        background:
+          'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-overlay) 94%, transparent), color-mix(in srgb, var(--dsw-alias-bg-layer-1) 90%, transparent))',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 52%, transparent)',
+        borderRadius: '999px',
+        outline: 'none',
+        backdropFilter: 'blur(18px) saturate(165%)',
+        WebkitBackdropFilter: 'blur(18px) saturate(165%)',
+        boxShadow:
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 82%, transparent), ' +
+          '0 2px 10px color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent)',
+        cursor: 'pointer',
+        transition: 'box-shadow 160ms ease, border-color 160ms ease, background 160ms ease',
+      },
+      pickerTriggerOn: {
+        borderColor: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 58%, transparent)',
+        boxShadow:
+          '0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 15%, transparent), ' +
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 85%, transparent)',
+      },
+      pickerLabel: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      pickerChev: {
+        flex: 'none',
+        width: '11px',
+        height: '11px',
+        color: 'var(--dsw-alias-label-secondary)',
+        transition: 'transform 160ms ease',
+      },
+      pickerChevOpen: { transform: 'rotate(180deg)' },
+      pickerMenu: {
+        position: 'absolute',
+        top: 'calc(100% + 8px)',
+        left: 0,
+        zIndex: 60,
+        width: '272px',
+        maxHeight: '320px',
+        overflowY: 'auto',
+        boxSizing: 'border-box',
+        padding: '6px',
+        color: 'var(--dsw-alias-label-primary)',
+        background:
+          'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-overlay) 96%, transparent), color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent))',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 52%, transparent)',
+        borderRadius: '18px',
+        backdropFilter: 'blur(26px) saturate(185%)',
+        WebkitBackdropFilter: 'blur(26px) saturate(185%)',
+        boxShadow:
+          '0 20px 46px color-mix(in srgb, var(--dsw-alias-label-primary) 16%, transparent), ' +
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 88%, transparent)',
+      },
+      pickerItem: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        width: '100%',
+        padding: '8px 10px',
+        font: 'inherit',
+        fontSize: '12.5px',
+        lineHeight: '18px',
+        textAlign: 'left',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '12px',
+        cursor: 'pointer',
+        transition: 'background 120ms ease',
+      },
+      pickerItemHover: { background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-2) 90%, transparent)' },
+      pickerItemOn: { background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 13%, transparent)' },
+      pickerItemLabel: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      pickerTag: {
+        flex: 'none',
+        padding: '0 6px',
+        fontSize: '10px',
+        lineHeight: '16px',
+        borderRadius: '999px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-2) 92%, transparent)',
+      },
+      pickerCheck: { flex: 'none', width: '14px', textAlign: 'center', color: 'var(--dsw-alias-brand-primary)', fontWeight: 600 },
+      listCard: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '360px',
+        flex: 'none',
+        minHeight: 0,
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 64%, transparent)',
+        borderRadius: '20px',
+        backgroundColor: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 93%, transparent)',
+        backgroundImage:
+          'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-overlay) 28%, transparent), transparent 120px)',
+        backdropFilter: 'blur(20px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+        boxShadow:
+          '0 18px 48px color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent), ' +
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 72%, transparent)',
+        overflow: 'hidden',
+      },
+      detailCard: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 64%, transparent)',
+        borderRadius: '20px',
+        backgroundColor: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 93%, transparent)',
+        backgroundImage:
+          'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-overlay) 28%, transparent), transparent 140px)',
+        backdropFilter: 'blur(20px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+        boxShadow:
+          '0 18px 48px color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent), ' +
+          'inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-overlay) 72%, transparent)',
+        overflow: 'hidden',
+      },
+      listHead: { padding: '12px 12px 8px', flex: 'none' },
+      tabs2: {
+        display: 'flex',
+        gap: '2px',
+        flex: 'none',
+        margin: '0 12px 10px',
+        padding: '3px',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-2) 92%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 58%, transparent)',
+        borderRadius: '10px',
+      },
+      tab2: {
+        display: 'inline-flex',
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '4px',
+        font: 'inherit',
+        fontSize: '12px',
+        lineHeight: '18px',
+        height: '28px',
+        padding: '0 4px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '8px',
+        cursor: 'pointer',
+      },
+      tabOn2: {
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'var(--dsw-alias-bg-overlay)',
+        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
+      },
+      tabCount2: { fontSize: '10px', opacity: 0.55, fontVariantNumeric: 'tabular-nums' },
+      listScroll: { margin: 0, padding: '0 8px 10px', listStyle: 'none', overflowY: 'auto', flex: 1, minHeight: 0 },
+      noteBtn2: {
+        display: 'block',
+        width: '100%',
+        boxSizing: 'border-box',
+        textAlign: 'left',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        padding: '10px',
+        marginBottom: '2px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'transparent',
+        border: '0.5px solid transparent',
+        borderRadius: '10px',
+        cursor: 'pointer',
+      },
+      noteOn: {
+        backgroundColor: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, var(--dsw-alias-bg-layer-2))',
+        backgroundImage:
+          'linear-gradient(135deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, transparent), transparent 62%)',
+        borderColor: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 34%, transparent)',
+        boxShadow: '0 4px 14px color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)',
+      },
+      noteTitle2: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px', fontWeight: 500 },
+      noteSummary2: {
+        marginTop: '2px',
+        fontSize: '12px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      },
+      noteFooter: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '11px', lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' },
+      noteFooterLabel: { opacity: 0.9 },
+      detailHead2: {
+        padding: '20px 24px 14px',
+        flex: 'none',
+        borderBottom: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 48%, transparent)',
+        backgroundImage:
+          'linear-gradient(120deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent), transparent 55%)',
+      },
+      detailTitle2: { fontSize: '20px', lineHeight: '28px', fontWeight: 600 },
+      detailMeta: { display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', marginTop: '7px', fontSize: '11px', lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' },
+      detailIntro: { marginTop: '12px', padding: '10px 12px', borderRadius: '9px', background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-secondary)', fontSize: '12px', lineHeight: '18px' },
+      detailIntroStrong: { color: 'var(--dsw-alias-label-primary)', fontWeight: 500 },
+      detailActions: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' },
+      detailScroll: { overflowY: 'auto', flex: 1, minHeight: 0 },
+      detailInner: { maxWidth: '760px', margin: '0 auto', padding: '22px 28px 36px', fontSize: '14px', lineHeight: '1.75' },
+      pageFooter: { padding: '0 32px 12px', flex: 'none' },
+      footerDetails: { fontSize: '11px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      empty2: { padding: '64px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' },
+      emptyTitle2: { fontSize: '14px', lineHeight: '22px', color: 'var(--dsw-alias-label-primary)' },
+      emptyHint2: { marginTop: '6px', maxWidth: '360px', fontSize: '12px', lineHeight: '19px', color: 'var(--dsw-alias-label-secondary)' },
+      errorBar: { margin: '0 32px 12px', padding: '8px 12px', fontSize: '12px', lineHeight: '18px', color: 'var(--dsw-alias-state-error-primary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-state-error-primary)', borderRadius: '10px' },
+
+      // --- markdown --------------------------------------------------------
+      mdH1: { fontSize: '22px', lineHeight: '30px', fontWeight: 600, margin: '24px 0 10px' },
+      mdH2: { fontSize: '18px', lineHeight: '26px', fontWeight: 600, margin: '22px 0 8px' },
+      mdH3: { fontSize: '15px', lineHeight: '23px', fontWeight: 600, margin: '18px 0 6px' },
+      mdPara: { margin: '0 0 12px', whiteSpace: 'pre-wrap' },
+      mdUl: { margin: '0 0 12px', paddingLeft: '20px' },
+      mdOl: { margin: '0 0 12px', paddingLeft: '20px' },
+      mdLi: { margin: '0 0 5px' },
+      mdQuote: { margin: '0 0 12px', padding: '2px 0 2px 12px', borderLeft: '2px solid var(--dsw-alias-border-l2)', color: 'var(--dsw-alias-label-secondary)' },
+      mdCodeBlock: { margin: '0 0 14px', padding: '12px 14px', borderRadius: '10px', background: 'var(--dsw-alias-bg-layer-2)', fontSize: '12px', lineHeight: '1.6', overflowX: 'auto', whiteSpace: 'pre' },
+      mdCodeInline: { fontSize: '0.92em', padding: '1px 5px', borderRadius: '5px', background: 'var(--dsw-alias-bg-layer-2)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
+      mdLink: { color: 'var(--dsw-alias-brand-primary)', textDecoration: 'none' },
+      mdStrong: { fontWeight: 600 },
+      mdHr: { border: 'none', borderTop: '0.5px solid var(--dsw-alias-border-l1)', margin: '18px 0' },
+
+      // --- pipeline health strip -------------------------------------------
+      health: {
+        display: 'flex',
+        gap: '7px',
+        flexWrap: 'wrap',
+        alignItems: 'baseline',
+        margin: '8px 0 0',
+        padding: '8px 10px',
+        fontSize: '11px',
+        lineHeight: '18px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'var(--dsw-alias-bg-layer-1)',
+        border: '1px solid var(--dsw-alias-border-l1)',
+        borderRadius: '8px',
+      },
+      healthSep: { opacity: 0.5 },
+      healthBad: { color: 'var(--dsw-alias-state-error-primary)' },
+      healthWarn: { color: 'var(--dsw-alias-state-warn-primary)' },
+      healthVerdict: {
+        flex: '1 1 100%',
+        color: 'var(--dsw-alias-label-secondary)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      },
+      sessionBar: {
+        display: 'flex',
+        gap: '10px',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        margin: '0 clamp(24px, 4vw, 48px) 16px',
+        padding: '12px 14px',
+        fontSize: '12px',
+        lineHeight: '20px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'var(--dsw-alias-bg-layer-1)',
+        borderRadius: '10px',
+      },
+      sessionBarNote: { marginLeft: 'auto' },
+    };
+
+    function counts(object, labels) {
+      return Object.keys(object || {})
+        .filter((key) => object[key])
+        .map((key) => `${labels[key] || key} ${object[key]}`);
+    }
+
+    /** Host "sm" control: 28px capsule, 0.5px hairline, hover wash of its own. */
+    function KbButton(props) {
+      const [hovered, setHovered] = useState(false);
+      const disabled = props.disabled === true;
+      const primary = props.variant === 'primary';
+      const base = primary ? { ...S.btn, ...S.btnPrimary } : S.btn;
+      const hover = primary ? { ...base, ...S.btnPrimaryHover } : { ...base, ...S.btnHover };
+      const style = disabled
+        ? { ...base, opacity: 0.6, cursor: 'not-allowed' }
+        : hovered
+          ? hover
+          : base;
+      return h(
+        'button',
+        {
+          type: 'button',
+          style,
+          disabled,
+          onMouseEnter: disabled ? undefined : () => setHovered(true),
+          onMouseLeave: disabled ? undefined : () => setHovered(false),
+          onClick: disabled ? undefined : props.onClick,
+        },
+        props.children,
+      );
+    }
+
+    /**
+     * Glass workspace picker. The native <select> popup is rendered by the OS and
+     * cannot be styled, so the memory page draws its own trigger + menu. The
+     * menu follows the same glass language as the page cards: translucent
+     * overlay, backdrop blur, rounded 18px, subtle inset highlight.
+     */
+    function WorkspacePicker(props) {
+      const [open, setOpen] = useState(false);
+      const [hovered, setHovered] = useState('');
+      const wrapRef = useRef(null);
+      useEffect(() => {
+        if (!open) return undefined;
+        const onPointerDown = (event) => {
+          const node = wrapRef.current;
+          if (node && event.target instanceof Node && node.contains(event.target)) return;
+          setOpen(false);
+        };
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape') setOpen(false);
+        };
+        document.addEventListener('mousedown', onPointerDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+          document.removeEventListener('mousedown', onPointerDown);
+          document.removeEventListener('keydown', onKeyDown);
+        };
+      }, [open]);
+      const options = Array.isArray(props.options) ? props.options : [];
+      const current = options.find((option) => option.id === props.value) || options[0] || null;
+      return h(
+        'div',
+        { ref: wrapRef, style: S.pickerWrap },
+        h(
+          'button',
+          {
+            type: 'button',
+            style: open ? { ...S.pickerTrigger, ...S.pickerTriggerOn } : S.pickerTrigger,
+            'aria-haspopup': 'listbox',
+            'aria-expanded': open ? 'true' : 'false',
+            'aria-label': '选择要查看的工作区',
+            onClick: () => setOpen(!open),
+          },
+          h('span', { style: S.pickerLabel }, current ? current.label : '选择工作区'),
+          h(
+            'svg',
+            {
+              viewBox: '0 0 16 16',
+              style: open ? { ...S.pickerChev, ...S.pickerChevOpen } : S.pickerChev,
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: '1.6',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+              'aria-hidden': 'true',
+            },
+            h('path', { d: 'M4 6.5 8 10.5 12 6.5' }),
+          ),
+        ),
+        open
+          ? h(
+              'div',
+              { style: S.pickerMenu, role: 'listbox', 'aria-label': '工作区' },
+              options.map((option) =>
+                h(
+                  'button',
+                  {
+                    key: option.id,
+                    type: 'button',
+                    role: 'option',
+                    'aria-selected': option.id === props.value ? 'true' : 'false',
+                    style: {
+                      ...S.pickerItem,
+                      ...(option.id === props.value ? S.pickerItemOn : null),
+                      ...(hovered === option.id && option.id !== props.value ? S.pickerItemHover : null),
+                    },
+                    onMouseEnter: () => setHovered(option.id),
+                    onMouseLeave: () => setHovered(''),
+                    onClick: () => {
+                      setOpen(false);
+                      setHovered('');
+                      props.onChange(option.id);
+                    },
+                  },
+                  h('span', { style: S.pickerItemLabel }, option.label),
+                  option.writable === false ? h('span', { style: S.pickerTag }, '只读') : null,
+                  option.id === props.value ? h('span', { style: S.pickerCheck }, '✓') : null,
+                ),
+              ),
+            )
+          : null,
+      );
+    }
+
+    async function postMode(session, enabled) {
+      const response = await fetch('/kb/mode', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ session, enabled }),
+      });
+      if (!response.ok) throw new Error(String(response.status));
+      return response.json();
+    }
+
+    function modeText(session) {
+      if (!session || !session.id) return '没有打开的会话';
+      if (session.mode === 'on') return session.manual ? '本会话手动开启记忆' : '本会话会参考记忆';
+      if (session.mode === 'off') return session.manual ? '本会话已关闭记忆' : '本会话不参考记忆';
+      return '本会话记忆未判定';
+    }
+
+    // --- session "..." menu rows --------------------------------------------
+
+    /** Host addresses sessions by bare id; the Client may pass either form. */
+    function bareSessionId(value) {
+      if (value === undefined || value === null) return '';
+      return String(value).replace(/^session-/, '');
+    }
+
+    /** Visible label of the mode row, derived from the live session snapshot. */
+    function menuRowLabel(session) {
+      if (!session) return '记忆：读取中…';
+      if (session.mode === 'on') return session.manual ? '本会话：手动开启记忆' : '本会话：会参考记忆';
+      if (session.mode === 'off') return session.manual ? '本会话：已关闭记忆' : '本会话：不参考记忆';
+      return '本会话：记忆未判定';
+    }
+
+    /**
+     * Read the panel snapshot for one session when its menu mounts.
+     * Both rows mount together, so concurrent reads share one request; every
+     * menu opening reads again, so the rows always show the live mode.
+     */
+    function loadSessionPanel(sessionId) {
+      const pending = sessionPanelPending.get(sessionId);
+      if (pending) return pending;
+      const request = fetch(panelUrl(sessionId), { cache: 'no-store' })
+        .then((response) => {
+          if (!response.ok) throw new Error(String(response.status));
+          return response.json().then(rememberCsrf);
+        })
+        .finally(() => {
+          sessionPanelPending.delete(sessionId);
+        });
+      sessionPanelPending.set(sessionId, request);
+      return request;
+    }
+
+    function watchModeChanges(listener) {
+      modeWatchers.add(listener);
+      return () => {
+        modeWatchers.delete(listener);
+      };
+    }
+
+    function emitModeChange(sessionId) {
+      for (const listener of Array.from(modeWatchers)) {
+        try {
+          listener(sessionId);
+        } catch {
+          /* one listener must not break the others */
+        }
+      }
+    }
+
+    async function submitMode(sessionId, enabled) {
+      try {
+        await postMode(sessionId, enabled);
+        emitModeChange(sessionId);
+      } catch (error) {
+        try {
+          console.warn('[kb-panel] 切换本会话知识库模式失败', error);
+        } catch {
+          /* logging is best effort */
+        }
+      }
+    }
+
+    async function submitModeReset(sessionId) {
+      try {
+        const response = await fetch('/kb/mode', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ session: sessionId, reset: true }),
+        });
+        if (!response.ok) throw new Error(String(response.status));
+        emitModeChange(sessionId);
+      } catch (error) {
+        try {
+          console.warn('[kb-panel] 恢复自动判定失败', error);
+        } catch {
+          /* logging is best effort */
+        }
+      }
+    }
+
+    // --- composer chip ------------------------------------------------------
+
+    /** Short, human-facing tag for a note; omit it when it would just say "未分类". */
+    function noteTag(note) {
+      if (!note) return '';
+      if (TYPE_LABEL[note.type]) return TYPE_LABEL[note.type];
+      if (note.scope && note.scope !== 'unclassified') return scopeLabel(note.scope);
+      return '';
+    }
+
+    function Panel({ data, onRefresh, onOpen, onDisable }) {
+      const remembered = rememberedNotesOf(data);
+      const inbox = Number(data.inbox) || 0;
+      const review = Number(data.review) || 0;
+      const recent = remembered
+        .slice()
+        .sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')))
+        .slice(0, 3);
+      const stat = (value, label) =>
+        h(
+          'div',
+          { style: S.stat },
+          h('div', { style: S.statValue }, String(value)),
+          h('div', { style: S.statLabel }, label),
+        );
+      return h(
+        'div',
+        { style: S.panel },
+        h(
+          'div',
+          { style: S.head },
+          h('span', { style: S.title }, '记忆'),
+          h(KbButton, { onClick: onRefresh }, '刷新'),
+        ),
+        h('div', { style: S.stats }, stat(inbox, '待确认'), stat(remembered.length, '已记住'), stat(Number(data.injected) || 0, '本轮参考')),
+        review
+          ? h('div', { style: { ...S.muted, marginTop: '6px' } }, `${review} 条需要复查`)
+          : null,
+        inbox
+          ? h(
+              'div',
+              { style: { ...S.callout, display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' } },
+              h('span', { style: { ...S.calloutStrong, flex: 1 } }, `有 ${inbox} 条待确认的记忆`),
+              h(KbButton, { variant: 'primary', onClick: onOpen }, '去确认'),
+            )
+          : h('div', { style: S.emptyLine }, '没有待确认的记忆'),
+        recent.length
+          ? h(
+              'div',
+              { style: S.section },
+              h('div', { style: S.muted }, '最近记住'),
+              h(
+                'ul',
+                { style: S.list },
+                recent.map((note) =>
+                  h(
+                    'li',
+                    { key: note.id, style: S.item },
+                    h('span', { style: S.itemTitle }, note.title || note.summary || note.id),
+                    noteTag(note) ? h('span', { style: S.itemTag }, noteTag(note)) : null,
+                  ),
+                ),
+              ),
+            )
+          : h('div', { style: S.emptyLine }, '还没有记住任何内容'),
+        h(
+          'div',
+          { style: S.actions },
+          h(KbButton, { variant: 'primary', onClick: onOpen }, '打开记忆'),
+          onDisable ? h(KbButton, { onClick: onDisable }, '本会话关闭记忆') : null,
+        ),
+      );
+    }
+
+    function KbChip(props) {
+      const sessionId = props && props.sessionId ? String(props.sessionId) : null;
+      // Keep the latest session addressable for the page's session controls.
+      currentSessionId = sessionId;
+
+      const [data, setData] = useState(null);
+      const [failed, setFailed] = useState(false);
+      const [open, setOpen] = useState(false);
+      const [hovered, setHovered] = useState(false);
+
+      const load = useCallback(async () => {
+        try {
+          const response = await fetch(panelUrl(sessionId), { cache: 'no-store' });
+          if (!response.ok) throw new Error(String(response.status));
+          setData(rememberCsrf(await response.json()));
+          setFailed(false);
+        } catch {
+          setFailed(true);
+        }
+      }, [sessionId]);
+
+      useEffect(() => {
+        load();
+        const timer = setInterval(load, 30000);
+        return () => clearInterval(timer);
+      }, [load]);
+
+      // A session menu row changed this session's mode: refresh now. This adds
+      // no polling and leaves the visibility decision below untouched.
+      useEffect(() => {
+        if (!sessionId) return undefined;
+        return watchModeChanges((changed) => {
+          if (bareSessionId(changed) === bareSessionId(sessionId)) load();
+        });
+      }, [load, sessionId]);
+
+      // Soft refresh from the sidebar action: re-read only, never unload.
+      useEffect(() => {
+        const onRefresh = () => load();
+        window.addEventListener(REFRESH_EVENT, onRefresh);
+        return () => window.removeEventListener(REFRESH_EVENT, onRefresh);
+      }, [load]);
+
+      if (failed) return null;
+      if (!data) return null;
+      if (!data.session || !data.session.id) return null;
+      // Outside the vault — or undecidable — the knowledge base leaves no trace.
+      if (data.session.mode !== 'on') return null;
+
+      const remembered = rememberedNotesOf(data);
+      const inbox = Number(data.inbox) || 0;
+      const label = '记忆';
+      const countText = inbox ? `已记住 ${remembered.length} · 待确认 ${inbox}` : `已记住 ${remembered.length}`;
+      return h(
+        'div',
+        { style: S.wrap },
+        h(
+          'button',
+          {
+            type: 'button',
+            style: hovered ? { ...S.pill, ...S.pillHover } : S.pill,
+            'aria-expanded': open,
+            title: data.workspace,
+            onClick: () => setOpen((value) => !value),
+            onMouseEnter: () => setHovered(true),
+            onMouseLeave: () => setHovered(false),
+          },
+          h('span', { style: { ...S.dot, background: 'var(--dsw-alias-state-success-primary)' } }),
+          h('span', null, label),
+          h('span', { style: S.count }, countText),
+          h(
+            'svg',
+            {
+              width: 12,
+              height: 12,
+              viewBox: '0 0 12 12',
+              fill: 'none',
+              'aria-hidden': 'true',
+              style: open ? { ...S.chevron, ...S.chevronOpen } : S.chevron,
+            },
+            h('path', { d: 'M3 4.5L6 7.5L9 4.5', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+          ),
+        ),
+        open
+          ? h(Panel, {
+              data,
+              onRefresh: load,
+              onOpen: () => {
+                if (layout && typeof layout.selectPanel === 'function') layout.selectPanel('kb');
+              },
+              onDisable: sessionId
+                ? () => {
+                    postMode(sessionId, false)
+                      .then(load)
+                      .catch(() => {});
+                  }
+                : null,
+            })
+          : null,
+      );
+    }
+
+    // --- session "..." menu rows --------------------------------------------
+
+    /** One menu row: the single `role="menuitem"` button an entry renders. */
+    function KbMenuRow(props) {
+      const [active, setActive] = useState(false);
+      const disabled = props.disabled === true;
+      const style = disabled
+        ? { ...S.menuItem, ...S.menuItemDisabled }
+        : active
+          ? { ...S.menuItem, ...S.menuItemHover }
+          : S.menuItem;
+      return h(
+        'button',
+        {
+          type: 'button',
+          role: 'menuitem',
+          style,
+          disabled,
+          onMouseEnter: disabled ? undefined : () => setActive(true),
+          onMouseLeave: disabled ? undefined : () => setActive(false),
+          onFocus: disabled ? undefined : () => setActive(true),
+          onBlur: disabled ? undefined : () => setActive(false),
+          onClick: disabled ? undefined : props.onSelect,
+        },
+        h('span', { style: S.menuIcon }, h(KbIcon, { size: 14 })),
+        h('span', { style: S.menuLabel }, props.label),
+      );
+    }
+
+    /** Read the live session posture when the menu mounts this row. */
+    function useSessionPanel(sessionId) {
+      const [state, setState] = useState({ status: sessionId ? 'loading' : 'hidden', session: null });
+
+      useEffect(() => {
+        if (!sessionId) {
+          setState({ status: 'hidden', session: null });
+          return undefined;
+        }
+        let alive = true;
+        setState({ status: 'loading', session: null });
+        try {
+          loadSessionPanel(sessionId)
+            .then((data) => {
+              if (!alive) return;
+              const session = data && data.session;
+              if (session && session.id) setState({ status: 'ready', session });
+              else setState({ status: 'hidden', session: null });
+            })
+            .catch(() => {
+              if (alive) setState({ status: 'failed', session: null });
+            });
+        } catch {
+          setState({ status: 'failed', session: null });
+        }
+        return () => {
+          alive = false;
+        };
+      }, [sessionId]);
+
+      return state;
+    }
+
+    /**
+     * Toggle row. It only mounts while the "..." menu is open, so the panel
+     * read happens exactly then; an out-of-vault session pays nothing before.
+     */
+    function KbMemoryMenuItem(props) {
+      // Root-scope owners always supply the slot-level hook; anything else
+      // renders nothing instead of throwing inside the menu's list.
+      if (!props || typeof props.useMenuOpenState !== 'function') return null;
+      return h(KbMemoryRow, props);
+    }
+
+    function KbMemoryRow(props) {
+      const [, setMenuOpen] = props.useMenuOpenState();
+      const raw = props.sessionId === undefined || props.sessionId === null ? null : String(props.sessionId);
+      const state = useSessionPanel(raw);
+
+      const closeMenu = () => {
+        try {
+          setMenuOpen(false);
+        } catch {
+          /* the menu owns its open state */
+        }
+      };
+
+      if (state.status === 'loading') return h(KbMenuRow, { label: menuRowLabel(null), disabled: true });
+      if (state.status !== 'ready') return null;
+      const session = state.session;
+      if (!session || session.mode === 'unknown') return null;
+
+      const on = session.mode === 'on';
+      return h(KbMenuRow, {
+        label: menuRowLabel(session),
+        onSelect: () => {
+          closeMenu();
+          void submitMode(raw, !on);
+        },
+      });
+    }
+
+    /** Second row, present only while the session carries a manual override. */
+    function KbMemoryResetMenuItem(props) {
+      if (!props || typeof props.useMenuOpenState !== 'function') return null;
+      return h(KbMemoryResetRow, props);
+    }
+
+    function KbMemoryResetRow(props) {
+      const [, setMenuOpen] = props.useMenuOpenState();
+      const raw = props.sessionId === undefined || props.sessionId === null ? null : String(props.sessionId);
+      const state = useSessionPanel(raw);
+
+      const closeMenu = () => {
+        try {
+          setMenuOpen(false);
+        } catch {
+          /* the menu owns its open state */
+        }
+      };
+
+      if (state.status !== 'ready') return null;
+      const session = state.session;
+      if (!session || session.manual !== true) return null;
+
+      return h(KbMenuRow, {
+        label: '恢复自动记忆',
+        onSelect: () => {
+          closeMenu();
+          void submitModeReset(raw);
+        },
+      });
+    }
+
+    // --- sidebar icon -------------------------------------------------------
+
+    function KbIcon(props) {
+      const size = (props && props.size) || 18;
+      return h(
+        'svg',
+        {
+          width: size,
+          height: size,
+          viewBox: '0 0 24 24',
+          'aria-hidden': 'true',
+          focusable: 'false',
+          role: 'presentation',
+        },
+        h('rect', { key: 'a', x: 3.5, y: 3.8, width: 17, height: 4.2, rx: 2.1, fill: 'currentColor' }),
+        h('rect', { key: 'b', x: 5.5, y: 9.7, width: 13, height: 3.8, rx: 1.9, fill: 'currentColor', opacity: 0.78 }),
+        h('rect', { key: 'c', x: 7.5, y: 15.2, width: 9, height: 3.4, rx: 1.7, fill: 'currentColor', opacity: 0.56 }),
+        h('circle', { key: 'd', cx: 12, cy: 21, r: 1.4, fill: 'currentColor', opacity: 0.4 }),
+      );
+    }
+
+    // --- sidebar footer action ----------------------------------------------
+
+    /**
+     * Sidebar refresh action.
+     *
+     * The main button is a soft refresh: mounted panel surfaces re-read their
+     * snapshots and the page is never unloaded, so running turns cannot be
+     * interrupted. The caret exposes the full reload, which asks the Host first:
+     * idle -> reload now; busy -> queue and poll until idle. A busy full reload
+     * is never forced. `Ctrl+R` remains a browser-level escape hatch.
+     */
+    function KbReloadAction(props) {
+      const wide = !props || props.wide !== false;
+      const [hovered, setHovered] = useState(false);
+      const [menuOpen, setMenuOpen] = useState(false);
+      const [queued, setQueued] = useState(false);
+      const [busyCount, setBusyCount] = useState(0);
+      const [flash, setFlash] = useState('');
+      const wrapRef = useRef(null);
+
+      useEffect(() => {
+        if (!flash) return undefined;
+        const timer = setTimeout(() => setFlash(''), 1600);
+        return () => clearTimeout(timer);
+      }, [flash]);
+
+      useEffect(() => {
+        if (!menuOpen) return undefined;
+        const close = (event) => {
+          if (wrapRef.current && !wrapRef.current.contains(event.target)) setMenuOpen(false);
+        };
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+      }, [menuOpen]);
+
+      // A queued full reload waits for every running turn to end. It never
+      // forces a reload while `/kb/busy` reports work in progress.
+      useEffect(() => {
+        if (!queued) return undefined;
+        let cancelled = false;
+        const tick = async () => {
+          try {
+            const response = await fetch('/kb/busy', { cache: 'no-store' });
+            if (!response.ok) throw new Error(String(response.status));
+            const info = await response.json();
+            const count = Number(info && info.busy) || 0;
+            if (cancelled) return;
+            if (count === 0) {
+              try {
+                window.location.reload();
+              } catch {
+                if (!cancelled) {
+                  setQueued(false);
+                  setFlash('重载失败');
+                }
+              }
+              return;
+            }
+            setBusyCount(count);
+          } catch {
+            if (!cancelled) {
+              setQueued(false);
+              setFlash('检查失败');
+            }
+          }
+        };
+        tick();
+        const timer = setInterval(tick, 2000);
+        return () => {
+          cancelled = true;
+          clearInterval(timer);
+        };
+      }, [queued]);
+
+      const softRefresh = () => {
+        setMenuOpen(false);
+        window.dispatchEvent(new Event(REFRESH_EVENT));
+        setFlash('已刷新');
+      };
+
+      const startFullReload = async () => {
+        setMenuOpen(false);
+        try {
+          const response = await fetch('/kb/busy', { cache: 'no-store' });
+          if (!response.ok) throw new Error(String(response.status));
+          const info = await response.json();
+          const count = Number(info && info.busy) || 0;
+          if (count === 0) {
+            try {
+              window.location.reload();
+            } catch {
+              setFlash('重载失败');
+            }
+            return;
+          }
+          setBusyCount(count);
+          setQueued(true);
+        } catch {
+          setFlash('检查失败');
+        }
+      };
+
+      const label = queued ? (busyCount ? `等待空闲 ${busyCount}` : '等待空闲') : flash || '刷新界面';
+      const title = queued
+        ? `有 ${busyCount} 个对话在运行；空闲后自动完整重载。点击主按钮仍可软刷新`
+        : wide
+          ? '刷新界面（软刷新，不中断对话）；点右侧箭头可完整重载'
+          : '刷新界面（软刷新，不中断对话）；展开侧栏可完整重载';
+      const style = {
+        ...S.reloadBtn,
+        ...(wide ? { flex: '1 1 auto' } : S.reloadBtnCollapsed),
+        ...(hovered ? S.reloadBtnHover : null),
+        ...(queued ? S.reloadBtnArmed : null),
+      };
+      return h(
+        'div',
+        { ref: wrapRef, style: S.reloadWrap },
+        h(
+          'button',
+          {
+            type: 'button',
+            style,
+            title,
+            'aria-label': title,
+            onMouseEnter: () => setHovered(true),
+            onMouseLeave: () => setHovered(false),
+            onFocus: () => setHovered(true),
+            onBlur: () => setHovered(false),
+            onClick: softRefresh,
+          },
+          h(
+            'span',
+            { style: S.reloadIcon, 'aria-hidden': 'true' },
+            h(
+              'svg',
+              {
+                width: 16,
+                height: 16,
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                focusable: 'false',
+                role: 'presentation',
+              },
+              h('path', {
+                d: 'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5',
+                stroke: 'currentColor',
+                strokeWidth: 1.5,
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+              }),
+            ),
+          ),
+          wide ? h('span', { style: S.reloadLabel }, label) : null,
+        ),
+        wide
+          ? h(
+              'button',
+              {
+                type: 'button',
+                style: S.reloadCaret,
+                title: queued ? '等待空闲后完整重载' : '完整重载界面',
+                'aria-label': '完整重载界面',
+                'aria-haspopup': 'menu',
+                'aria-expanded': menuOpen,
+                onClick: () => setMenuOpen((value) => !value),
+              },
+              '▾',
+            )
+          : null,
+        wide && menuOpen
+          ? h(
+              'div',
+              { style: S.reloadMenu, role: 'menu' },
+              h(
+                'div',
+                { style: S.reloadMenuNote },
+                queued
+                  ? `正在等待 ${busyCount} 个对话结束；完成后自动完整重载`
+                  : '完整重载会刷新页面；有对话运行时会等待空闲，不会强制中断',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  role: 'menuitem',
+                  style: S.menuItem,
+                  onClick: queued
+                    ? () => {
+                        setQueued(false);
+                        setMenuOpen(false);
+                        setFlash('已取消');
+                      }
+                    : startFullReload,
+                },
+                queued ? '取消等待重载' : '完整重载界面',
+              ),
+            )
+          : null,
+      );
+    }
+
+    // --- knowledge-base page ------------------------------------------------
+
+    /**
+     * Inline markdown only: bold, inline code and safe http(s) links.
+     * Everything is rendered as React text, never as raw HTML.
+     */
+    function renderInline(text, prefix = 'i') {
+      if (!text) return [];
+      const nodes = [];
+      const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
+      let last = 0;
+      let match;
+      let index = 0;
+      while ((match = pattern.exec(text))) {
+        if (match.index > last) nodes.push(text.slice(last, match.index));
+        const token = match[0];
+        const key = `${prefix}-${index++}`;
+        if (token.startsWith('**')) {
+          nodes.push(h('strong', { key, style: S.mdStrong }, token.slice(2, -2)));
+        } else if (token.startsWith('`')) {
+          nodes.push(h('code', { key, style: S.mdCodeInline }, token.slice(1, -1)));
+        } else {
+          const link = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/.exec(token);
+          nodes.push(
+            link
+              ? h('a', { key, style: S.mdLink, href: link[2], target: '_blank', rel: 'noreferrer noopener' }, link[1])
+              : token,
+          );
+        }
+        last = match.index + token.length;
+      }
+      if (last < text.length) nodes.push(text.slice(last));
+      return nodes;
+    }
+
+    /** Block renderer for note bodies: headings, lists, quotes, code and links. */
+    function renderBody(body) {
+      if (!body) return [h('div', { key: 'empty', style: S.empty }, '（无正文）')];
+      const nodes = [];
+      const lines = body.split(/\r?\n/);
+      let index = 0;
+      let key = 0;
+      const isBlockStart = (line) =>
+        /^(#{1,6})\s+/.test(line) ||
+        /^\s*[-*+]\s+/.test(line) ||
+        /^\s*\d+\.\s+/.test(line) ||
+        /^\s*>\s?/.test(line) ||
+        /^\s*```/.test(line) ||
+        /^\s*(?:---+|\*\*\*+)\s*$/.test(line);
+      while (index < lines.length) {
+        const line = lines[index];
+        if (!line.trim()) {
+          index += 1;
+          continue;
+        }
+        if (/^\s*```/.test(line)) {
+          const code = [];
+          index += 1;
+          while (index < lines.length && !/^\s*```/.test(lines[index])) code.push(lines[index++]);
+          index += 1;
+          nodes.push(h('pre', { key: `c${key++}`, style: S.mdCodeBlock }, h('code', null, code.join('\n'))));
+          continue;
+        }
+        const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+        if (heading) {
+          const depth = heading[1].length;
+          const style = depth <= 1 ? S.mdH1 : depth === 2 ? S.mdH2 : S.mdH3;
+          nodes.push(h(depth <= 1 ? 'h2' : depth === 2 ? 'h3' : 'h4', { key: `h${key++}`, style }, renderInline(heading[2], `h${key}`)));
+          index += 1;
+          continue;
+        }
+        if (/^\s*[-*+]\s+/.test(line)) {
+          const items = [];
+          while (index < lines.length && /^\s*[-*+]\s+/.test(lines[index])) {
+            items.push(lines[index].replace(/^\s*[-*+]\s+/, ''));
+            index += 1;
+          }
+          nodes.push(
+            h(
+              'ul',
+              { key: `u${key++}`, style: S.mdUl },
+              items.map((item, itemIndex) => h('li', { key: `li${itemIndex}`, style: S.mdLi }, renderInline(item, `li${itemIndex}`))),
+            ),
+          );
+          continue;
+        }
+        if (/^\s*\d+\.\s+/.test(line)) {
+          const items = [];
+          while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+            items.push(lines[index].replace(/^\s*\d+\.\s+/, ''));
+            index += 1;
+          }
+          nodes.push(
+            h(
+              'ol',
+              { key: `o${key++}`, style: S.mdOl },
+              items.map((item, itemIndex) => h('li', { key: `li${itemIndex}`, style: S.mdLi }, renderInline(item, `oli${itemIndex}`))),
+            ),
+          );
+          continue;
+        }
+        if (/^\s*>\s?/.test(line)) {
+          const quote = [];
+          while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
+            quote.push(lines[index].replace(/^\s*>\s?/, ''));
+            index += 1;
+          }
+          nodes.push(h('blockquote', { key: `q${key++}`, style: S.mdQuote }, renderInline(quote.join('\n'), `q${key}`)));
+          continue;
+        }
+        if (/^\s*(?:---+|\*\*\*+)\s*$/.test(line)) {
+          nodes.push(h('hr', { key: `r${key++}`, style: S.mdHr }));
+          index += 1;
+          continue;
+        }
+        const paragraph = [];
+        while (index < lines.length && lines[index].trim() && !isBlockStart(lines[index])) {
+          paragraph.push(lines[index]);
+          index += 1;
+        }
+        nodes.push(h('p', { key: `p${key++}`, style: S.mdPara }, renderInline(paragraph.join('\n'), `p${key}`)));
+      }
+      return nodes;
+    }
+
+    function KbPage() {
+      const [data, setData] = useState(null);
+      const [failed, setFailed] = useState(false);
+      const [workspace, setWorkspace] = useState('');
+      const [query, setQuery] = useState('');
+      const [tab, setTab] = useState('inbox');
+      const [selected, setSelected] = useState(null);
+      const [detail, setDetail] = useState(null);
+      const [detailBusy, setDetailBusy] = useState(false);
+      const [statusBusy, setStatusBusy] = useState(false);
+      const [busy, setBusy] = useState(false);
+      /** Host rejection message; a failed action must never look successful. */
+      const [actionError, setActionError] = useState('');
+      const [workspaceBusy, setWorkspaceBusy] = useState(false);
+      /** Rename dialog: Electron does not implement window.prompt(), so the page
+       * owns the input. The route still only changes project.json.title. */
+      const [renameOpen, setRenameOpen] = useState(false);
+      const [renameValue, setRenameValue] = useState('');
+      const [toast, setToast] = useState(null);
+      const [health, setHealth] = useState(null);
+      const [searchFocused, setSearchFocused] = useState(false);
+      const [hoveredNote, setHoveredNote] = useState(null);
+      const toastTimer = useRef(null);
+      const pickedInitialTab = useRef(false);
+
+      const notify = useCallback((text) => {
+        setToast(String(text));
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(() => setToast(null), 2200);
+      }, []);
+      useEffect(() => () => {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+      }, []);
+
+      const load = useCallback(async () => {
+        try {
+          const [panelResponse, healthResponse] = await Promise.all([
+            fetch(panelUrl(currentSessionId, workspace), { cache: 'no-store' }),
+            fetch('/kb/ingest.json', { cache: 'no-store' }),
+          ]);
+          if (!panelResponse.ok) throw new Error(String(panelResponse.status));
+          const payload = rememberCsrf(await panelResponse.json());
+          setData(payload);
+          // The Host resolves the default view (session project, else legacy).
+          // Persist that id so the selector and note reads address the same store.
+          if (!workspace && payload.view && payload.view.id) setWorkspace(payload.view.id);
+          if (healthResponse.ok) {
+            try {
+              setHealth(await healthResponse.json());
+            } catch {
+              setHealth(null);
+            }
+          }
+          setFailed(false);
+        } catch {
+          setFailed(true);
+        }
+      }, [workspace]);
+
+      useEffect(() => {
+        load();
+        const timer = setInterval(load, 30000);
+        return () => clearInterval(timer);
+      }, [load]);
+
+      // Soft refresh from the sidebar action: keep query/filter/selection and
+      // re-read the snapshots only.
+      useEffect(() => {
+        const onRefresh = () => load();
+        window.addEventListener(REFRESH_EVENT, onRefresh);
+        return () => window.removeEventListener(REFRESH_EVENT, onRefresh);
+      }, [load]);
+
+      const openNote = useCallback(async (id) => {
+        setSelected(id);
+        setDetailBusy(true);
+        setDetail(null);
+        try {
+          const params = new URLSearchParams({ id: String(id) });
+          if (workspace) params.set('workspace', workspace);
+          const response = await fetch(`/kb/note.json?${params.toString()}`, { cache: 'no-store' });
+          if (!response.ok) throw new Error(String(response.status));
+          setDetail(await response.json());
+        } catch {
+          setDetail(null);
+        } finally {
+          setDetailBusy(false);
+        }
+      }, [workspace]);
+
+      /** POST one lifecycle action; surfaces the Host's error text on failure. */
+      const postAction = useCallback(async (url, body) => {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (response.ok) {
+          setActionError('');
+          return true;
+        }
+        let message = `操作被拒绝（HTTP ${response.status}）`;
+        try {
+          const payload = await response.json();
+          if (payload && payload.error) message = String(payload.error).slice(0, 200);
+        } catch {
+          /* keep the status message */
+        }
+        setActionError(message);
+        return false;
+      }, []);
+
+      /** Create or attach the current session workspace's own store. */
+      const attachWorkspace = useCallback(async (create, writable) => {
+        if (!currentSessionId) {
+          setActionError('请先打开一个会话，再为它设置独立记忆库');
+          return;
+        }
+        setWorkspaceBusy(true);
+        try {
+          const response = await fetch('/kb/workspace/attach', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ session: currentSessionId, create, writable }),
+          });
+          if (!response.ok) {
+            let message = `操作被拒绝（HTTP ${response.status}）`;
+            try {
+              const payload = await response.json();
+              if (payload && payload.error) message = String(payload.error).slice(0, 200);
+            } catch {
+              /* keep the status message */
+            }
+            setActionError(message);
+            return;
+          }
+          const payload = await response.json();
+          notify(payload.created ? '已创建当前工作区的独立记忆库' : '已接入当前工作区的记忆库');
+          setSelected(null);
+          setDetail(null);
+          setWorkspace(payload.slug);
+        } catch {
+          setActionError('无法创建工作区记忆库');
+        } finally {
+          setWorkspaceBusy(false);
+        }
+      }, [currentSessionId, notify]);
+
+      /**
+       * Confirm / reclassify / archive one note. This is the only path from
+       * `inbox` to `active`, i.e. the only way a memory may reach the model.
+       */
+      const applyStatus = useCallback(
+        async (id, status, scope, clearScope) => {
+          setStatusBusy(true);
+          try {
+            if (!(await postAction('/kb/atom', { id, status, scope, clearScope: clearScope === true, workspace }))) return;
+            notify(status === 'active' ? '已记住；后续对话可能会参考它' : status === 'archived' ? '已移出记忆；不会进入对话' : '已更新');
+            await load();
+            await openNote(id);
+          } catch {
+            /* keep the previous view */
+          } finally {
+            setStatusBusy(false);
+          }
+        },
+        [load, notify, openNote, postAction, workspace],
+      );
+
+      /**
+       * Explicitly copy one confirmed memory into the shared global store. The
+       * workspace copy becomes `promoted` (stops injecting there); the global
+       * copy reaches every workspace. This is the only way project memories
+       * cross projects, so it always requires this click (c-0020).
+       */
+      const promoteToGlobal = useCallback(
+        async (id) => {
+          setStatusBusy(true);
+          try {
+            const response = await fetch('/kb/atom/to-global', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ id, workspace }),
+            });
+            if (!response.ok) {
+              let message = `操作被拒绝（HTTP ${response.status}）`;
+              try {
+                const payload = await response.json();
+                if (payload && payload.error) message = String(payload.error).slice(0, 200);
+              } catch {
+                /* keep the status message */
+              }
+              setActionError(message);
+              return;
+            }
+            const payload = await response.json();
+            notify(payload.duplicate ? '全局库已有这条记忆；原记忆已标记为已提升' : '已提升为全局记忆；所有工作区可见');
+            await load();
+            await openNote(id);
+          } catch {
+            setActionError('提升为全局失败');
+          } finally {
+            setStatusBusy(false);
+          }
+        },
+        [load, notify, openNote, workspace],
+      );
+
+      /**
+       * Choose which project this session reads memories from. `global` is the
+       * default; a project scope adds that project's memories on top.
+       */
+      const changeScope = useCallback(
+        async (scope) => {
+          if (!currentSessionId) return;
+          setBusy(true);
+          try {
+            await fetch('/kb/scope', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ session: currentSessionId, scope }),
+            });
+            await load();
+          } catch {
+            /* keep the previous scope visible */
+          } finally {
+            setBusy(false);
+          }
+        },
+        [load],
+      );
+
+      const humanNotes = useMemo(() => ((data && data.notes) || []).filter((note) => !isRawNote(note)), [data]);
+      const tabCounts = useMemo(
+        () => ({
+          inbox: humanNotes.filter((note) => note.status === 'inbox' && !isWorkNote(note)).length,
+          active: humanNotes.filter((note) => !isWorkNote(note) && ['active', 'canon', 'review'].includes(note.status)).length,
+          work: humanNotes.filter(isWorkNote).length,
+          all: humanNotes.length,
+        }),
+        [humanNotes],
+      );
+      const notes = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        return humanNotes.filter((note) => {
+          if (tab === 'inbox' && (note.status !== 'inbox' || isWorkNote(note))) return false;
+          if (tab === 'active' && (isWorkNote(note) || !['active', 'canon', 'review'].includes(note.status))) return false;
+          if (tab === 'work' && !isWorkNote(note)) return false;
+          if (!q) return true;
+          const haystack = `${note.id} ${note.title} ${note.summary} ${(note.tags || []).join(' ')}`.toLowerCase();
+          return haystack.includes(q);
+        });
+      }, [humanNotes, query, tab]);
+
+      // First load only: with no pending candidates, "已记住" is the meaningful view.
+      useEffect(() => {
+        if (!data || pickedInitialTab.current) return;
+        pickedInitialTab.current = true;
+        if (data.inbox === 0) setTab('active');
+      }, [data]);
+
+      useEffect(() => {
+        if (!notes.length) {
+          setSelected(null);
+          setDetail(null);
+          return;
+        }
+        if (!selected || !notes.some((note) => note.id === selected)) openNote(notes[0].id);
+      }, [notes, selected, openNote]);
+
+      const toggleMode = useCallback(
+        async (enabled) => {
+          if (!currentSessionId) return;
+          setBusy(true);
+          try {
+            await postMode(currentSessionId, enabled);
+            await load();
+          } catch {
+            /* leave the previous posture visible */
+          } finally {
+            setBusy(false);
+          }
+        },
+        [load],
+      );
+
+      const resetMode = useCallback(async () => {
+        if (!currentSessionId) return;
+        setBusy(true);
+        try {
+          await fetch('/kb/mode', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ session: currentSessionId, reset: true }),
+          });
+          await load();
+        } catch {
+          /* keep the previous posture */
+        } finally {
+          setBusy(false);
+        }
+      }, [load]);
+
+      const switchWorkspace = useCallback((next) => {
+        const id = String(next || '');
+        if (!id || id === workspace) return;
+        setWorkspace(id);
+        setSelected(null);
+        setDetail(null);
+        setQuery('');
+        pickedInitialTab.current = false;
+      }, [workspace]);
+
+      const session = data && data.session;
+      const view = data && data.view;
+      const viewWritable = !view || view.writable !== false;
+      const canToggle = Boolean(session && session.id);
+      const currentProject = ((data && Array.isArray(data.projects) ? data.projects : []) || []).find(
+        (project) => session && project.path === session.projectRoot,
+      ) || null;
+      const projectScope = currentProject ? `project:${currentProject.slug}` : session && String(session.scope || '').startsWith('project:') ? session.scope : '';
+      const confirmScopes = [projectScope, 'global'].filter((value, index, list) => value && list.indexOf(value) === index);
+      const defaultScope = detail && detail.scope && detail.scope !== 'unclassified' ? detail.scope : projectScope || 'global';
+
+      /** Open the rename dialog (Electron has no window.prompt). */
+      const renameWorkspace = useCallback(() => {
+        if (!view || view.kind === 'global') return;
+        setRenameValue(String((view.meta && view.meta.title) || ''));
+        setRenameOpen(true);
+      }, [view]);
+
+      /** Persist the display name only; slug/scope stay untouched. */
+      const submitRename = useCallback(async () => {
+        if (!view || view.kind === 'global') return;
+        const title = String(renameValue || '').trim();
+        const current = String((view.meta && view.meta.title) || '');
+        if (!title) {
+          setActionError('名称不能为空');
+          return;
+        }
+        if (title === current) {
+          setRenameOpen(false);
+          return;
+        }
+        setWorkspaceBusy(true);
+        try {
+          const response = await fetch('/kb/workspace/rename', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ workspace: view.id, title }),
+          });
+          if (!response.ok) {
+            let message = `操作被拒绝（HTTP ${response.status}）`;
+            try {
+              const payload = await response.json();
+              if (payload && payload.error) message = String(payload.error).slice(0, 200);
+            } catch {
+              /* keep the status message */
+            }
+            setActionError(message);
+            return;
+          }
+          setRenameOpen(false);
+          notify('工作区名称已更新');
+          await load();
+        } catch {
+          setActionError('工作区改名失败');
+        } finally {
+          setWorkspaceBusy(false);
+        }
+      }, [load, notify, renameValue, view]);
+
+      /** Confirm a copy/clone relocation after a folder rename. */
+      const relocateWorkspace = useCallback(async () => {
+        if (!currentSessionId) return;
+        setWorkspaceBusy(true);
+        try {
+          const response = await fetch('/kb/workspace/relocate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ session: currentSessionId }),
+          });
+          if (!response.ok) {
+            let message = `操作被拒绝（HTTP ${response.status}）`;
+            try {
+              const payload = await response.json();
+              if (payload && payload.error) message = String(payload.error).slice(0, 200);
+            } catch {
+              /* keep the status message */
+            }
+            setActionError(message);
+            return;
+          }
+          notify('已把记忆库重新定位到当前路径');
+          await load();
+        } catch {
+          setActionError('重新定位失败');
+        } finally {
+          setWorkspaceBusy(false);
+        }
+      }, [currentSessionId, load, notify]);
+
+      const statButton = (value, label, targetTab) => {
+        const activeTab = tab === targetTab;
+        return h(
+          'button',
+          {
+            type: 'button',
+            style: { ...S.stat, ...(activeTab ? S.statOn : null) },
+            onClick: () => setTab(targetTab),
+          },
+          h('span', { style: S.statValue }, value),
+          h('span', { style: S.statLabel }, label),
+        );
+      };
+
+      const header = h(
+        'div',
+        { style: S.pageHead },
+        h(
+          'div',
+          { style: S.headText },
+          h('div', { style: S.pageTitle }, '记忆'),
+          h('div', { style: S.pageLead }, '只有你确认的内容才会进入对话。'),
+        ),
+        h(
+          'div',
+          { style: S.headRight },
+          h(
+            'div',
+            { style: S.headStats },
+            data ? statButton(tabCounts.inbox, '待确认', 'inbox') : h('span', { style: { ...S.stat, ...S.statStatic } }, '读取中…'),
+            data ? statButton(tabCounts.active, '已记住', 'active') : null,
+            data
+              ? h(
+                  'div',
+                  { style: { ...S.stat, ...S.statStatic } },
+                  h('span', { style: S.statValue }, data.injected || 0),
+                  h('span', { style: S.statLabel }, '本轮参考'),
+                )
+              : null,
+          ),
+          h(KbButton, { onClick: () => load() }, '刷新'),
+        ),
+      );
+
+      const statusBar = h(
+        'div',
+        { style: S.statusStrip },
+        h(
+          'div',
+          { style: S.statusGroup },
+          h('span', { style: S.statusStrong }, '正在查看'),
+          h(WorkspacePicker, {
+            options: (data && data.workspaces) || [],
+            value: workspace || (view && view.id) || '',
+            onChange: switchWorkspace,
+          }),
+          view && !viewWritable ? h('span', { style: S.statusTag }, '只读') : null,
+          view && view.kind !== 'global' && viewWritable
+            ? h(KbButton, { disabled: workspaceBusy, onClick: renameWorkspace }, '改名')
+            : null,
+        ),
+        h('span', { style: S.statusDivider }),
+        h(
+          'div',
+          { style: S.statusGroup },
+          h('span', {
+            style: {
+              ...S.statusDot,
+              background:
+                session && session.mode === 'on'
+                  ? 'var(--dsw-alias-state-success-primary)'
+                  : session && session.mode === 'off'
+                    ? 'var(--dsw-alias-state-idle-primary)'
+                    : 'var(--dsw-alias-state-warn-primary)',
+            },
+          }),
+          h('span', { style: S.statusStrong }, modeText(session)),
+          canToggle
+            ? h(
+                KbButton,
+                { disabled: busy, onClick: () => toggleMode(!(session.mode === 'on')) },
+                session.mode === 'on' ? '关闭' : '开启',
+              )
+            : h('span', null, '打开一个会话后可切换'),
+          session && session.manual ? h(KbButton, { disabled: busy, onClick: resetMode }, '恢复自动') : null,
+        ),
+        canToggle && data && (data.scopes || []).length
+          ? h(
+              React.Fragment,
+              null,
+              h('span', { style: S.statusDivider }),
+              h(
+                'div',
+                { style: S.statusGroup },
+                h('span', null, '范围'),
+                ['global'].concat(data.scopes || []).map((scope) =>
+                  h(
+                    KbButton,
+                    { key: scope, disabled: busy, onClick: () => changeScope(scope) },
+                    `${(session.scope || 'global') === scope ? '✓ ' : ''}${scope === 'global' ? '所有项目' : `${scope.replace('project:', '')} 项目`}`,
+                  ),
+                ),
+              ),
+            )
+          : null,
+        h('span', { style: S.statusDivider }),
+        h(
+          'div',
+          { style: S.statusGroup },
+          h('span', null, currentProject ? `本会话项目：${currentProject.slug}` : '本会话未接入项目库'),
+          currentProject
+            ? h('span', { style: S.statusTag }, currentProject.writable ? '可写' : '只读')
+            : h('span', { style: S.statusTag }, '仅全局记忆'),
+        ),
+        h('span', { style: S.statusNote }, '只影响本会话'),
+      );
+
+      const workspaceState = session && session.workspace ? session.workspace : null;
+      const workspaceReadOnly = Boolean(workspaceState && workspaceState.attached && !workspaceState.writable);
+      const relocation = workspaceState && workspaceState.relocatable ? workspaceState.relocatable : null;
+      // Two-signal rule (c-1001): automatic relocation needs the old path gone
+      // AND the folder birthtime unchanged. Anything else is surfaced as an
+      // unconfirmed copy and needs this explicit click.
+      const relocationCopy = Boolean(relocation && (!relocation.oldPathAlive || relocation.sameOrigin === false));
+      const relocationCard = relocation
+        ? h(
+            'div',
+            { style: S.setupCard },
+            h(
+              'div',
+              { style: S.setupText },
+              h(
+                'div',
+                { style: S.setupTitle },
+                relocationCopy ? '检测到一个未确认的记忆库副本' : '检测到已迁移的记忆库',
+              ),
+              h(
+                'div',
+                { style: S.setupHint },
+                relocationCopy
+                  ? '旧路径已不存在，但目录创建时间与注册记录不一致（可能是副本）。确认后才会把注册表指向当前路径。'
+                  : '旧路径仍然存在。确认后把注册表指向当前工作区，写授权保持不变。',
+              ),
+              relocation.oldPath ? h('div', { style: S.setupPath }, relocation.oldPath) : null,
+            ),
+            h(
+              'div',
+              { style: S.setupActions },
+              h(KbButton, { variant: 'primary', disabled: workspaceBusy, onClick: relocateWorkspace }, relocationCopy ? '确认这是同一个库' : '重新定位到当前路径'),
+            ),
+          )
+        : null;
+      const workspaceSetup = relocationCard
+        ? relocationCard
+        : workspaceState &&
+        !workspaceState.legacy &&
+        (!workspaceState.attached || workspaceReadOnly)
+          ? h(
+              'div',
+              { style: S.setupCard },
+              h(
+                'div',
+                { style: S.setupText },
+                h(
+                  'div',
+                  { style: S.setupTitle },
+                  workspaceReadOnly
+                    ? '这个工作区的独立记忆库是只读的'
+                    : workspaceState.hasStore
+                      ? '这个工作区已有独立记忆库，尚未接入'
+                      : '为当前工作区建立独立记忆库',
+                ),
+                h(
+                  'div',
+                  { style: S.setupHint },
+                  workspaceReadOnly
+                    ? '允许自动记录后，这个工作区之后的对话会单独整理到这里。'
+                    : workspaceState.hasStore
+                      ? '接入后，这个工作区的记忆会单独保存，不会和其他项目混用。'
+                      : '创建后，这个工作区的记忆会单独保存，不会和其他项目混用。',
+                ),
+                workspaceState.storeRoot
+                  ? h('div', { style: S.setupPath }, workspaceState.storeRoot)
+                  : null,
+              ),
+              h(
+                'div',
+                { style: S.setupActions },
+                h(
+                  KbButton,
+                  {
+                    variant: 'primary',
+                    disabled: workspaceBusy,
+                    onClick: () => attachWorkspace(!workspaceState.hasStore, true),
+                  },
+                  workspaceReadOnly
+                    ? '允许自动记录'
+                    : workspaceState.hasStore
+                      ? '接入并允许记录'
+                      : '创建并允许记录',
+                ),
+                workspaceReadOnly
+                  ? null
+                  : h(
+                      KbButton,
+                      { disabled: workspaceBusy, onClick: () => attachWorkspace(!workspaceState.hasStore, false) },
+                      workspaceState.hasStore ? '只接入（只读）' : '只创建（只读）',
+                    ),
+              ),
+            )
+          : null;
+
+      const emptyTitle = query.trim()
+        ? '没有匹配的记忆'
+        : tab === 'inbox'
+          ? '没有待确认的记忆'
+          : tab === 'active'
+            ? '还没有已记住的内容'
+            : tab === 'work'
+              ? '还没有项目状态页'
+              : '还没有记忆';
+      const emptyHint = query.trim()
+        ? '换个关键词试试，或切换到“全部”。'
+        : tab === 'inbox'
+          ? '从对话里整理出的候选会先出现在这里；确认后才会参与对话。'
+          : tab === 'active'
+            ? '待确认的记忆确认后会出现在这里，并可能进入后续对话。'
+            : tab === 'work'
+              ? '项目进行中会自动维护状态页，作为项目上下文保留。'
+              : '这个知识库还没有可展示的记忆。';
+
+      const detailKind = detail
+        ? isWorkNote(detail)
+          ? '项目状态'
+          : detail.status === 'inbox'
+            ? '候选记忆'
+            : detail.status === 'review'
+              ? '需要复查'
+              : detail.status === 'archived'
+                ? '已归档'
+                : detail.status === 'canon'
+                  ? '结论'
+                  : '已记住'
+        : '';
+      const detailHint = detail
+        ? isWorkNote(detail)
+          ? '项目状态页不参与对话，只用于记录项目进展。'
+          : detail.status === 'inbox'
+            ? '从对话里整理出来，还没进入记忆。确认后才会参与对话。'
+            : detail.status === 'review'
+              ? '可能已经过期或与当前结论冲突，建议复查。'
+              : detail.status === 'archived'
+                ? '已移出记忆，不会参与对话。'
+                : '已经记住；只有范围和会话匹配时才会参与对话。'
+        : '';
+      const scopeName = (scope) => (scope === 'global' ? '所有项目' : `${String(scope).replace(/^project:/, '')} 项目`);
+      const scopeActionLabel = (scope) => {
+        if (detail && detail.status === 'inbox') return `记住到${scopeName(scope)}`;
+        if (detail && detail.status === 'archived') return `重新记住到${scopeName(scope)}`;
+        return detail && detail.scope === scope ? `✓ ${scopeName(scope)}` : scopeName(scope);
+      };
+      const promotableGlobal = Boolean(
+        view && view.kind !== 'global' && detail && detail.level === 'digest' && detail.status === 'active' && !isWorkNote(detail),
+      );
+      const detailActions = !detail
+        ? null
+        : !viewWritable
+          ? h('div', { style: S.readonlyNote }, '这是只读工作区。切换到当前会话的项目后可以修改记忆。')
+          : isWorkNote(detail)
+          ? h(
+              'div',
+              { style: S.confirmRow },
+              h(KbButton, {
+                disabled: statusBusy,
+                onClick: () => applyStatus(detail.id, detail.status === 'active' ? 'archived' : 'active'),
+              }, detail.status === 'active' ? '不再显示在项目状态' : '恢复项目状态'),
+            )
+          : detail.status === 'inbox'
+            ? h(
+                'div',
+                { style: S.confirmRow },
+                confirmScopes.map((scope) =>
+                  h(
+                    KbButton,
+                    { key: scope, variant: scope === defaultScope ? 'primary' : undefined, disabled: statusBusy, onClick: () => applyStatus(detail.id, 'active', scope) },
+                    scopeActionLabel(scope),
+                  ),
+                ),
+                h(KbButton, { disabled: statusBusy, onClick: () => applyStatus(detail.id, 'archived') }, '不需要'),
+              )
+            : detail.status === 'archived'
+              ? h(
+                  'div',
+                  { style: S.confirmRow },
+                  confirmScopes.map((scope) =>
+                    h(
+                      KbButton,
+                      { key: scope, disabled: statusBusy, onClick: () => applyStatus(detail.id, 'active', scope) },
+                      scopeActionLabel(scope),
+                    ),
+                  ),
+                )
+              : h(
+                  'div',
+                  { style: S.confirmRow },
+                  h('span', { style: { ...S.muted, fontSize: '11px' } }, '在哪些会话可用：'),
+                  confirmScopes.map((scope) =>
+                    h(
+                      KbButton,
+                      { key: scope, disabled: statusBusy, onClick: () => applyStatus(detail.id, 'active', scope) },
+                      scopeActionLabel(scope),
+                    ),
+                  ),
+                  h(KbButton, { disabled: statusBusy, onClick: () => applyStatus(detail.id, 'archived') }, '不再记住'),
+                  promotableGlobal
+                    ? h(
+                        KbButton,
+                        {
+                          title: '复制到全局记忆，所有工作区可见；本条不再在项目部生效',
+                          disabled: statusBusy,
+                          onClick: () => promoteToGlobal(detail.id),
+                        },
+                        '提升为全局',
+                      )
+                    : null,
+                );
+
+      const dotColor = (status) =>
+        status === 'inbox'
+          ? 'var(--dsw-alias-brand-primary)'
+          : status === 'review'
+            ? 'var(--dsw-alias-state-warn-primary)'
+            : status === 'archived' || status === 'promoted'
+              ? 'var(--dsw-alias-state-idle-primary)'
+              : 'var(--dsw-alias-state-success-primary)';
+
+      const body = failed
+        ? h(
+            'div',
+            { style: { ...S.empty2, flex: 1 } },
+            h('div', { style: S.emptyTitle2 }, '读取失败'),
+            h('div', { style: S.emptyHint2 }, 'Host 接口 /kb/panel.json 暂时不可用，请稍后刷新。'),
+          )
+        : h(
+            'div',
+            { style: S.pageBody },
+            h(
+              'div',
+              { style: S.listCard },
+              h(
+                'div',
+                { style: S.listHead },
+                h('input', {
+                  style: searchFocused ? { ...S.input, ...S.inputFocus } : S.input,
+                  value: query,
+                  placeholder: '搜索记忆…',
+                  'aria-label': '搜索记忆',
+                  onChange: (event) => setQuery(event.target.value),
+                  onFocus: () => setSearchFocused(true),
+                  onBlur: () => setSearchFocused(false),
+                }),
+              ),
+              h(
+                'div',
+                { style: S.tabs2, role: 'tablist', 'aria-label': '记忆分类' },
+                [
+                  ['inbox', '待确认'],
+                  ['active', '已记住'],
+                  ['work', '项目状态'],
+                  ['all', '全部'],
+                ].map(([value, text]) =>
+                  h(
+                    'button',
+                    {
+                      key: value,
+                      type: 'button',
+                      role: 'tab',
+                      'aria-selected': tab === value,
+                      style: { ...S.tab2, ...(tab === value ? S.tabOn2 : null) },
+                      onClick: () => setTab(value),
+                    },
+                    h('span', null, text),
+                    h('span', { style: S.tabCount2 }, tabCounts[value]),
+                  ),
+                ),
+              ),
+              notes.length
+                ? h(
+                    'ul',
+                    { style: S.listScroll },
+                    notes.map((note) =>
+                      h(
+                        'li',
+                        { key: note.id },
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            style: {
+                              ...S.noteBtn2,
+                              ...(selected === note.id ? S.noteOn : null),
+                              ...(hoveredNote === note.id && selected !== note.id ? S.noteHover : null),
+                            },
+                            onMouseEnter: () => setHoveredNote(note.id),
+                            onMouseLeave: () => setHoveredNote(null),
+                            onClick: () => openNote(note.id),
+                          },
+                          h(
+                            'div',
+                            { style: S.noteTop },
+                            h('span', { style: S.noteTitle2 }, note.title || note.summary || note.id),
+                            note.status === 'inbox'
+                              ? h('span', { style: { ...S.statusDot, background: 'var(--dsw-alias-brand-primary)' } })
+                              : null,
+                          ),
+                          note.summary && note.summary !== note.title ? h('div', { style: S.noteSummary2 }, note.summary) : null,
+                          h(
+                            'div',
+                            { style: S.noteFooter },
+                            h('span', { style: { ...S.statusDot, background: dotColor(note.status) } }),
+                            h('span', { style: S.noteFooterLabel }, STATUS_LABEL[note.status] || note.status || '—'),
+                            scopeText(note.scope) ? h('span', { style: { opacity: 0.65 } }, scopeText(note.scope)) : null,
+                            isWorkNote(note) ? h('span', { style: { opacity: 0.65 } }, TYPE_LABEL.work) : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : h(
+                    'div',
+                    { style: { ...S.empty2, flex: 1 } },
+                    h('div', { style: S.emptyTitle2 }, emptyTitle),
+                    h('div', { style: S.emptyHint2 }, emptyHint),
+                  ),
+            ),
+            h(
+              'div',
+              { style: S.detailCard },
+              detailBusy
+                ? h('div', { style: { ...S.empty2, flex: 1 } }, '读取中…')
+                : detail
+                  ? h(
+                      React.Fragment,
+                      null,
+                      h(
+                        'div',
+                        { style: S.detailHead2 },
+                        h('div', { style: S.detailTitle2 }, detail.title || detail.summary || detail.id),
+                        h(
+                          'div',
+                          { style: S.detailMeta },
+                          h('span', { style: { ...S.statusDot, background: dotColor(detail.status) } }),
+                          h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, STATUS_LABEL[detail.status] || detail.status || '—'),
+                          scopeText(detail.scope) ? h('span', null, scopeText(detail.scope)) : null,
+                          isWorkNote(detail) ? h('span', null, TYPE_LABEL.work) : null,
+                          detail.updated ? h('span', null, detail.updated) : null,
+                        ),
+                        h(
+                          'div',
+                          { style: S.detailIntro },
+                          h('span', { style: S.detailIntroStrong }, detailKind),
+                          h('span', { style: { display: 'block', marginTop: '2px' } }, detailHint),
+                        ),
+                        h('div', { style: S.detailActions }, detailActions),
+                      ),
+                      h(
+                        'div',
+                        { style: S.detailScroll },
+                        h(
+                          'div',
+                          { style: S.detailInner },
+                          renderBody(detail.body),
+                          h(
+                            'details',
+                            { style: S.details },
+                            h('summary', { style: S.summary }, '详情'),
+                            h('div', { style: { marginTop: '6px' } }, `ID ${detail.id}`),
+                            h('div', null, `文件 ${detail.file}`),
+                          ),
+                        ),
+                      ),
+                    )
+                  : h(
+                      'div',
+                      { style: { ...S.empty2, flex: 1 } },
+                      h('div', { style: S.emptyTitle2 }, notes.length ? '选择一条记忆' : emptyTitle),
+                      h('div', { style: S.emptyHint2 }, notes.length ? '左侧列表里的内容会显示在这里。' : emptyHint),
+                    ),
+            ),
+          );
+
+      const judge = health && health.judgeWorker ? health.judgeWorker : null;
+      const clockOf = (iso) => {
+        try {
+          return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        } catch {
+          return '—';
+        }
+      };
+      const lastReason = judge && judge.lastVerdict && judge.lastVerdict.reason ? String(judge.lastVerdict.reason) : '';
+      const healthBar = health
+        ? h(
+            'div',
+            { style: S.health },
+            h('span', null, `队列 ${judge && judge.queue ? judge.queue.pending : 0}`),
+            h('span', { style: S.healthSep }, '·'),
+            h('span', null, `已写 ${judge && judge.queue ? judge.queue.written : 0}`),
+            h('span', { style: S.healthSep }, '·'),
+            h('span', null, `已拒 ${judge && judge.queue ? judge.queue.rejected : 0}`),
+            judge && judge.queue && judge.queue.dry
+              ? h('span', { style: S.healthSep }, '·')
+              : null,
+            judge && judge.queue && judge.queue.dry
+              ? h('span', { title: 'dry 模式时期的历史裁决（只读审计）' }, `dry ${judge.queue.dry}`)
+              : null,
+            h('span', { style: S.healthSep }, '·'),
+            h('span', null, `抽取 ${judge && judge.lastRunAt ? clockOf(judge.lastRunAt) : '待跑'}`),
+            h('span', { style: S.healthSep }, '·'),
+            h('span', null, `整理 ${health.consolidate && health.consolidate.at ? clockOf(health.consolidate.at) : '未跑'}`),
+            h('span', { style: S.healthSep }, '·'),
+            h('span', null, `界面 ${(health.ui && health.ui.build) || '未知'}`),
+            judge && judge.lastError ? h('span', { style: S.healthBad }, `错误：${judge.lastError}`) : null,
+            lastReason ? h('div', { style: S.healthVerdict }, `最近裁决：${lastReason}`) : null,
+          )
+        : null;
+
+      const runStatus = healthBar
+        ? h(
+            'details',
+            { style: { ...S.details, margin: '0 0 8px' } },
+            h('summary', { style: S.summary }, '运行状态'),
+            healthBar,
+          )
+        : null;
+
+      return h(
+        'div',
+        { style: S.page },
+        h(
+          'div',
+          { style: S.shell },
+          header,
+          statusBar,
+          workspaceSetup,
+          actionError ? h('div', { style: S.errorBar }, actionError) : null,
+          body,
+          runStatus ? h('div', { style: S.pageFooter }, runStatus) : null,
+        ),
+        toast ? h('div', { style: S.toast, role: 'status', 'aria-live': 'polite' }, toast) : null,
+        renameOpen
+          ? h(
+              'div',
+              {
+                style: S.renameOverlay,
+                role: 'dialog',
+                'aria-modal': 'true',
+                'aria-label': '工作区名称',
+                onMouseDown: (event) => {
+                  if (event.target === event.currentTarget) setRenameOpen(false);
+                },
+              },
+              h(
+                'div',
+                { style: S.renameCard },
+                h('div', { style: S.renameTitle }, '工作区名称'),
+                h('div', { style: S.renameHint }, '只改显示名，不影响记忆范围与目录。'),
+                h('input', {
+                  style: S.renameInput,
+                  value: renameValue,
+                  autoFocus: true,
+                  maxLength: 60,
+                  'aria-label': '工作区名称',
+                  onChange: (event) => setRenameValue(event.target.value),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void submitRename();
+                    } else if (event.key === 'Escape') {
+                      setRenameOpen(false);
+                    }
+                  },
+                }),
+                h(
+                  'div',
+                  { style: S.renameActions },
+                  h(KbButton, { disabled: workspaceBusy, onClick: () => setRenameOpen(false) }, '取消'),
+                  h(
+                    KbButton,
+                    { variant: 'primary', disabled: workspaceBusy, onClick: () => void submitRename() },
+                    '保存',
+                  ),
+                ),
+              ),
+            )
+          : null,
+      );
+    }
+
+    return {
+      inject: ['slots'],
+      apply(ctx) {
+        try {
+          layout = ctx.get('layout');
+        } catch {
+          layout = null;
+        }
+        // Tell the Host which build this page loaded (best effort, never blocks).
+        try {
+          void fetch('/kb/ui', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ build: CLIENT_BUILD, at: new Date().toISOString() }),
+          }).catch(() => {});
+        } catch {
+          /* the report is diagnostic only */
+        }
+        ctx.slots.inject('conversation.composer.dock', () =>
+          ctx.slots.register({ name: 'conversation.composer.dock', id: 'kb-memory', order: 2 }, KbChip),
+        );
+        ctx.slots.inject('sidebar.workspaces.session.menu.item', function* () {
+          yield ctx.slots.register(
+            {
+              name: 'sidebar.workspaces.session.menu.item',
+              id: 'kb-memory',
+              order: 500,
+              label: () => '本会话记忆',
+            },
+            KbMemoryMenuItem,
+          );
+          yield ctx.slots.register(
+            {
+              name: 'sidebar.workspaces.session.menu.item',
+              id: 'kb-memory-reset',
+              order: 510,
+              label: () => '恢复自动记忆',
+            },
+            KbMemoryResetMenuItem,
+          );
+        });
+        ctx.slots.inject('sidebar.panellist', () =>
+          ctx.slots.register({ name: 'sidebar.panellist', id: 'kb', order: 5, label: () => '记忆' }, KbIcon),
+        );
+        ctx.slots.inject('sidebar.footer.action', () =>
+          ctx.slots.register(
+            { name: 'sidebar.footer.action', id: 'kb-reload', order: 10, label: () => '刷新界面' },
+            KbReloadAction,
+          ),
+        );
+        ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'kb' }, KbPage));
+      },
+    };
+  },
+});

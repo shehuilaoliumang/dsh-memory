@@ -1,0 +1,13 @@
+- insert:
+    - id: kb-panel
+      name: '@local/kb-panel'
+      config:
+        workspaceRoot: '<path-to-vault>'
+        refreshMs: 30000
+        # 入库触发器默认开启；真正的阈值在 _meta/config.json（extract / ingest），
+        # 那份文件改完即生效，不需要重载插件。
+        ingest:
+          enabled: true
+        # 新工作区自动建库时是否同时自动允许记录。false = 只读建库、等待面板点击授权。
+        provision:
+          autoWritable: true

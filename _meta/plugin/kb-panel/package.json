@@ -1,0 +1,41 @@
+{
+  "name": "@local/kb-panel",
+  "version": "1.19.1",
+  "private": true,
+  "type": "module",
+  "description": "Knowledge base page and multi-project memory: global preference store + explicitly attached project stores, schema §5 pipeline trigger, and the local /kb/* surface.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./ingest": "./ingest.js",
+    "./stores": "./stores.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "ingest.js",
+    "judge.js",
+    "stores.js",
+    "work-brief.js",
+    "http-guard.js",
+    "redact.js",
+    "shared/*.mjs",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

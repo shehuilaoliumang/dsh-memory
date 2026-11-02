@@ -100,3 +100,4 @@
 2026-11-02 16:22 | release | 1.19.0 公开快照已发布：public commit 506279b（tree 95546a0）、CI run 41412459175 全绿（load-shape/validate/144 单测/双 shell smoke 106/fresh snapshot 均通过）；本地 14373fc + 冒烟兼容 f447592；上一提交 dc43eb2 的 CI 因公开快照缺 20_Digest/atoms 空目录失败，已修复后重新发布
 2026-11-02 18:00 | ci | 1.19.1 导出遥测修复：export-public 排除 access*.jsonl 家族（与 gitignore 同源）+ 导出禁止文件断言；publish-public 发布前硬闸（access*/state/10_Raw/PROJECT_PLAN）+ --orphan/--force 干净树重开 main；1.19.0 公开快照 506279b 因混入 access-20261102-1552.jsonl（220 行）弃用
 2026-11-02 18:00 | docs | 决策编号避让：重置后首条决策 2026-11-02-c-0001 → 2026-11-02-c-1001（新系列从 c-1001 起，旧号停用；正文补与 c-0015 适用范围）；代码注释与 schema/AGENTS/README/index/PROJECT_PLAN 引用同步；1.19.1 待发布
+2026-11-02 18:12 | release | 1.19.1 公开快照已用孤儿提交重发：public commit 2cd38f6（tree 3d0953e）、CI run 41426653086 全绿；main 历史由 --orphan --force 重开，1.19.0 的 506279b/dc43eb2 不在可达历史；导出已排除 access*.jsonl/state/10_Raw，公开树复核无禁止路径

@@ -135,7 +135,7 @@ node _meta/scripts/eval-judge.mjs --golden _meta/rules/golden.jsonl `
 
 ## 公开快照说明
 
-公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*.jsonl`、`PROJECT_PLAN.md` 并重建索引），`publish-public.mjs` 发布前再做一次硬闸；1.19.0 的公开提交 `506279b` 因混入运行时遥测文件（`_meta/access-*.jsonl`）已弃用，当前公开状态为 **1.19.1 待发布**（发布后在此回填发布哈希）。
+公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*.jsonl`、`PROJECT_PLAN.md` 并重建索引），`publish-public.mjs` 发布前再做一次硬闸；1.19.0 的公开提交 `506279b` 因混入运行时遥测文件（`_meta/access-*.jsonl`）已弃用，当前公开状态为 **1.19.1**（public commit `2cd38f6`、tree `3d0953e`、CI `41426653086` 全绿；main 历史已由干净提交重开，1.19.0 的 `506279b` 不在可达历史中）。
 
 ## 隐私说明
 

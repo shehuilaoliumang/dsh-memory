@@ -135,7 +135,7 @@ node _meta/scripts/eval-judge.mjs --golden _meta/rules/golden.jsonl `
 
 ## 公开快照说明
 
-公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*.jsonl`、`PROJECT_PLAN.md` 并重建索引；**导出还会清洗 session UUID 与原文文件名**（`session-<redacted>` / `10_Raw/sessions/<redacted>.md`），CI 在导出快照上再查一遍禁止文件与 session id），`publish-public.mjs` 发布前再做一次硬闸。1.19.1 已发布（public commit `2cd38f6`、tree `3d0953e`、CI `41426653086` 全绿，另有一次 follow-up `0ab310b`；main 历史已由干净提交重开，1.19.0 的 `506279b` 不在可达历史中）；因公开可见卫生问题（log 中 session UUID/原文文件名、数字口径、悬空引用）修复后，当前公开状态为 **1.19.2**（自审修复随本次快照重发；导出清洗 session UUID/原文文件名，CI 在导出快照上复跑 validate=2 篇/1 行；发布提交与 CI 结果见本仓库 main 历史）。
+公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*` 任意后缀、`PROJECT_PLAN.md` 并重建索引；**导出还会清洗 session UUID 与原文文件名**（`session-<redacted>` / `10_Raw/sessions/<redacted>.md`），CI 在导出快照上再查一遍禁止文件与 session id），`publish-public.mjs` 发布前再做一次硬闸。1.19.2 已发布（public commit `55844c3`）；1.19.3（第十二轮小缝清偿）随本次快照发布，提交与 CI 结果见 `main` 历史。**本地历史**：本 README 与 CHANGELOG 里引用的 git `bdf14e3` 是本地私有仓库历史，公开仓库不可解析（保留 id 仅为对照）。**orphan 残余**：已泄漏提交的 GitHub 对象与既有 clone 不因 force-push/`--orphan` 消失，本仓库只保证 `main` 可达历史不含该文件。
 
 ## 隐私说明
 

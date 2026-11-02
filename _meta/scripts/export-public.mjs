@@ -82,9 +82,10 @@ function walk(dir, relative = '') {
 
 function allowed(rel) {
   if (skipFiles.has(rel)) return false;
-  // Telemetry rotates (`access-<stamp>.jsonl`); exclude the whole family, the
-  // same way .gitignore does. Keep this in sync with the publish gate.
-  if (/^_meta\/access[^/]*\.jsonl$/.test(rel)) return false;
+  // Telemetry rotates (`access-<stamp>.jsonl`) and backups may carry any suffix
+  // (`access.jsonl.bak`); exclude the whole `access*` family the same way
+  // .gitignore does. Keep this in sync with the publish gate.
+  if (/^_meta\/access[^/]*$/i.test(rel)) return false;
   if (rel.startsWith('10_Raw/')) return false;
   if (rel.startsWith('00_Inbox/')) return false;
   if (rel.includes('/.git/')) return false;
@@ -136,6 +137,9 @@ function assertNoRuntimeIds(rel, text) {
 function sanitizeText(rel, text) {
   if (rel.endsWith('.md')) text = stripRawSources(text);
   text = stripRuntimeIds(text);
+  // Control characters (a stray backspace once reached log.md through a shell
+  // escape) have no place in published text.
+  text = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
   const prefixes = [root, path.dirname(root)];
   for (const prefix of prefixes) {
     text = text.split(prefix).join('<vault>');
@@ -175,7 +179,7 @@ const files = walk(root).filter(allowed);
 // abort instead of publishing telemetry or transcripts.
 const forbidden = files.filter(
   (rel) =>
-    /^_meta\/access[^/]*\.jsonl$/.test(rel)
+    /^_meta\/access[^/]*$/i.test(rel)
     || rel.startsWith('_meta/state/')
     || rel.startsWith('10_Raw/')
     || rel.startsWith('00_Inbox/'),

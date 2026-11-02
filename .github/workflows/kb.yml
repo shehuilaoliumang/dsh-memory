@@ -49,7 +49,23 @@ jobs:
         shell: pwsh
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'public-snapshot'
+          # Negative regression for the export gate (round 12 seam: suffix-bound
+          # patterns let `access.jsonl.bak` through). Plant telemetry files with
+          # the live and a backup suffix, then prove the export drops both.
+          $planted = @('_meta/access-test.jsonl', '_meta/access-test.jsonl.bak')
+          foreach ($p in $planted) {
+            New-Item -Path $p -ItemType File -Force | Out-Null
+            Set-Content -Path $p -Value '{"id":"planted-telemetry"}' -Encoding UTF8
+          }
           node _meta/scripts/export-public.mjs --out $out
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          foreach ($p in $planted) {
+            Remove-Item -Path $p -Force -ErrorAction SilentlyContinue
+            if (Test-Path (Join-Path $out $p)) {
+              Write-Error "public snapshot exported planted telemetry: $p"
+              exit 1
+            }
+          }
           Push-Location $out
           node _meta/scripts/kb.mjs rebuild
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -60,10 +76,10 @@ jobs:
             $leak | ForEach-Object { Write-Error "public snapshot leaks a local path: $($_.Path)" }
             exit 1
           }
-          # The telemetry leak class (round 11): rotated access files, runtime
-          # state, transcripts and session UUIDs must never reach a public tree.
+          # The telemetry leak class (rounds 11-12): access* family (any suffix),
+          # runtime state, transcripts and session UUIDs must never be public.
           $bad = Get-ChildItem $out -Recurse -File | Where-Object {
-            $_.Name -like 'access*.jsonl' -or
+            $_.Name -like 'access*' -or
             $_.FullName -match '\\_meta\\state\\' -or
             $_.FullName -match '\\10_Raw\\' -or
             $_.Name -eq 'PROJECT_PLAN.md'

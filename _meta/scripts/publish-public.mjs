@@ -93,7 +93,7 @@ if (!files.length) fail(`公开快照为空：${dir}`);
 // gate owns "what is allowed on GitHub", and both must fail closed.
 const forbidden = files.filter(
   (rel) =>
-    /(^|\/)access[^/]*\.jsonl$/.test(rel)
+    /(^|\/)access[^/]*$/i.test(rel)
     || rel.startsWith('_meta/state/')
     || rel.startsWith('10_Raw/')
     || rel === 'PROJECT_PLAN.md',

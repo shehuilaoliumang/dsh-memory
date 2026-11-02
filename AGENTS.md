@@ -43,8 +43,8 @@
 - 没有独立库的新工作区由宿主在会话启动时自动创建并默认记录；管理页保留手动“创建/接入”卡片，用于已有库与仓库自带库。目标固定 `<cwd>/.dsh-memory`，只认 live 会话 cwd；不接受客户端传路径，不后台扫描磁盘、不批量创建其他工作区；系统/临时/HOME 根目录与下载/桌面等临时位置不建库，已接入项目库内的会话沿用该库（c-0019）。
 - **显示名改名只动 title**：记忆页“正在查看”旁的「改名」对 **project 与 legacy（知识库本体）且可写**的工作区显示，global 不可（400）；`POST /kb/workspace/rename` 只写 `project.json.title`，slug、`project:<slug>` scope、目录与索引都不变，改显示名不能触发记忆搬家或 scope 重写；选择器显示各库 `project.json` 的实际 `title`（legacy 不再硬编码“旧版”，当前显示 “DSH Memory”）；改名交互用自绘玻璃对话框（Electron 无 `window.prompt`，Enter 保存 / Escape 或点遮罩取消）。
 - **文件夹改名后靠 `store_id` + 双信号认库**：`project.json` 有稳定 `store_id`、registry 行有 `storeId` 与 attach 时的目录创建时间 `folderBirthtimeMs`；只有「旧路径已消失 **且** 目录创建时间一致（容差 5s）」才自动把 registry 指向新路径（保留 `writable`/`autoGranted`，title 未自定义则跟随新文件夹名）。复制/克隆（新创建时间或旧路径仍在）或旧 registry 行无 `folderBirthtimeMs` 时不自动，必须由人在面板确认「检测到一个未确认的记忆库副本」/「检测到已迁移的记忆库」后点「确认这是同一个库」/「重新定位到当前路径」（`POST /kb/workspace/relocate`，只认 live 会话 cwd）；确认迁移保留 `writable`、去掉 `autoGranted`；不扫盘、不改 slug（c-1001）。
-- **决策编号**：记忆层重置后的新决策编号从 `c-1001` 起（重置前旧编号 c-0001~c-0021 已停用，仅存 git `bdf14e3`）；CHANGELOG 1.18.x 及更早里的旧编号引用是历史记录。
-- 完整规范见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-11-02-c-1001.md`（更早的历史决策见 git `bdf14e3`）。
+- **决策编号**：记忆层重置后的新决策编号从 `c-1001` 起（重置前旧编号 c-0001~c-0021 已停用，仅存本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）；CHANGELOG 1.18.x 及更早里的旧编号引用是历史记录。
+- 完整规范见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-11-02-c-1001.md`（更早的历史决策见本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）。
 
 ## 读
 

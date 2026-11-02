@@ -103,3 +103,6 @@
 2026-11-02 18:12 | release | 1.19.1 公开快照已用孤儿提交重发：public commit 2cd38f6（tree 3d0953e）、CI run 41426653086 全绿；main 历史由 --orphan --force 重开，1.19.0 的 506279b/dc43eb2 不在可达历史；导出已排除 access*.jsonl/state/10_Raw，公开树复核无禁止路径
 2026-11-02 18:33 | release | 1.19.1 发布记录回填已推送：public commit 0ab310b（tree af20108，父 2cd38f6）、CI run 41429548520 全绿；公开 main 头=0ab310b，README 已无
 2026-11-02 18:56 | audit | 1.19.2 自审公开可见卫生：公开 _meta/log.md 清洗 session UUID/原文路径（export stripRuntimeIds + 导出后断言）；CI 导出快照新增禁止文件与 session id 检查；README/schema 区分本地完整库 3 篇/2 行与公开快照 2 篇/1 行；README/CHANGELOG 旧决策悬空引用清理与 c-0001→c-1001 改名说明；fixture 真实 session 片段改合成 id session-<redacted>；1.19.2 待发布
+2026-11-02 19:03 | release | 1.19.2 公开快照已发布：public commit 55844c3（tree b8aa813）、CI run 41433455297 全绿；自审修复（log session UUID/原文路径清洗+导出断言、CI 快照禁止文件/session id 检查、数字口径、悬空引用、fixture/文本去真实标识）；远端复核 log 无 session id、README 无待发布、树无禁止路径
+2026-11-02 19:05 | audit | 第十二轮四条小缝清偿：export/publish 对 access* 任意后缀（含 .jsonl.bak）拒绝 + CI 植入式负向回归；validate 本地/公开口径已在 1.19.2 拆分关闭；df14e3 集中声明为本地私有历史（公开仓库不可解析）；orphan/force-push 对象残余披露（只保证 main 可达历史）；1.19.3 待发布
+2026-11-02 19:05 | audit | 修正上条转义：`bdf14e3` 为本地私有历史（公开仓库不可解析）；第十二轮四条小缝 = access* 任意后缀闸门 + CI 植入式负向回归、validate 口径已在 1.19.2 关闭、本地历史声明、orphan 对象残余披露；1.19.3 待发布

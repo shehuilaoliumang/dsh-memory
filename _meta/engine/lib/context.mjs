@@ -24,20 +24,54 @@ import {
  * Uniform descriptor for every store kind. `kind` is the only discriminator the
  * callers need; `scope` and `writable` are derived once here.
  *
+ * v2.2 surface policy: `scopeMode` / `injectLimit` describe behaviour, so
+ * callers stop branching on the historical `legacy` kind for injection. The
+ * legacy vault keeps `kind: 'legacy'` as its identity/UI label, but its
+ * injection behaviour is expressed as `scopeMode: 'global'` + `injectLimit: 5`.
+ *
  * @param {{root:string, kind:'global'|'legacy'|'project', entry?:object|null, meta?:object|null}} spec
  */
 export function describeStore({ root, kind, entry = null, meta = null }) {
   const resolved = path.resolve(root);
   const slug = String((meta && meta.slug) || (entry && entry.slug) || '').trim().toLowerCase();
+  const policy = entry && entry.policy && typeof entry.policy === 'object' ? entry.policy : null;
+  const legacyKind = kind === 'legacy';
+  // Surface merge (v2.2): callers may still pass `kind: 'legacy'` when building a
+  // descriptor directly; the returned store is an ordinary project store whose
+  // policy keeps the historical behaviour.
+  const scopeMode = policy && policy.scopeMode === 'global'
+    ? 'global'
+    : legacyKind || kind !== 'project'
+      ? 'global'
+      : 'project';
+  const trustedBy = policy && policy.trustedBy
+    ? String(policy.trustedBy)
+    : legacyKind
+      ? 'config'
+      : kind === 'global'
+        ? 'builtin'
+        : 'registry';
+  const isLegacy = trustedBy === 'config';
+  const injectLimit = Number(policy && policy.injectLimit) > 0
+    ? Number(policy.injectLimit)
+    : kind === 'global'
+      ? 2
+      : scopeMode === 'project'
+        ? 3
+        : 5;
   return {
     root: resolved,
-    kind,
+    kind: kind === 'global' ? 'global' : 'project',
     entry,
     slug,
-    writable: kind === 'global' || kind === 'legacy' ? true : Boolean(entry && entry.writable === true),
-    scope: kind === 'project' && slug ? `project:${slug}` : 'global',
-    isLegacy: kind === 'legacy',
-    isProject: kind === 'project',
+    writable: kind === 'global' || isLegacy ? true : Boolean(entry && entry.writable === true),
+    scope: scopeMode === 'project' && slug ? `project:${slug}` : 'global',
+    // Unified behaviour surface (v2.2): callers read these instead of `legacy`.
+    scopeMode,
+    injectLimit,
+    trustedBy,
+    isLegacy,
+    isProject: kind !== 'global' && scopeMode === 'project',
     isGlobal: kind === 'global',
   };
 }
@@ -62,10 +96,11 @@ export function resolveContext(cwd, options = {}) {
     : null;
   let project = null;
   if (stores.project) {
-    const kind = stores.project.legacy ? 'legacy' : 'project';
+    // The legacy vault arrives as a trusted project store with a global-scope
+    // policy; there is no separate `legacy` kind to branch on any more.
     project = describeStore({
       root: stores.project.root,
-      kind,
+      kind: 'project',
       entry: stores.project.entry || null,
       meta: stores.project.meta || null,
     });
@@ -74,7 +109,7 @@ export function resolveContext(cwd, options = {}) {
     cwd: cwd ? path.resolve(cwd) : '',
     global,
     project,
-    scope: project && project.isProject ? project.scope : 'global',
+    scope: project && project.scopeMode === 'project' ? project.scope : 'global',
     legacy: Boolean(project && project.isLegacy),
     writeTarget: resolveWriteTarget(cwd, { legacyRoot, registryFile }),
   };
@@ -99,13 +134,19 @@ export function resolveWriteTarget(cwd, options = {}) {
         entry: writable.entry || null,
         meta: writable.meta || null,
       });
-      return { root: descriptor.root, kind: 'project', scope: descriptor.scope };
+      return {
+        root: descriptor.root,
+        kind: descriptor.kind,
+        role: descriptor.isLegacy ? 'legacy' : 'project',
+        scope: descriptor.scope,
+        trustedBy: descriptor.trustedBy,
+      };
     }
   } catch {
     /* fall through to the legacy decision */
   }
   if (isInsideLegacy(cwd, legacyRoot)) {
-    return { root: path.resolve(legacyRoot), kind: 'legacy', scope: 'global' };
+    return { root: path.resolve(legacyRoot), kind: 'project', role: 'legacy', scope: 'global', trustedBy: 'config' };
   }
   return null;
 }

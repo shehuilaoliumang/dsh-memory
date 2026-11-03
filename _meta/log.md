@@ -120,3 +120,7 @@
 2026-11-03 09:22 | atom | 2026-11-03-a-0003（principle）公开快照发布流程
 2026-11-03 09:22 | atom | 2026-11-03-a-0004（principle）记忆写入与删除边界
 2026-11-03 09:32 | phase17 | Phase 17（2.1.0，行为 minor）：P0 记忆启用 —— POST /kb/remember（只写当前可写库、默认 inbox、须确认）+ 记忆页记一条/空态引导 + legacy 全局工作页与 3 项目工作页 + 首批 3 条 inbox 原子；P1 工程护栏 —— behavior-matrix 9 用例、导出规则纯函数 export-rules.mjs + 17 单测 + CI 脚本测试、engine withRegistryLock 跨进程锁、删除 6 个插件 shim（插件直接 import engine）；P2 注入可解释 —— panel injection manifest + 本轮注入折叠卡（c37）；未做转 2.2：pin/exclude、相关性注入、consolidate 动作、多库面合并、engine 进程内 API；决策 c-1003；2.1.0 待发布
+2026-11-03 09:37 | release | 2.1.0 公开快照已发布：public commit 6fae504（tree e7bf960）、CI run 41560776728 全绿；含 engine/export-rules/behavior-matrix/ADR c-1003；公开树 99 项无 access*/state/10_Raw/PROJECT_PLAN/FEATURES；公开快照 validate 9 篇/7+1 行/0 警告；本地 10 篇/8+1
+2026-11-03 09:47 | status | 2026-11-03-a-0002 → archived
+2026-11-03 09:47 | status | 2026-11-03-a-0002 → inbox
+2026-11-03 09:58 | phase18 | Phase 18（2.2.0，行为 minor）：P2 —— 会话级 pin/mute（/kb/session/memory，ephemeral、不改笔记状态、panel session.memoryControls）、相关性注入带开关（inject.rankMode 默认 heat、relevance 同源 manifest、relevanceMaxAgeMs）、整理动作（consolidate 明细 + 归档/确认走 /kb/atoms/batch）与类型筛选、客户端 c39；P3 —— engine 进程内 API runCli/createEngine（同步单线程单根顺序、不污染宿主）、多库面 policy 合并（legacy 由 scopeMode/injectLimit/trustedBy 表达、kind 仅标识、registry policy、writeTarget role、globalScopeStore 兼容旧缓存）；决策 c-1004；未做转 2.3：FEATURES §10 算法优化、服务端 BM25 检索、DSH 适配层；2.2.0 待发布

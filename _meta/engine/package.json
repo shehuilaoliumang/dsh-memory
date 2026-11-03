@@ -1,6 +1,6 @@
 {
   "name": "@local/kb-engine",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Zero-dependency knowledge-base engine: notes/index/validation/write/search, store registry and injection planning. Host-agnostic (no DSH imports).",
   "type": "module",
   "private": true,

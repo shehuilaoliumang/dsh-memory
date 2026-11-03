@@ -222,6 +222,7 @@ const sources = [
   '_meta/plugin/kb-panel/ingest.js',
   '_meta/plugin/kb-panel/judge.js',
   '_meta/plugin/kb-panel/http-guard.js',
+  '_meta/plugin/kb-panel/memory-rank.mjs',
   '_meta/engine/bin/kb.mjs',
   '_meta/engine/lib/cli.mjs',
   '_meta/engine/lib/index.mjs',

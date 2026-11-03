@@ -2,6 +2,40 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 2.2.0 — 2026-11-03
+
+记忆控制、相关性注入、整理动作与库面策略化（行为 minor：P2 剩余 + P3 进程内 API/多库面 policy 合并）。
+
+**P2 每会话记忆控制（pin / mute）**
+
+- 新增 `POST /kb/session/memory`：只认 live session、校验笔记 id、`pinned`/`muted` 互斥、支持取消；控制是 **ephemeral**（Host 内存态，重启即清），不改笔记 `status`/`scope`/正文。panel 快照新增 `session.memoryControls`，注入卡给固定标识；详情页可「本会话固定/排除」。引擎 `pickBySourceControls` + 3 单测。
+
+**P2 相关性注入（带开关，默认关）**
+
+- 插件纯模块 `memory-rank.mjs`（CJK bigram/ASCII token、覆盖率评分、相关性优先 + 热度兜底，7 单测）；仅经 `session/event` 捕获最近人类 user 消息（≤800 字、最多 100 会话、默认 30 分钟过期）。
+- `_meta/config.json` 新增 `inject.rankMode: heat|relevance`（默认 `heat`，A/B 后再切）与 `relevanceMaxAgeMs`；prompt 与 panel `injection` manifest 共用同一排序。
+
+**P2 整理动作与筛选**
+
+- `/kb/consolidate` 返回明细（`stale`、`duplicateSummaries.items`、`readCandidates`、`work`），报告只读；记忆页「整理」对话框一键归档过期 / 归档重复旧副本 / 确认热候选，全部走 `/kb/atoms/batch`，无后台自动整理。引擎 `duplicateSummaries` 增加 `items`（id+updated，`ids` 保留）。
+- 记忆页类型筛选 chips（含计数）+ 既有搜索；客户端 build `2026-11-03-c39`。
+
+**P3 engine 进程内 API**
+
+- `runCli(argv, { root })` 返回 `{ code, stdout, stderr }`、不污染宿主 `process.exitCode`/stdout；`createEngine({ root }).run(argv)` 为状态化门面；**同步、单线程、单根顺序**，禁止命令内重入。
+- `bin/kb.mjs` 与 `_meta/scripts/kb.mjs` 退化为薄入口；`lib/index.mjs` 导出进程内 API 并补上 `stripFrontmatter`；`engine-api.test.mjs` 3 用例（命令、错误码不泄漏、一个 import 顺序服务两个根）。
+
+**P3 多库面 policy 合并**
+
+- `describeStore` 的注入行为改由 `policy` 表达：legacy = `{ scopeMode: 'global', injectLimit: 5, trustedBy: 'config' }`，project = `scopeMode: 'project'`；`kind` 仅作标识（legacy 是 UI/身份标签），registry 行携带 `policy`，`findProjectStore` 为 legacy 根合成 config 策略 entry，`writableProjectStore` 不再排除 legacy；`resolveContext`/`resolveWriteTarget` 输出 `role`/`trustedBy`；插件预算/过滤/简报/core 标签统一读 policy（`globalScopeStore` 兼容旧引擎缓存直到 Host 重启）。
+
+**未做（backlog）**
+
+- FEATURES §10 算法优化（热度自反馈 inject 降权、exploration 槽、access 热度聚合、字段化 BM25 等）与记忆页服务端 BM25 检索仍未做，转 2.3 评估；DSH 适配层仍在插件。
+
+- 数字：插件 172/172、脚本 17/17、smoke 106/106、`check-plugin-load` 6 JSON / 9 manifest / 11 engine / 2 locale / 22 JS；本地 `validate` 11 篇（core + raw + work + 4 atoms + 4 canon，主索引 9 + 归档 1）、0 警告；ADR `30_Canon/decisions/2026-11-03-c-1004.md`。
+- 公开快照：2.1.0 已发布（public commit `6fae504`，CI 全绿）；2.2.0 随本次快照发布（提交/CI 发布后回填）。
+
 ## 2.1.0 — 2026-11-03
 
 记忆启用、工程护栏与注入可解释（行为版本；P0/P1 完成，P2 部分完成，其余转 2.2）。

@@ -196,10 +196,16 @@ test('describeStore derives kind / scope / write authority for every store kind'
   assert.equal(global.isGlobal, true);
 
   const legacy = describeStore({ root: 'C:/tmp/vault', kind: 'legacy' });
-  assert.equal(legacy.kind, 'legacy');
+  // v2.2 surface merge: legacy is an ordinary project store with a global-scope
+  // policy; the kind label is no longer the behaviour discriminator.
+  assert.equal(legacy.kind, 'project');
   assert.equal(legacy.scope, 'global');
+  assert.equal(legacy.scopeMode, 'global');
+  assert.equal(legacy.injectLimit, 5);
+  assert.equal(legacy.trustedBy, 'config');
   assert.equal(legacy.writable, true);
   assert.equal(legacy.isLegacy, true);
+  assert.equal(legacy.isProject, false);
 
   const writableProject = describeStore({
     root: 'C:/tmp/app/.dsh-memory',
@@ -240,14 +246,17 @@ test('a. a session inside the legacy vault reads and writes the legacy store', (
 
     assert.equal(route.mode, 'on');
     assert.equal(route.scope, 'global');
-    assert.equal(context.project.kind, 'legacy');
+    assert.equal(context.project.kind, 'project');
+    assert.equal(context.project.scopeMode, 'global');
+    assert.equal(context.project.trustedBy, 'config');
     assert.equal(context.project.isLegacy, true);
     assert.equal(context.project.writable, true);
     assert.equal(context.legacy, true);
     assert.equal(context.scope, 'global');
     assert.equal(context.global.kind, 'global');
 
-    assert.equal(route.writeTarget.kind, 'legacy');
+    assert.equal(route.writeTarget.kind, 'project');
+    assert.equal(route.writeTarget.role, 'legacy');
     assert.equal(route.writeTarget.scope, 'global');
     assert.equal(path.resolve(route.writeTarget.root), path.resolve(layout.vault));
     // The target embedded in the context and the standalone write-authority
@@ -538,10 +547,10 @@ test('turn/end routing sequence keeps the write root per leg and mutates no stat
         expected: {
           mode: 'on',
           scope: 'global',
-          projectKind: 'legacy',
+          projectKind: 'project',
           projectSlug: 'legacy-vault',
           projectWritable: true,
-          writeKind: 'legacy',
+          writeKind: 'project',
           writeRoot: path.resolve(layout.vault),
           writeScope: 'global',
         },
@@ -578,10 +587,10 @@ test('turn/end routing sequence keeps the write root per leg and mutates no stat
         expected: {
           mode: 'on',
           scope: 'global',
-          projectKind: 'legacy',
+          projectKind: 'project',
           projectSlug: 'legacy-vault',
           projectWritable: true,
-          writeKind: 'legacy',
+          writeKind: 'project',
           writeRoot: path.resolve(layout.vault),
           writeScope: 'global',
         },

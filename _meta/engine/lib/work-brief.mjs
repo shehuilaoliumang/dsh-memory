@@ -189,6 +189,34 @@ export function pickBySource(entries, options = {}) {
 }
 
 /**
+ * Source-aware budget with per-session controls. Muted ids are dropped before
+ * budgeting; pinned ids are selected first (in their original rank order) and
+ * the remaining budget is filled by normal ranking. Pins still count against
+ * the source budget, so the prompt block stays bounded even if many notes are
+ * pinned. `entries` must already be deduped (normally by `currentTruthEntries`).
+ */
+export function pickBySourceControls(entries, options = {}) {
+  const limit = (value) => Math.max(0, Number(value) || 0);
+  const globalLimit = limit(options.globalLimit);
+  const projectLimit = limit(options.projectLimit);
+  const isPinned = typeof options.isPinned === 'function' ? options.isPinned : () => false;
+  const isMuted = typeof options.isMuted === 'function' ? options.isMuted : () => false;
+  const pick = (source, cap) => {
+    const candidates = (entries || [])
+      .filter((entry) => entry && entry.note && entry.source === source)
+      .filter((entry) => !isMuted(String(entry.note.id || '')))
+      .sort((a, b) => (Number(a.rank) || 0) - (Number(b.rank) || 0));
+    const pinned = candidates.filter((entry) => isPinned(String(entry.note.id || '')));
+    const rest = candidates.filter((entry) => !isPinned(String(entry.note.id || '')));
+    return [...pinned, ...rest].slice(0, cap).map((entry) => entry.note);
+  };
+  return {
+    globalPicked: pick('global', globalLimit),
+    projectPicked: pick('project', projectLimit),
+  };
+}
+
+/**
  * Rank injectable memories for the shadow comparison in `consolidate`:
  * current truth (one per subject) × decayed heat × recency.
  * This function is pure so the report can be tested without a vault or clock.

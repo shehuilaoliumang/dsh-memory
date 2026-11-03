@@ -74,3 +74,11 @@ export function parseFrontmatterData(text) {
   const { data } = parseFrontmatter(text);
   return data || {};
 }
+
+/**
+ * Body text without the leading frontmatter block (kept here so hosts and the
+ * plugin share one definition; the plugin historically kept a local copy).
+ */
+export function stripFrontmatter(text) {
+  return parseFrontmatter(text).body;
+}

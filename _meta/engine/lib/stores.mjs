@@ -80,6 +80,9 @@ export function readProjectRegistry(registryFile = DEFAULT_REGISTRY_FILE) {
       // Write access is a user-level grant, never a project-controlled flag:
       // a cloned repository cannot make itself writable by editing project.json.
       writable: entry.writable === true,
+      // v2.2: behaviour policy travels with the registry row (legacy stores use
+      // scopeMode=global / injectLimit=5 / trustedBy=config).
+      policy: entry.policy && typeof entry.policy === 'object' ? { ...entry.policy } : null,
     });
   }
   return out;
@@ -112,7 +115,20 @@ export function findProjectStore(cwd, options = {}) {
         slug: path.basename(legacyRoot).toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'vault',
         title: path.basename(legacyRoot),
       };
-      return { root: legacyRoot, meta, legacy: true, entry: null };
+      // v2.2 surface merge: the legacy vault is an ordinary trusted project
+      // store. Its historical behaviour (global scope, five-slot budget) is
+      // carried by the policy object, not by a separate `legacy` kind.
+      const attached = registry.get(path.resolve(legacyRoot));
+      return {
+        root: legacyRoot,
+        meta,
+        legacy: false,
+        entry: {
+          ...(attached || {}),
+          writable: true,
+          policy: { scopeMode: 'global', injectLimit: 5, trustedBy: 'config' },
+        },
+      };
     }
     const parent = path.dirname(dir);
     if (parent === dir) return null;
@@ -590,7 +606,7 @@ export function attachProject(storeRoot, registryFile = DEFAULT_REGISTRY_FILE, o
  */
 export function writableProjectStore(cwd, options = {}) {
   const project = findProjectStore(cwd, options);
-  if (!project || project.legacy || !project.entry || project.entry.writable !== true) return null;
+  if (!project || !project.entry || project.entry.writable !== true) return null;
   return project;
 }
 

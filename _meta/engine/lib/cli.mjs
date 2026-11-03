@@ -64,20 +64,39 @@ function splitGlobalArgs(argv, fallbackRoot) {
   return { root: path.resolve(root || process.env.KB_ROOT || fallbackRoot), argv: rest };
 }
 
-const GLOBAL_ARGS = splitGlobalArgs(process.argv.slice(2), DEFAULT_ROOT);
-const ROOT = GLOBAL_ARGS.root;
-const CONFIG_FILE = path.join(ROOT, '_meta', 'config.json');
-const CONFIG_EXISTS = fs.existsSync(CONFIG_FILE);
-const CONFIG = CONFIG_EXISTS
-  ? JSON.parse(readText(CONFIG_FILE))
-  : defaultConfig();
-const P = {
-  catalog: path.join(ROOT, CONFIG.paths.catalog),
-  archive: path.join(ROOT, CONFIG.paths.archive),
-  access: path.join(ROOT, CONFIG.paths.access),
-  changeLog: path.join(ROOT, CONFIG.paths.changeLog),
-  sessions: path.join(ROOT, CONFIG.paths.sessions),
-};
+/**
+ * Module state is intentionally mutable so the same engine module can serve
+ * multiple roots in one process (`runCli(argv, { root })`) as well as the CLI.
+ * Commands still read these bindings at call time; `applyRoot` is the only
+ * writer and runs once per invocation before parsing.
+ */
+let ROOT = DEFAULT_ROOT;
+let CONFIG_FILE = '';
+let CONFIG_EXISTS = false;
+let CONFIG = defaultConfig();
+let P = {};
+function applyRoot(root) {
+  ROOT = path.resolve(root || DEFAULT_ROOT);
+  CONFIG_FILE = path.join(ROOT, '_meta', 'config.json');
+  CONFIG_EXISTS = fs.existsSync(CONFIG_FILE);
+  CONFIG = CONFIG_EXISTS ? JSON.parse(readText(CONFIG_FILE)) : defaultConfig();
+  P = {
+    catalog: path.join(ROOT, CONFIG.paths.catalog),
+    archive: path.join(ROOT, CONFIG.paths.archive),
+    access: path.join(ROOT, CONFIG.paths.access),
+    changeLog: path.join(ROOT, CONFIG.paths.changeLog),
+    sessions: path.join(ROOT, CONFIG.paths.sessions),
+  };
+}
+applyRoot(DEFAULT_ROOT);
+
+/** Output sinks used by `runCli`; the CLI leaves both null and writes streams. */
+let stdoutSink = null;
+let stderrSink = null;
+function writeErr(text) {
+  if (stderrSink) stderrSink.push(text);
+  else console.error(text);
+}
 
 /**
  * Minimal store config for a freshly initialized project/global root. Ingest is
@@ -204,7 +223,7 @@ function readJsonl(file, options = {}) {
     const where = relPath(file);
     const message = `索引损坏 ${where}，${bad.length} 行不是合法 JSON（${bad.slice(0, 3).join('；')}）。请运行 rebuild 重建。`;
     if (strict) throw new Error(message);
-    console.error(`[kb] WARN ${message}`);
+    writeErr(`[kb] WARN ${message}`);
   }
   return rows;
 }
@@ -1368,10 +1387,14 @@ function cmdConsolidate(opts) {
     if (d.type !== 'topic' && d.type !== 'work' && d.level === 'digest' && d.status !== 'archived' && d.status !== 'promoted' && !topicCovered.has(d.id)) uncovered.push(d.id);
     const key = String(d.summary || '').trim();
     if (key) {
-      bySummary.set(key, [...(bySummary.get(key) || []), d.id]);
+      const group = bySummary.get(key) || [];
+      group.push({ id: d.id, updated: String(d.updated || '') });
+      bySummary.set(key, group);
     }
   }
-  for (const [summary, ids] of bySummary) if (ids.length > 1) duplicates.push({ summary, ids });
+  for (const [summary, items] of bySummary) {
+    if (items.length > 1) duplicates.push({ summary, ids: items.map((item) => item.id), items });
+  }
   const rows = readJsonl(P.catalog).length + readJsonl(P.archive).length;
   const hot = [...heat.entries()]
     .map(([id, entry]) => ({ id, count: entry.count, lastAt: entry.lastAt }))
@@ -2057,7 +2080,12 @@ function cmdInit(opts = {}) {
 // ---------------------------------------------------------------- 入口
 
 function out(s) {
-  process.stdout.write(s + '\n');
+  const text = `${s}\n`;
+  if (stdoutSink) {
+    stdoutSink.push(text);
+    return;
+  }
+  process.stdout.write(text);
 }
 
 function parseArgs(argv) {
@@ -2122,9 +2150,17 @@ const HELP = `kb.mjs — 知识库规则层
   attach [--registry F] [--write|--read-only] [--json]
                                       显式接入项目库；--write 同时开启该库的 ingest/judge`;
 
-function main() {
-  const { command, opts } = parseArgs(GLOBAL_ARGS.argv);
-  if (!command || opts.help) return out(HELP);
+function main(argv = process.argv.slice(2)) {
+  const globalArgs = splitGlobalArgs(argv, DEFAULT_ROOT);
+  applyRoot(globalArgs.root);
+  // Commands signal failure through process.exitCode, so reset it per call and
+  // translate it into a return value (the CLI entry maps it back to the process).
+  process.exitCode = 0;
+  const { command, opts } = parseArgs(globalArgs.argv);
+  if (!command || opts.help) {
+    out(HELP);
+    return 0;
+  }
   const table = {
     validate: cmdValidate,
     rebuild: cmdRebuild,
@@ -2151,20 +2187,60 @@ function main() {
   const fn = table[command];
   if (!fn) {
     out(`未知命令：${command}\n\n${HELP}`);
-    process.exitCode = 2;
-    return;
+    return 2;
   }
   try {
     if (!CONFIG_EXISTS && command !== 'init') {
       throw new Error(`根目录不是知识库：${ROOT}（缺少 _meta/config.json；先运行 kb init --root "${ROOT}"）`);
     }
     fn(opts);
+    return process.exitCode || 0;
   } catch (error) {
     // Expected rule failures (corrupt index, invalid transition) must be a
     // clean message and exit 1, not an uncaught stack trace.
-    console.error(`[kb] ${error && error.message ? error.message : String(error)}`);
-    process.exitCode = 1;
+    writeErr(`[kb] ${error && error.message ? error.message : String(error)}`);
+    return 1;
+  } finally {
+    process.exitCode = 0;
   }
 }
 
-main();
+/**
+ * In-process engine API: run one CLI command against an optional root and
+ * return captured output instead of touching process streams.
+ *
+ *   const kb = createEngine({ root });
+ *   const { code, stdout } = kb.run(['stats', '--json']);
+ *
+ * The engine is synchronous and stateful by root; one module instance serves
+ * calls sequentially (do not call run() re-entrantly from inside a command).
+ */
+export function runCli(argv = [], options = {}) {
+  const previousExit = process.exitCode;
+  const previousOut = stdoutSink;
+  const previousErr = stderrSink;
+  const stdout = [];
+  const stderr = [];
+  stdoutSink = stdout;
+  stderrSink = stderr;
+  try {
+    const args = Array.isArray(argv) ? argv.map(String) : [];
+    if (options.root && !args.includes('--root') && !args.some((arg) => arg.startsWith('--root='))) {
+      args.unshift('--root', String(options.root));
+    }
+    const code = main(args);
+    return { code, stdout: stdout.join(''), stderr: stderr.join('') };
+  } finally {
+    stdoutSink = previousOut;
+    stderrSink = previousErr;
+    process.exitCode = previousExit;
+  }
+}
+
+/** Stateful facade over one store root; convenient for hosts that call often. */
+export function createEngine(options = {}) {
+  return {
+    root: options.root ? path.resolve(String(options.root)) : '',
+    run: (argv = []) => runCli(argv, { root: options.root }),
+  };
+}

@@ -97,7 +97,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-11-02-c37';
+    const CLIENT_BUILD = '2026-11-03-c39';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -542,6 +542,44 @@ window.__ModuleLoader__.load({
         resize: 'vertical',
       },
       injectionRow: { fontSize: '11px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      consolidateCard: {
+        maxWidth: '560px',
+        width: 'min(560px, calc(100vw - 48px))',
+        maxHeight: '72vh',
+        overflow: 'auto',
+      },
+      consolidateSection: { marginTop: '14px' },
+      consolidateTitle: { fontSize: '12px', lineHeight: '18px', fontWeight: 600 },
+      consolidateRow: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '10px',
+        padding: '6px 0',
+        fontSize: '11px',
+        lineHeight: '17px',
+        color: 'var(--dsw-alias-label-secondary)',
+        borderBottom: '1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 40%, transparent)',
+      },
+      consolidateText: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      typeChips: { display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '0 12px 8px' },
+      typeChip: {
+        font: 'inherit',
+        fontSize: '11px',
+        lineHeight: '17px',
+        height: '24px',
+        padding: '0 8px',
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'transparent',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 55%, transparent)',
+        borderRadius: '999px',
+        cursor: 'pointer',
+      },
+      typeChipOn: {
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent)',
+        borderColor: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent)',
+      },
 
       // --- reading surface -------------------------------------------------
       shell: {
@@ -1850,6 +1888,12 @@ window.__ModuleLoader__.load({
       const [health, setHealth] = useState(null);
       const [searchFocused, setSearchFocused] = useState(false);
       const [hoveredNote, setHoveredNote] = useState(null);
+      /** Type filter for the list (client-side; "all" keeps every type). */
+      const [typeFilter, setTypeFilter] = useState('all');
+      /** Consolidate dialog: report + busy flag; actions go through /kb/atoms/batch. */
+      const [consolidateOpen, setConsolidateOpen] = useState(false);
+      const [consolidateReport, setConsolidateReport] = useState(null);
+      const [consolidateBusy, setConsolidateBusy] = useState(false);
       const toastTimer = useRef(null);
       const pickedInitialTab = useRef(false);
 
@@ -1998,6 +2042,40 @@ window.__ModuleLoader__.load({
       );
 
       /**
+       * Pin/mute one memory for the current session only. This never changes the
+       * note's status or scope; it only steers this session's injection set.
+       */
+      const toggleMemoryControl = useCallback(
+        async (id, key, value) => {
+          if (!currentSessionId) {
+            setActionError('请先打开一个会话');
+            return;
+          }
+          setStatusBusy(true);
+          try {
+            const response = await fetch('/kb/session/memory', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ session: currentSessionId, id, [key]: true, value }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              setActionError(String((payload && payload.error) || `操作被拒绝（HTTP ${response.status}）`).slice(0, 200));
+              return;
+            }
+            notify(key === 'pinned' ? (value ? '本会话已固定' : '已取消固定') : value ? '本会话已排除' : '已取消排除');
+            await load();
+            await openNote(id);
+          } catch {
+            setActionError('更新本会话记忆控制失败');
+          } finally {
+            setStatusBusy(false);
+          }
+        },
+        [load, notify, openNote],
+      );
+
+      /**
        * Explicitly copy one confirmed memory into the shared global store. The
        * workspace copy becomes `promoted` (stops injecting there); the global
        * copy reaches every workspace. This is the only way project memories
@@ -2060,7 +2138,91 @@ window.__ModuleLoader__.load({
         [load],
       );
 
+      /**
+       * Consolidate is a report + explicit actions: nothing is archived until the
+       * user clicks a button, and every action goes through the normal batch route.
+       */
+      const openConsolidate = useCallback(async () => {
+        setConsolidateBusy(true);
+        try {
+          const response = await fetch('/kb/consolidate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ workspace }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            setActionError(String((payload && payload.error) || `整理失败（HTTP ${response.status}）`).slice(0, 200));
+            return;
+          }
+          setConsolidateReport(payload.consolidate || null);
+          setConsolidateOpen(true);
+        } catch {
+          setActionError('整理失败');
+        } finally {
+          setConsolidateBusy(false);
+        }
+      }, [workspace]);
+
+      /** Archive a set of notes (stale / duplicate extras / selected candidates). */
+      const archiveNotes = useCallback(
+        async (ids) => {
+          const list = (Array.isArray(ids) ? ids : []).filter(Boolean);
+          if (!list.length) return;
+          setConsolidateBusy(true);
+          try {
+            if (!(await postAction('/kb/atoms/batch', { ids: list, status: 'archived', workspace }))) return;
+            notify(`已归档 ${list.length} 条`);
+            setConsolidateOpen(false);
+            setConsolidateReport(null);
+            await load();
+          } catch {
+            setActionError('归档失败');
+          } finally {
+            setConsolidateBusy(false);
+          }
+        },
+        [load, notify, postAction, workspace],
+      );
+
+      /**
+       * Confirm hot inbox candidates (opened repeatedly) through the normal
+       * status route; the note keeps its own scope.
+       */
+      const confirmNotes = useCallback(
+        async (ids) => {
+          const list = (Array.isArray(ids) ? ids : []).filter(Boolean);
+          if (!list.length) return;
+          setConsolidateBusy(true);
+          try {
+            if (!(await postAction('/kb/atoms/batch', { ids: list, status: 'active', workspace }))) return;
+            notify(`已确认 ${list.length} 条`);
+            setConsolidateOpen(false);
+            setConsolidateReport(null);
+            await load();
+          } catch {
+            setActionError('确认失败');
+          } finally {
+            setConsolidateBusy(false);
+          }
+        },
+        [load, notify, postAction, workspace],
+      );
+
       const humanNotes = useMemo(() => ((data && data.notes) || []).filter((note) => !isRawNote(note)), [data]);
+      const typeOptions = useMemo(() => {
+        const counts = new Map();
+        for (const note of humanNotes) {
+          if (isWorkNote(note)) continue;
+          const type = String(note.type || '');
+          if (!type) continue;
+          counts.set(type, (counts.get(type) || 0) + 1);
+        }
+        return [...counts.entries()]
+          .filter(([, count]) => count > 0)
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([type, count]) => ({ type, count, label: TYPE_LABEL[type] || type }));
+      }, [humanNotes]);
       const tabCounts = useMemo(
         () => ({
           inbox: humanNotes.filter((note) => note.status === 'inbox' && !isWorkNote(note)).length,
@@ -2076,11 +2238,12 @@ window.__ModuleLoader__.load({
           if (tab === 'inbox' && (note.status !== 'inbox' || isWorkNote(note))) return false;
           if (tab === 'active' && (isWorkNote(note) || !['active', 'canon', 'review'].includes(note.status))) return false;
           if (tab === 'work' && !isWorkNote(note)) return false;
+          if (typeFilter !== 'all' && String(note.type || '') !== typeFilter) return false;
           if (!q) return true;
           const haystack = `${note.id} ${note.title} ${note.summary} ${(note.tags || []).join(' ')}`.toLowerCase();
           return haystack.includes(q);
         });
-      }, [humanNotes, query, tab]);
+      }, [humanNotes, query, tab, typeFilter]);
 
       // First load only: with no pending candidates, "已记住" is the meaningful view.
       useEffect(() => {
@@ -2304,6 +2467,9 @@ window.__ModuleLoader__.load({
           ),
           view && viewWritable
             ? h(KbButton, { onClick: () => { setRememberText(''); setRememberOpen(true); } }, '记一条')
+            : null,
+          view && viewWritable
+            ? h(KbButton, { disabled: consolidateBusy, onClick: () => void openConsolidate() }, '整理')
             : null,
           h(KbButton, { onClick: () => load() }, '刷新'),
         ),
@@ -2529,6 +2695,9 @@ window.__ModuleLoader__.load({
       const promotableGlobal = Boolean(
         view && view.kind !== 'global' && detail && detail.level === 'digest' && detail.status === 'active' && !isWorkNote(detail),
       );
+      const sessionControls = (data && data.session && data.session.memoryControls) || { pinned: [], muted: [] };
+      const pinnedIds = new Set(sessionControls.pinned || []);
+      const mutedIds = new Set(sessionControls.muted || []);
       const detailActions = !detail
         ? null
         : !viewWritable
@@ -2579,6 +2748,24 @@ window.__ModuleLoader__.load({
                     ),
                   ),
                   h(KbButton, { disabled: statusBusy, onClick: () => applyStatus(detail.id, 'archived') }, '不再记住'),
+                  h(
+                    KbButton,
+                    {
+                      title: '本会话固定注入；不改记忆状态',
+                      disabled: statusBusy,
+                      onClick: () => void toggleMemoryControl(detail.id, 'pinned', !pinnedIds.has(detail.id)),
+                    },
+                    pinnedIds.has(detail.id) ? '取消固定' : '本会话固定',
+                  ),
+                  h(
+                    KbButton,
+                    {
+                      title: '本会话不注入这条；不改记忆状态',
+                      disabled: statusBusy,
+                      onClick: () => void toggleMemoryControl(detail.id, 'muted', !mutedIds.has(detail.id)),
+                    },
+                    mutedIds.has(detail.id) ? '取消排除' : '本会话排除',
+                  ),
                   promotableGlobal
                     ? h(
                         KbButton,
@@ -2651,6 +2838,33 @@ window.__ModuleLoader__.load({
                   ),
                 ),
               ),
+              typeOptions.length > 1
+                ? h(
+                    'div',
+                    { style: S.typeChips, role: 'group', 'aria-label': '按类型筛选' },
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        style: { ...S.typeChip, ...(typeFilter === 'all' ? S.typeChipOn : null) },
+                        onClick: () => setTypeFilter('all'),
+                      },
+                      '全部类型',
+                    ),
+                    typeOptions.map((option) =>
+                      h(
+                        'button',
+                        {
+                          key: option.type,
+                          type: 'button',
+                          style: { ...S.typeChip, ...(typeFilter === option.type ? S.typeChipOn : null) },
+                          onClick: () => setTypeFilter(typeFilter === option.type ? 'all' : option.type),
+                        },
+                        `${option.label} ${option.count}`,
+                      ),
+                    ),
+                  )
+                : null,
               notes.length
                 ? h(
                     'ul',
@@ -2739,6 +2953,8 @@ window.__ModuleLoader__.load({
                           scopeText(detail.scope) ? h('span', null, scopeText(detail.scope)) : null,
                           isWorkNote(detail) ? h('span', null, TYPE_LABEL.work) : null,
                           detail.updated ? h('span', null, detail.updated) : null,
+                          pinnedIds.has(detail.id) ? h('span', { style: { color: 'var(--dsw-alias-brand-primary)' } }, '本会话固定') : null,
+                          mutedIds.has(detail.id) ? h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)' } }, '本会话排除') : null,
                         ),
                         h(
                           'div',
@@ -2823,11 +3039,20 @@ window.__ModuleLoader__.load({
                 h(
                   'div',
                   { key: `${entry.store}:${entry.id}`, style: S.injectionRow },
-                  `· ${entry.summary}（${entry.id} · ${entry.store}）`,
+                  `· ${entry.summary}（${entry.id} · ${entry.store}${entry.pinned ? ' · 固定' : ''}）`,
                 ),
               ),
             )
           : null;
+
+      // Consolidate report view: every button is an explicit action; the report
+      // itself never mutates the store.
+      const report = consolidateReport || {};
+      const reportStale = Array.isArray(report.stale) ? report.stale : [];
+      const reportDuplicates = Array.isArray(report.duplicateSummaries) ? report.duplicateSummaries : [];
+      const reportCandidates = Array.isArray(report.readCandidates) ? report.readCandidates : [];
+      const reportUncovered = Array.isArray(report.uncoveredAtoms) ? report.uncoveredAtoms : [];
+      const reportWork = report.work || {};
 
       const runStatus = healthBar
         ? h(
@@ -2936,6 +3161,99 @@ window.__ModuleLoader__.load({
                     KbButton,
                     { variant: 'primary', disabled: rememberBusy, onClick: () => void submitRemember() },
                     '记入待确认',
+                  ),
+                ),
+              ),
+            )
+          : null,
+        consolidateOpen && consolidateReport
+          ? h(
+              'div',
+              {
+                style: S.renameOverlay,
+                role: 'dialog',
+                'aria-modal': 'true',
+                'aria-label': '整理记忆',
+                onMouseDown: (event) => {
+                  if (event.target === event.currentTarget) setConsolidateOpen(false);
+                },
+              },
+              h(
+                'div',
+                { style: { ...S.renameCard, ...S.consolidateCard } },
+                h('div', { style: S.renameTitle }, '整理记忆'),
+                h('div', { style: S.renameHint }, '只归档你点下按钮的内容；报告本身不改库。'),
+                reportStale.length
+                  ? h(
+                      'div',
+                      { style: S.consolidateSection },
+                      h('div', { style: S.consolidateTitle }, `过期（${reportStale.length}）`),
+                      h(
+                        'div',
+                        { style: S.consolidateRow },
+                        h('span', { style: S.consolidateText }, reportStale.slice(0, 4).map((item) => item.id).join('、') + (reportStale.length > 4 ? ' 等' : '')),
+                        h(KbButton, { disabled: consolidateBusy, onClick: () => void archiveNotes(reportStale.map((item) => item.id)) }, '归档过期'),
+                      ),
+                    )
+                  : null,
+                reportDuplicates.length
+                  ? h(
+                      'div',
+                      { style: S.consolidateSection },
+                      h('div', { style: S.consolidateTitle }, `重复摘要（${reportDuplicates.length} 组）`),
+                      reportDuplicates.slice(0, 4).map((group) => {
+                        const items = Array.isArray(group.items) && group.items.length
+                          ? [...group.items].sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')))
+                          : (group.ids || []).map((id) => ({ id, updated: '' }));
+                        const extras = items.slice(1).map((item) => item.id);
+                        return h(
+                          'div',
+                          { key: group.summary, style: S.consolidateRow },
+                          h('span', { style: S.consolidateText }, `${group.summary}（保留 1 / 归档 ${extras.length}）`),
+                          h(KbButton, { disabled: consolidateBusy || !extras.length, onClick: () => void archiveNotes(extras) }, '归档旧副本'),
+                        );
+                      }),
+                    )
+                  : null,
+                reportCandidates.length
+                  ? h(
+                      'div',
+                      { style: S.consolidateSection },
+                      h('div', { style: S.consolidateTitle }, `反复打开、仍待确认（${reportCandidates.length}）`),
+                      h(
+                        'div',
+                        { style: S.consolidateRow },
+                        h('span', { style: S.consolidateText }, reportCandidates.slice(0, 4).map((item) => item.id).join('、')),
+                        h(KbButton, { disabled: consolidateBusy, onClick: () => void confirmNotes(reportCandidates.map((item) => item.id)) }, '全部确认'),
+                      ),
+                    )
+                  : null,
+                reportUncovered.length || (reportWork.stale || []).length
+                  ? h(
+                      'div',
+                      { style: S.consolidateSection },
+                      h('div', { style: S.consolidateTitle }, '提示（不可一键处理）'),
+                      reportUncovered.length
+                        ? h('div', { style: S.consolidateRow }, h('span', { style: S.consolidateText }, `未归主题的原子：${reportUncovered.length} 条`))
+                        : null,
+                      (reportWork.stale || []).length
+                        ? h('div', { style: S.consolidateRow }, h('span', { style: S.consolidateText }, `过期工作页：${reportWork.stale.length} 个`))
+                        : null,
+                    )
+                  : null,
+                h(
+                  'div',
+                  { style: S.renameActions },
+                  h(
+                    KbButton,
+                    {
+                      disabled: consolidateBusy,
+                      onClick: () => {
+                        setConsolidateOpen(false);
+                        setConsolidateReport(null);
+                      },
+                    },
+                    '关闭',
                   ),
                 ),
               ),

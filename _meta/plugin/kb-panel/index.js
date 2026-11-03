@@ -27,9 +27,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { createIngestor, resolveNode, runProcess } from './ingest.js';
+import { createIngestor, messageText, resolveNode, runProcess } from './ingest.js';
 import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
+import { reorderByRelevance } from './memory-rank.mjs';
 import {
   DEFAULT_GLOBAL_ROOT,
   DEFAULT_REGISTRY_FILE,
@@ -157,6 +158,25 @@ export function apply(ctx, config = {}) {
     console.warn(`[kb-panel] cannot write ${localTokenFile}: ${error.message}`);
   }
   const refreshMs = Number(config.refreshMs) > 0 ? Number(config.refreshMs) : 30000;
+  /**
+   * Injection ranking mode, read once per plugin load from the vault config:
+   * `heat` (default, historical) or `relevance` (recent user message + heat
+   * fallback). A switch is intentional: relevance ordering changes what the
+   * model sees, so it must be opted into and compared, not flipped silently.
+   */
+  const injectConfig = (() => {
+    const fallback = { rankMode: 'heat', relevanceMaxAgeMs: 1800000 };
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(root, '_meta', 'config.json'), 'utf8'));
+      const inject = raw && raw.inject ? raw.inject : {};
+      return {
+        rankMode: inject.rankMode === 'relevance' ? 'relevance' : 'heat',
+        relevanceMaxAgeMs: Number(inject.relevanceMaxAgeMs) > 0 ? Number(inject.relevanceMaxAgeMs) : fallback.relevanceMaxAgeMs,
+      };
+    } catch {
+      return fallback;
+    }
+  })();
   const cache = new Map();
   /** Session id → true (memory forced on) | false (memory silenced). */
   const overrides = new Map();
@@ -164,6 +184,43 @@ export function apply(ctx, config = {}) {
   let lastUiReport = null;
   /** Session id (bare) → the project scope that session works in. */
   const sessionScopes = new Map();
+  /**
+   * Session id (bare) → { pinned:Set<noteId>, muted:Set<noteId> }. Session-scoped
+   * controls are ephemeral (cleared on host restart) and never change a note's
+   * status, scope or stored content.
+   */
+  const memoryControls = new Map();
+  const controlsFor = (sessionId) => {
+    const key = bareId(sessionId);
+    if (!key) return { pinned: new Set(), muted: new Set() };
+    if (!memoryControls.has(key)) memoryControls.set(key, { pinned: new Set(), muted: new Set() });
+    return memoryControls.get(key);
+  };
+  /**
+   * Latest human message text per session, for optional relevance ordering.
+   * Only the `session/event` feed feeds this cache; it is bounded and rebuilt
+   * after a host restart, so it can never become a second transcript source.
+   */
+  const recentUserText = new Map();
+  const rememberUserText = (session, event) => {
+    try {
+      const data = event && event.data;
+      if (data && data.source && data.source.kind && data.source.kind !== 'user') return;
+      const text = messageText(data && data.message);
+      const key = bareId(session && session.id);
+      if (!key || !text) return;
+      recentUserText.set(key, { text: text.slice(0, 800), at: Date.now() });
+      if (recentUserText.size > 100) recentUserText.delete(recentUserText.keys().next().value);
+    } catch {
+      /* advisory: ranking must never affect the turn */
+    }
+  };
+  const recentQueryFor = (agent) => {
+    if (!agent || injectConfig.rankMode !== 'relevance') return '';
+    const entry = recentUserText.get(bareId(agent.id));
+    if (!entry || Date.now() - entry.at > injectConfig.relevanceMaxAgeMs) return '';
+    return entry.text || '';
+  };
   /** Recall log throttle: `${how}:${provenance}:${id}` → last logged ms. */
   const recallLogged = new Map();
 
@@ -413,7 +470,12 @@ export function apply(ctx, config = {}) {
     // so a slow or failing writer can never stall or fail the turn. Only
     // `turn/end` matters; the handler is O(1) and drains asynchronously.
     const stopListening = ctx.on('session/event', (session, event) => {
-      if (!event || event.type !== 'turn/end') return;
+      if (!event) return;
+      if (event.type === 'user/message') {
+        rememberUserText(session, event);
+        return;
+      }
+      if (event.type !== 'turn/end') return;
       // A session-level memory toggle wins over the cwd: `off` means no store
       // gets this turn. Without a writable project, only sessions inside the
       // legacy vault may be captured; an external read-only project must never
@@ -433,7 +495,10 @@ export function apply(ctx, config = {}) {
       };
       const captureFor = (target) => {
         if (!target) return false;
-        capture(target.kind === 'legacy' ? ingestor : externalRuntimeFor({ root: target.root }).ingestor);
+        // Compatibility with both engine generations: the old descriptor exposed
+        // `legacy`, the v2.2 descriptor exposes `scopeMode`; a live host may still
+        // have the older engine module cached until it restarts.
+        capture(target.role === 'legacy' || target.kind === 'legacy' ? ingestor : externalRuntimeFor({ root: target.root }).ingestor);
         return true;
       };
       try {
@@ -756,10 +821,14 @@ export function apply(ctx, config = {}) {
         at: new Date().toISOString(),
         ok: true,
         total: payload.total,
-        stale: Array.isArray(payload.stale) ? payload.stale.length : 0,
-        review: Array.isArray(payload.review) ? payload.review.length : 0,
-        uncoveredAtoms: Array.isArray(payload.uncoveredAtoms) ? payload.uncoveredAtoms.length : 0,
-        duplicateSummaries: Array.isArray(payload.duplicateSummaries) ? payload.duplicateSummaries.length : 0,
+        // Keep the bounded detail lists: the panel's "整理" dialog offers explicit
+        // archive/confirm actions for these, not just counts.
+        stale: Array.isArray(payload.stale) ? payload.stale : [],
+        review: Array.isArray(payload.review) ? payload.review : [],
+        uncoveredAtoms: Array.isArray(payload.uncoveredAtoms) ? payload.uncoveredAtoms : [],
+        duplicateSummaries: Array.isArray(payload.duplicateSummaries) ? payload.duplicateSummaries : [],
+        readCandidates: Array.isArray(payload.readCandidates) ? payload.readCandidates : [],
+        work: payload.work || null,
       };
     } catch (error) {
       lastConsolidate = { at: new Date().toISOString(), ok: false, error: String(error && error.message ? error.message : error) };
@@ -933,7 +1002,7 @@ export function apply(ctx, config = {}) {
   const workspaceView = (workspace, sessionStores) => {
     const requested = String(workspace || '').trim();
     if (!requested || requested === 'session') {
-      if (sessionStores && sessionStores.projectRoot && !sessionStores.project?.legacy) {
+      if (sessionStores && sessionStores.projectRoot && !sessionStores.project?.legacy && sessionStores.project?.scopeMode !== 'global') {
         const project = sessionStores.project;
         return {
           id: project.meta.slug,
@@ -1041,10 +1110,12 @@ export function apply(ctx, config = {}) {
 
   const snapshot = (sessionId, workspace) => {
     let sessionStores = null;
+    let sessionQuery = '';
     const session = { id: sessionId || null, cwd: null, mode: 'unknown', manual: false };
     if (sessionId) {
       const agent = lookupAgent(sessionId);
       if (agent) {
+        sessionQuery = recentQueryFor(agent);
         session.cwd = cwdOf(agent) || null;
         // Opening the page is the natural repair point for a renamed workspace:
         // the registry follows the store id, never a client-supplied path.
@@ -1082,6 +1153,11 @@ export function apply(ctx, config = {}) {
           }
         }
         session.workspace = ws;
+        const controls = controlsFor(sessionId);
+        session.memoryControls = {
+          pinned: [...controls.pinned].sort(),
+          muted: [...controls.muted].sort(),
+        };
       }
     }
 
@@ -1100,7 +1176,7 @@ export function apply(ctx, config = {}) {
     const heat = heatTop(5, view.root);
     // Prompt injection manifest for this session: same selection the prompt uses.
     const injection = sessionStores
-      ? injectionManifestFor(sessionStores, session.scope || 'global')
+      ? injectionManifestFor(sessionStores, session.scope || 'global', controlsFor(sessionId), { query: sessionQuery })
       : { total: 0, global: 0, project: 0, entries: [] };
     return {
       workspace: view.root,
@@ -1195,6 +1271,9 @@ export function apply(ctx, config = {}) {
     }
   };
 
+  /** v2.2: legacy behaviour is a global-scope policy, not a separate kind. */
+  const globalScopeStore = (store) => Boolean(store && (store.legacy === true || store.scopeMode === 'global'));
+
   const memoryScopeFor = (agent, stores) => {
     try {
       const stored = sessionScopes.get(bareId(agent.id));
@@ -1203,7 +1282,7 @@ export function apply(ctx, config = {}) {
       /* no explicit scope */
     }
     if (!stores || !stores.project) return 'global';
-    if (stores.project.legacy) return 'global';
+    if (globalScopeStore(stores.project)) return 'global';
     return `project:${stores.project.meta.slug}`;
   };
 
@@ -1240,7 +1319,7 @@ export function apply(ctx, config = {}) {
    * live in a separate store and must not be double-counted.
    */
   const scopeLeakWarned = new Set();
-  const selectStoreCandidates = (storeRoot, scope, filterScope = '') => {
+  const selectStoreCandidates = (storeRoot, scope, filterScope = '', query = '') => {
     if (!storeRoot) return [];
     const notes = scanNotes(storeRoot);
     // In a non-legacy project store, a global-scope memory is a write-layer
@@ -1259,13 +1338,16 @@ export function apply(ctx, config = {}) {
         );
       }
     }
-    return rankMemories(
+    const ranked = rankMemories(
       notes.filter((note) => !filterScope
         || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope)),
       accessRowsFor(storeRoot),
       scope,
       { limit: 500 },
     );
+    // Relevance mode reorders the heat-ranked list; heat stays the tiebreak and
+    // the fallback order for notes with no query overlap.
+    return query ? reorderByRelevance(ranked, query) : ranked;
   };
 
   /**
@@ -1277,30 +1359,64 @@ export function apply(ctx, config = {}) {
    * a newer project claim. Each candidate keeps its source and rank so the
    * budget stays source-aware after the loser is removed.
    */
-  const selectInjection = (stores, scope) => {
+  /**
+   * Source-aware budget with per-session controls. Kept local (not imported) so
+   * a live host can hot-reload the plugin without restarting: the engine export
+   * is the tested reference, this is the same rule wired to session state.
+   */
+  const pickBySourceWithControls = (entries, options = {}) => {
+    const limit = (value) => Math.max(0, Number(value) || 0);
+    const globalLimit = limit(options.globalLimit);
+    const projectLimit = limit(options.projectLimit);
+    const isPinned = typeof options.isPinned === 'function' ? options.isPinned : () => false;
+    const isMuted = typeof options.isMuted === 'function' ? options.isMuted : () => false;
+    const pick = (source, cap) => {
+      const candidates = (entries || [])
+        .filter((entry) => entry && entry.note && entry.source === source)
+        .filter((entry) => !isMuted(String(entry.note.id || '')))
+        .sort((a, b) => (Number(a.rank) || 0) - (Number(b.rank) || 0));
+      const pinned = candidates.filter((entry) => isPinned(String(entry.note.id || '')));
+      const rest = candidates.filter((entry) => !isPinned(String(entry.note.id || '')));
+      return [...pinned, ...rest].slice(0, cap).map((entry) => entry.note);
+    };
+    return {
+      globalPicked: pick('global', globalLimit),
+      projectPicked: pick('project', projectLimit),
+    };
+  };
+
+  const selectInjection = (stores, scope, controls = {}, options = {}) => {
+    const query = options.query || '';
+    const pinned = controls && controls.pinned ? controls.pinned : new Set();
+    const muted = controls && controls.muted ? controls.muted : new Set();
+    const isPinned = (id) => pinned.has(String(id || ''));
+    const isMuted = (id) => muted.has(String(id || ''));
     const globalLimit = stores.globalRoot ? 2 : 0;
-    const projectLimit = stores.projectRoot ? (stores.globalRoot ? 3 : 5) : 0;
+    const legacy = Boolean(globalScopeStore(stores.project));
+    // Unified surface policy (v2.2): the legacy vault and a project store differ
+    // only by scopeMode / slot cap, not by separate code paths.
+    const projectLimit = stores.projectRoot ? (legacy ? 5 : stores.globalRoot ? 3 : 5) : 0;
+    const totalLimit = 5;
     const entries = [];
     const add = (source, notes) => {
       notes.forEach((note, rank) => entries.push({ note, source, rank }));
     };
     if (globalLimit && stores.globalRoot) {
-      add('global', selectStoreCandidates(stores.globalRoot, 'global', 'global'));
+      add('global', selectStoreCandidates(stores.globalRoot, 'global', 'global', query));
     }
     if (projectLimit && stores.projectRoot) {
-      const filterScope = stores.project && stores.project.legacy ? '' : scope;
-      add('project', selectStoreCandidates(stores.projectRoot, scope, filterScope));
+      const filterScope = legacy ? '' : scope;
+      add('project', selectStoreCandidates(stores.projectRoot, scope, filterScope, query));
     }
     const current = currentTruthEntries(entries, scope);
-    const isLegacy = Boolean(stores.project && stores.project.legacy);
-    if (!isLegacy) return pickBySource(current, { globalLimit, projectLimit });
-    // A legacy vault keeps its historical five-slot budget. Prefer the global
-    // store's two slots, then let the project store fill whatever remains (up to
-    // five total) so a missing global copy does not silently shrink the budget.
-    const legacy = pickBySource(current, { globalLimit, projectLimit: 5 });
-    const legacyGlobal = legacy.globalPicked.slice(0, globalLimit);
-    const legacyProject = legacy.projectPicked.slice(0, Math.max(0, 5 - legacyGlobal.length));
-    return { globalPicked: legacyGlobal, projectPicked: legacyProject };
+    const picked = pickBySourceWithControls(current, { globalLimit, projectLimit, isPinned, isMuted });
+    // Legacy keeps the historical five-slot total; the project store fills what
+    // the global store leaves, so a missing global copy does not shrink the
+    // budget. Project stores keep their own 3-slot cap when a global store also
+    // contributes.
+    const pickedGlobal = picked.globalPicked.slice(0, globalLimit);
+    const pickedProject = picked.projectPicked.slice(0, Math.max(0, totalLimit - pickedGlobal.length));
+    return { globalPicked: pickedGlobal, projectPicked: pickedProject };
   };
 
   /**
@@ -1308,23 +1424,26 @@ export function apply(ctx, config = {}) {
    * their source store. Same selection function as the prompt and the counter,
    * so the panel can never show a different set.
    */
-  const injectionManifestFor = (stores, scope) => {
+  const injectionManifestFor = (stores, scope, controls = {}, options = {}) => {
     const empty = { total: 0, global: 0, project: 0, entries: [] };
     if (!stores) return empty;
+    const pinSet = controls && controls.pinned ? controls.pinned : new Set();
     try {
-      const selected = selectInjection(stores, scope);
+      const selected = selectInjection(stores, scope, controls, options);
       const entries = [
         ...selected.globalPicked.map((note) => ({
           id: String(note.id || ''),
           summary: String(note.summary || note.title || ''),
           scope: String(note.scope || 'global'),
           store: 'global',
+          pinned: pinSet.has(String(note.id || '')),
         })),
         ...selected.projectPicked.map((note) => ({
           id: String(note.id || ''),
           summary: String(note.summary || note.title || ''),
           scope: String(note.scope || ''),
-          store: stores.project && stores.project.legacy ? 'legacy' : 'project',
+          store: globalScopeStore(stores.project) ? 'legacy' : 'project',
+          pinned: pinSet.has(String(note.id || '')),
         })),
       ];
       return {
@@ -1360,12 +1479,12 @@ export function apply(ctx, config = {}) {
           if (stores.projectRoot) {
             const core = coreText(
               stores.projectRoot,
-              stores.project.legacy ? '核心记忆 · 30_Canon/core.md' : '项目核心记忆 · 30_Canon/core.md',
+              globalScopeStore(stores.project) ? '核心记忆 · 30_Canon/core.md' : '项目核心记忆 · 30_Canon/core.md',
             );
             if (core) chunks.push(core);
           }
 
-          const { globalPicked, projectPicked } = selectInjection(stores, scope);
+          const { globalPicked, projectPicked } = selectInjection(stores, scope, controlsFor(agent.id), { query: recentQueryFor(agent) });
           if (globalPicked.length) {
             recordRecall(globalPicked.map((note) => note.id), 'inject', `session:${bareId(agent.id)}`, stores.globalRoot);
           }
@@ -1376,7 +1495,7 @@ export function apply(ctx, config = {}) {
           // Resume brief: derived from the project work page, not a memory.
           if (stores.projectRoot) {
             const brief = workBriefFor(
-              stores.project && stores.project.legacy ? 'global' : scope,
+              globalScopeStore(stores.project) ? 'global' : scope,
               stores.projectRoot,
             );
             if (brief) chunks.push(brief);
@@ -1510,6 +1629,56 @@ export function apply(ctx, config = {}) {
             return;
           }
           sendJson(res, 200, { ok: true, session: String(agent.id), scope: scopeOfSession(agent) });
+        } catch (error) {
+          sendJson(res, 500, { error: String(error && error.message ? error.message : error) });
+        }
+      },
+    }),
+  );
+
+  // Per-session memory controls (pin/mute). They only affect this live session's
+  // injection selection; note status/scope/content are untouched. Ephemeral by
+  // design (host restart clears them), so they cannot silently become policy.
+  ctx.effect(() =>
+    ctx.webServer.register({
+      kind: 'exact',
+      path: '/kb/session/memory',
+      handler: async (req, res) => {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'method not allowed' });
+          return;
+        }
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        try {
+          const body = await readJsonBody(req);
+          const agent = lookupAgent(body && body.session);
+          if (!agent) {
+            sendJson(res, 404, { error: 'session is not live' });
+            return;
+          }
+          const id = String((body && body.id) || '').trim();
+          if (!/^\d{4}-\d{2}-\d{2}-[atcw]-\d{4}$/.test(id)) {
+            sendJson(res, 400, { error: 'invalid id' });
+            return;
+          }
+          const key = body.muted === true ? 'muted' : body.pinned === true ? 'pinned' : '';
+          if (!key) {
+            sendJson(res, 400, { error: 'pinned or muted is required' });
+            return;
+          }
+          const controls = controlsFor(agent.id);
+          if (body.value === true) {
+            controls[key].add(id);
+            controls[key === 'muted' ? 'pinned' : 'muted'].delete(id);
+          } else {
+            controls[key].delete(id);
+          }
+          sendJson(res, 200, {
+            ok: true,
+            session: String(agent.id),
+            pinned: [...controls.pinned].sort(),
+            muted: [...controls.muted].sort(),
+          });
         } catch (error) {
           sendJson(res, 500, { error: String(error && error.message ? error.message : error) });
         }

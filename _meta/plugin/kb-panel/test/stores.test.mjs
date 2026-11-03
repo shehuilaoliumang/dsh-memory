@@ -104,7 +104,11 @@ test('the legacy configured root is trusted explicitly and wins inside its own t
       registryFile: path.join(root, 'projects.json'),
     });
     assert.ok(found);
-    assert.equal(found.legacy, true);
+    // v2.2 surface merge: the legacy root is an ordinary trusted project store;
+    // its historical behaviour is carried by a synthesized policy entry.
+    assert.equal(found.legacy, false);
+    assert.equal(found.entry && found.entry.writable, true);
+    assert.equal(found.entry && found.entry.policy && found.entry.policy.trustedBy, 'config');
     assert.equal(found.root, path.resolve(legacy));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

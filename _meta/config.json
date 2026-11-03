@@ -44,6 +44,11 @@
     "shadow_mode": true,
     "heat_half_life_days": 30
   },
+  "inject": {
+    "note": "注入排序模式：heat=纯热度（默认，历史行为）；relevance=按最近一条真人消息的匹配度优先、热度兜底（可选开关，A/B 后再切换）；relevanceMaxAgeMs 过期后退回热度。",
+    "rankMode": "heat",
+    "relevanceMaxAgeMs": 1800000
+  },
   "limits": {
     "catalog_max_rows": 3000,
     "catalog_max_bytes": 300,

@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { briefText, clampText, currentTruthEntries, currentTruthNotes, heatWeight, isInjectable, pickBySource, rankMemories, scopeLabel, sectionItems } from '../../../engine/lib/work-brief.mjs';
+import { briefText, clampText, currentTruthEntries, currentTruthNotes, heatWeight, isInjectable, pickBySource, pickBySourceControls, rankMemories, scopeLabel, sectionItems } from '../../../engine/lib/work-brief.mjs';
 
 const atom = (over = {}) => ({ level: 'digest', status: 'active', type: 'preference', scope: 'global', ...over });
 
@@ -227,4 +227,52 @@ test('scopeLabel: known scopes are Chinese, project keeps its slug', () => {
 test('clampText: collapses whitespace and counts characters, not bytes', () => {
   assert.equal(clampText('  a\n\tb  ', 40), 'a b');
   assert.equal(clampText('中文中文中文', 2), '中文');
+});
+
+test('pickBySourceControls: muted notes never consume a slot', () => {
+  const entries = [
+    { note: { id: 'g1' }, source: 'global', rank: 0 },
+    { note: { id: 'g2' }, source: 'global', rank: 1 },
+    { note: { id: 'p1' }, source: 'project', rank: 0 },
+    { note: { id: 'p2' }, source: 'project', rank: 1 },
+    { note: { id: 'p3' }, source: 'project', rank: 2 },
+  ];
+  const out = pickBySourceControls(entries, {
+    globalLimit: 2,
+    projectLimit: 2,
+    isMuted: (id) => id === 'g1' || id === 'p1',
+  });
+  assert.deepEqual(out.globalPicked.map((note) => note.id), ['g2']);
+  assert.deepEqual(out.projectPicked.map((note) => note.id), ['p2', 'p3']);
+});
+
+test('pickBySourceControls: pinned first, budget still bounds the result', () => {
+  const entries = [
+    { note: { id: 'p1' }, source: 'project', rank: 0 },
+    { note: { id: 'p2' }, source: 'project', rank: 1 },
+    { note: { id: 'p3' }, source: 'project', rank: 2 },
+    { note: { id: 'p4' }, source: 'project', rank: 3 },
+  ];
+  const out = pickBySourceControls(entries, {
+    projectLimit: 2,
+    isPinned: (id) => id === 'p4',
+  });
+  assert.deepEqual(out.projectPicked.map((note) => note.id), ['p4', 'p1']);
+});
+
+test('pickBySourceControls: no controls matches pickBySource, mute wins over pin', () => {
+  const entries = [
+    { note: { id: 'a' }, source: 'global', rank: 0 },
+    { note: { id: 'b' }, source: 'global', rank: 1 },
+    { note: { id: 'c' }, source: 'project', rank: 0 },
+  ];
+  const plain = pickBySource(entries, { globalLimit: 1, projectLimit: 1 });
+  const controlled = pickBySourceControls(entries, { globalLimit: 1, projectLimit: 1 });
+  assert.deepEqual(controlled, plain);
+  const conflicting = pickBySourceControls(entries, {
+    globalLimit: 2,
+    isPinned: (id) => id === 'a',
+    isMuted: (id) => id === 'a',
+  });
+  assert.deepEqual(conflicting.globalPicked.map((note) => note.id), ['b']);
 });

@@ -36,11 +36,17 @@ test('describeStore derives scope and write authority per store kind', () => {
   assert.equal(global.scope, 'global');
   assert.equal(global.writable, true);
   assert.equal(global.isGlobal, true);
+  assert.equal(global.scopeMode, 'global');
+  assert.equal(global.injectLimit, 2);
+  assert.equal(global.trustedBy, 'builtin');
 
   const legacy = describeStore({ root: 'C:/tmp/vault', kind: 'legacy' });
   assert.equal(legacy.scope, 'global');
   assert.equal(legacy.writable, true);
   assert.equal(legacy.isLegacy, true);
+  assert.equal(legacy.scopeMode, 'global');
+  assert.equal(legacy.injectLimit, 5);
+  assert.equal(legacy.trustedBy, 'config');
 
   const project = describeStore({
     root: 'C:/tmp/app/.dsh-memory',
@@ -51,6 +57,9 @@ test('describeStore derives scope and write authority per store kind', () => {
   assert.equal(project.scope, 'project:app');
   assert.equal(project.writable, true);
   assert.equal(project.isProject, true);
+  assert.equal(project.scopeMode, 'project');
+  assert.equal(project.injectLimit, 3);
+  assert.equal(project.trustedBy, 'registry');
 
   const readOnly = describeStore({
     root: 'C:/tmp/ro/.dsh-memory',
@@ -76,12 +85,15 @@ test('legacy vault session resolves to legacy store and legacy write target', ()
 
     const context = resolveContext(path.join(vault, 'nested'), { legacyRoot: vault, globalRoot, registryFile: registry });
     assert.equal(context.global.kind, 'global');
-    assert.equal(context.project.kind, 'legacy');
+    assert.equal(context.project.kind, 'project');
+    assert.equal(context.project.scopeMode, 'global');
+    assert.equal(context.project.trustedBy, 'config');
     assert.equal(context.scope, 'global');
     assert.equal(context.legacy, true);
 
     const target = resolveWriteTarget(path.join(vault, 'nested'), { legacyRoot: vault, registryFile: registry });
-    assert.equal(target.kind, 'legacy');
+    assert.equal(target.kind, 'project');
+    assert.equal(target.role, 'legacy');
     assert.equal(target.scope, 'global');
     assert.equal(path.resolve(target.root), path.resolve(vault));
   } finally {

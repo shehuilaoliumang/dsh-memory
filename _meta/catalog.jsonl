@@ -4,4 +4,5 @@
 {"id":"2026-11-03-a-0003","path":"20_Digest/atoms/2026-11-03-a-0003.md","level":"digest","type":"principle","status":"inbox","tags":["发布","流程"],"summary":"导出脱敏、发布硬闸、CI 全绿才算发布","updated":"2026-11-03"}
 {"id":"2026-11-03-a-0004","path":"20_Digest/atoms/2026-11-03-a-0004.md","level":"digest","type":"principle","status":"inbox","tags":["协议","边界"],"summary":"写入由 context 统一决策；raw 只增；删除需两闸","updated":"2026-11-03"}
 {"id":"2026-11-03-c-1003","path":"30_Canon/decisions/2026-11-03-c-1003.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"手动记录只写当前可写库且默认 inbox；注入清单只读透明。","updated":"2026-11-03"}
-{"id":"2026-11-03-w-0001","path":"20_Digest/work/2026-11-03-w-0001.md","level":"digest","type":"work","status":"active","tags":[],"summary":"v2.1 记忆启用/护栏/注入可解释；2.1.0 已发布，余项转 2.2","updated":"2026-11-03"}
+{"id":"2026-11-03-c-1004","path":"30_Canon/decisions/2026-11-03-c-1004.md","level":"canon","type":"decision","status":"canon","tags":[],"summary":"会话级 pin/mute；相关性开关；整理走 batch；库面 policy。","updated":"2026-11-03"}
+{"id":"2026-11-03-w-0001","path":"20_Digest/work/2026-11-03-w-0001.md","level":"digest","type":"work","status":"active","tags":[],"summary":"v2.2 控制/相关性/整理与进程内 API/库面 policy 完成","updated":"2026-11-03"}

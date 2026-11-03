@@ -48,12 +48,14 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 ## engine 包（@local/kb-engine）
 
-- **位置**：规则层实现全部在 `_meta/engine/`：`bin/kb.mjs` → `lib/cli.mjs`（全部 CLI 命令），`lib/{stores,work-brief,redact,promote,context,index}.mjs`、`lib/shared/*`、`package.json`、`README.md`。零 DSH/插件 import；root 由 `--root`/`KB_ROOT`/`KB_DEFAULT_ROOT` 决定。
-- **CLI**：`node _meta/engine/bin/kb.mjs --root <库> <command>`（命令与参数同 `_meta/scripts/kb.mjs`）；用于脚本、其它宿主与显式指定库根的场景。
+- **位置**：规则层实现全部在 `_meta/engine/`：`bin/kb.mjs` → `lib/cli.mjs`（全部 CLI 命令 + 进程内 API），`lib/{stores,work-brief,redact,promote,context,index}.mjs`、`lib/shared/*`、`package.json`、`README.md`。零 DSH/插件 import；root 由 `--root`/`KB_ROOT`/`KB_DEFAULT_ROOT` 决定。
+- **CLI**：`node _meta/engine/bin/kb.mjs --root <库> <command>`（命令与参数同 `_meta/scripts/kb.mjs`）；用于脚本、其它宿主与显式指定库根的场景。`bin/kb.mjs` 与 `_meta/scripts/kb.mjs` 都是**薄入口**，真实实现与状态只在 `lib/cli.mjs`。
+- **进程内 API（2.2）**：`import { runCli, createEngine } from '_meta/engine/lib/index.mjs'`；`runCli(argv, { root })` 返回 `{ code, stdout, stderr }`、不污染宿主 `process.exitCode`/stdout，`createEngine({ root }).run(argv)` 为状态化门面；**同步、单线程、单根顺序**，禁止命令内重入。
 - **模块**：`_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）可被宿主进程内 import。
 - **兼容层**：`_meta/scripts/kb.mjs` 是默认 root 的兼容包装；**2.1 起 6 个插件 shim 已删除，插件直接 import engine**（`_meta/engine/lib/*`）；依赖方向仍为 **engine ← plugin**。
 - **2.1 加固**：`stores.mjs` 增加跨进程 registry 锁 `withRegistryLock`（读-改-写串行化）；导出安全规则抽为纯函数 `_meta/scripts/lib/export-rules.mjs`（17 单测，CI「Script unit tests」步骤）。
-- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 6 JSON / 9 manifest / 11 engine / 2 locale / 21 JS）；插件单测 159 条（含 context 5、behavior-matrix 9）。
+- **2.2 policy**：库存行为由 `policy`（`scopeMode`/`injectLimit`/`trustedBy`）表达，`kind` 只作标识；registry 行携带 `policy`，`resolveContext`/`resolveWriteTarget` 输出 `role`/`trustedBy`。
+- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 6 JSON / 9 manifest / 11 engine / 2 locale / 22 JS）；插件单测 172 条（含 context 5、behavior-matrix 9、memory-rank 7、engine-api 3）。
 
 ## 设计约束
 
@@ -78,7 +80,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 用 PowerShell 而非 `node:test`：DSH 沙箱禁止 node 子进程用管道 stdio 再 spawn（EPERM），而 kb.mjs 是独立脚本、需要真实执行。
 
-管理页（`@local/kb-panel` v2.1.0，客户端 c37，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」；2.1 新增「记一条」与「本轮注入」）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
+管理页（`@local/kb-panel` v2.2.0，客户端 c39，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」；2.1 新增「记一条」与「本轮注入」，2.2 新增「本会话固定/排除」、「整理」与类型筛选）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
 
 ## 发布
 
@@ -95,7 +97,7 @@ node _meta/scripts/publish-public.mjs --dir D:\dsh-memory-public --orphan
 
 ## 加载形状闸门
 
-`node _meta/scripts/check-plugin-load.mjs`（零依赖；CI 第一步，在 validate 之前）：严格解析仓库内全部 JSON 配置并禁止 UTF-8 BOM（对应 1.14.0 的 BOM outage 类问题）；校验插件 manifest 的 `name`/`type`/`dsh.bundle.patch`/`dsh.client.platform`/`version`（与根 `VERSION` 一致）与 engine manifest（`@local/kb-engine`/version 与根 `VERSION` 一致），并确认 `exports`/`files` 指向的文件（含 11 个 engine 文件）都存在；校验 bundle patch 无 BOM、形如 loader patch 列表且含 `@local/kb-panel`；对引擎与插件的 21 个 JS 跑 `node --check`。它是**静态加载形状检查**（不启动 DSH Host），保证“loader 会碰的东西都存在且能解析”；CI 在 `validate` 前先跑它，本地改插件/engine/清单后也应先跑一次。
+`node _meta/scripts/check-plugin-load.mjs`（零依赖；CI 第一步，在 validate 之前）：严格解析仓库内全部 JSON 配置并禁止 UTF-8 BOM（对应 1.14.0 的 BOM outage 类问题）；校验插件 manifest 的 `name`/`type`/`dsh.bundle.patch`/`dsh.client.platform`/`version`（与根 `VERSION` 一致）与 engine manifest（`@local/kb-engine`/version 与根 `VERSION` 一致），并确认 `exports`/`files` 指向的文件（含 11 个 engine 文件）都存在；校验 bundle patch 无 BOM、形如 loader patch 列表且含 `@local/kb-panel`；对引擎与插件的 22 个 JS 跑 `node --check`。它是**静态加载形状检查**（不启动 DSH Host），保证“loader 会碰的东西都存在且能解析”；CI 在 `validate` 前先跑它，本地改插件/engine/清单后也应先跑一次。
 
 ## 插件单测
 
@@ -113,7 +115,9 @@ node _meta/plugin/kb-panel/test/stores.test.mjs
 node _meta/plugin/kb-panel/test/promote.test.mjs
 node _meta/plugin/kb-panel/test/context.test.mjs
 node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
-# 共 159 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 26 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 21 / context 5 / behavior-matrix 9
+node _meta/plugin/kb-panel/test/memory-rank.test.mjs
+node _meta/plugin/kb-panel/test/engine-api.test.mjs
+# 共 172 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 29 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 21 / context 5 / behavior-matrix 9 / memory-rank 7 / engine-api 3
 ```
 
 ## 脚本单测（export rules）

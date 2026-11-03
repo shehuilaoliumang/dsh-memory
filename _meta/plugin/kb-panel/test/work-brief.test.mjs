@@ -276,3 +276,36 @@ test('pickBySourceControls: no controls matches pickBySource, mute wins over pin
   });
   assert.deepEqual(conflicting.globalPicked.map((note) => note.id), ['b']);
 });
+
+test('rankMemories: inject exposure is down-weighted against explicit reads', () => {
+  const notes = [
+    atom({ id: '2026-11-01-a-0001', updated: '2026-11-01' }),
+    atom({ id: '2026-11-02-a-0002', updated: '2026-11-02' }),
+  ];
+  const rows = [
+    ...Array.from({ length: 10 }, () => ({ id: '2026-11-02-a-0002', t: '2026-11-02T00:00:00+08:00', how: 'inject' })),
+    { id: '2026-11-01-a-0001', t: '2026-11-02T00:00:00+08:00', how: 'read' },
+  ];
+  const ranked = rankMemories(notes, rows, 'global', { now: Date.parse('2026-11-03T00:00:00+08:00') });
+  assert.equal(ranked[0].id, '2026-11-01-a-0001', 'one explicit read is not dominated by 10 exposures');
+});
+
+test('rankMemories: exploration slot surfaces the newest never-exposed note', () => {
+  const notes = [
+    atom({ id: '2026-11-01-a-0001', updated: '2026-11-01' }),
+    atom({ id: '2026-11-02-a-0002', updated: '2026-11-02' }),
+    atom({ id: '2026-11-03-a-0003', updated: '2026-11-03' }),
+  ];
+  const rows = [
+    { id: '2026-11-01-a-0001', t: '2026-11-02T00:00:00+08:00', how: 'read' },
+    { id: '2026-11-02-a-0002', t: '2026-11-02T00:00:00+08:00', how: 'read' },
+  ];
+  const plain = rankMemories(notes, rows, 'global', { now: Date.parse('2026-11-03T00:00:00+08:00') });
+  assert.equal(plain[0].id, '2026-11-02-a-0002', 'tie broken by updated');
+  const explored = rankMemories(notes, rows, 'global', {
+    now: Date.parse('2026-11-03T00:00:00+08:00'),
+    exploration: 1,
+  });
+  assert.equal(explored[1].id, '2026-11-03-a-0003');
+  assert.equal(explored[0].id, '2026-11-02-a-0002');
+});

@@ -1,10 +1,10 @@
 ---
-title: 知识库规范 v2.2.0
+title: 知识库规范 v2.3.0
 status: canon
 updated: 2026-11-03
 ---
 
-# 知识库规范 v2.2.0
+# 知识库规范 v2.3.0
 
 > 规范文档：agent 必须遵守，人按它维护。协议摘要见根目录 `AGENTS.md`，这里是完整版。
 
@@ -284,7 +284,7 @@ updated: 2026-10-20
 注入 = core.md（全局硬约束）
      + level=digest 且 status=active 且 type ∉ {topic, work, session}
        且 scope ∈ {global, 本会话选定的 project:<slug>} 的条目（最多 5 条）
-       排序（线上）：当前真相 × 衰减热度（access.jsonl，30 天半衰期）× updated × id 序号
+       排序（线上，v2.3）：当前真相 × 曝光降权后的衰减热度（access.jsonl 按 how 加权：inject×0.1、read/grep/manual×1；30 天半衰期）× updated × id 序号；项目 store 额外保留 1 个 exploration 槽（最新未曝光条目放位置 2）
        `consolidate` 仍保留 shadow 对比，供审计排序变化
      + 工作页简报（§13，每节最多 3 项、单项 60 字、总长 ≤420 字，不占上面 5 条预算）
 ```
@@ -316,7 +316,7 @@ updated: 2026-10-20
 
 ## 7. 索引格式
 
-`_meta/catalog.jsonl`：一行一篇，单行 ≤300 字节（中文按 3 字节计；当前实测 253–300，接近上限时 `fitRow` 只缩短索引里的 summary，不动笔记正文），便于 grep。
+`_meta/catalog.jsonl`：一行一篇，单行 ≤300 字节（中文按 3 字节计；`fitRow` 在 300B 预算内依次缩短索引里的 `summary → title → scope → subject`，不动笔记正文），便于 grep。v2.3 起行内包含 `title`/`scope`/`subject`（分别 clamp 60/40/60 字符）作为**注入源**：注入优先读它（mtime+size 缓存），缺失/损坏回退逐文件扫描；**手工改原子后必须 `rebuild`**（索引是派生物，规则不变）。
 
 ```json
 {"id":"2026-10-20-a-0009","path":"20_Digest/atoms/2026-10-20-a-0009.md","level":"digest","type":"preference","status":"active","tags":["知识库"],"summary":"英文路径+中文显示","updated":"2026-10-20"}
@@ -387,7 +387,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 | 包名 | `@local/kb-panel`（本地目录安装，源码 `_meta/plugin/kb-panel/`） |
 | Host | `systemPrompt.context()` 注入 `30_Canon/core.md` + 工作页简报（§13）；`GET /kb/panel.json` 提供派生快照；`GET /kb/ingest.json` 提供触发器状态（cursor/窗口/队列） |
 | 触发器 | `ingest.js`：监听 `session/event` 的 `turn/end` → 第 1 步原文追加；按会话 cwd 选可写项目库，外部库走 `kb.mjs --root <store>`；未命中时仅 legacy root/无 cwd 回退 legacy ingestor，跳过子会话与记忆开关 `off`；静默/兜底/轮数 → 第 2 步 `candidates` 调度；第 3 步由 `judge.js` 直调 deepseek-flash，队列只用于重试/审计；`index.js` 在 `agent/created` 与 `turn/end` 兜底时按项目判定自动建库并允许记录（§17.9）；`POST /kb/atom/to-global` 把单条已确认原子提升到全局库并把源条置 `promoted`（§17.10）；`POST /kb/workspace/rename` 改显示名、`POST /kb/workspace/relocate` 确认文件夹迁移（§17.11） |
-| Client | `conversation.composer.dock` 的 `kb-memory` 条目：chip 显示“已记住 N · 待确认 N”，弹层显示三项计数与最近记住；侧栏“记忆”页四页签（待确认/已记住/项目状态/全部），默认待确认，隐藏 raw/session，详情按状态给确认/归档/改范围，正文 Markdown 渲染；工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，客户端 c39：胶囊触发钮、玻璃菜单、选中品牌色、外点/Escape 关闭、`aria-haspopup/listbox/option`；状态条 `position: relative` + `z-index: 40` 保证下拉浮于内容卡之上；玻璃表面底不透明度 92–96%，≥90% 并保留 `backdrop-filter`；改名用自绘玻璃对话框，Enter 保存 / Escape 或点遮罩取消，Electron 无 `window.prompt`），显示各库 `project.json.title`（legacy 同）；已确认 digest 原子详情提供「提升为全局」（c30，§17.10）；project 与 legacy 可写工作区显示「改名」、迁移候选时显示「重新定位到当前路径」卡片（c36 起区分「已迁移」与「未确认副本」两种文案）；2.1 起（c37）新增「记一条」对话框（空态引导按钮，`POST /kb/remember`，默认 inbox、必须人工确认）与「本轮注入」折叠卡（只读展示 `/kb/panel.json` 的 `injection` manifest）；2.2 起（c39）注入卡给固定标识、详情可「本会话固定/排除」（`POST /kb/session/memory`，ephemeral、快照 `session.memoryControls`）、新增「整理」对话框（归档过期/重复旧副本/确认热候选，走 `/kb/atoms/batch`）与类型筛选 chips（含计数）；`sidebar.footer.action` 的「刷新界面」主按钮只重读面板快照（软刷新，不卸载页面），右侧菜单的「完整重载界面」空闲即重载、忙时排队到全部会话空闲后自动重载，绝不强制中断 |
+| Client | `conversation.composer.dock` 的 `kb-memory` 条目：chip 显示“已记住 N · 待确认 N”，弹层显示三项计数与最近记住；侧栏“记忆”页四页签（待确认/已记住/项目状态/全部），默认待确认，隐藏 raw/session，详情按状态给确认/归档/改范围，正文 Markdown 渲染；工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，客户端 c40：胶囊触发钮、玻璃菜单、选中品牌色、外点/Escape 关闭、`aria-haspopup/listbox/option`；状态条 `position: relative` + `z-index: 40` 保证下拉浮于内容卡之上；玻璃表面底不透明度 92–96%，≥90% 并保留 `backdrop-filter`；改名用自绘玻璃对话框，Enter 保存 / Escape 或点遮罩取消，Electron 无 `window.prompt`），显示各库 `project.json.title`（legacy 同）；已确认 digest 原子详情提供「提升为全局」（c30，§17.10）；project 与 legacy 可写工作区显示「改名」、迁移候选时显示「重新定位到当前路径」卡片（c36 起区分「已迁移」与「未确认副本」两种文案）；2.1 起（c37）新增「记一条」对话框（空态引导按钮，`POST /kb/remember`，默认 inbox、必须人工确认）与「本轮注入」折叠卡（只读展示 `/kb/panel.json` 的 `injection` manifest）；2.2 起（c39）注入卡给固定标识、详情可「本会话固定/排除」（`POST /kb/session/memory`，ephemeral、快照 `session.memoryControls`）、新增「整理」对话框（归档过期/重复旧副本/确认热候选，走 `/kb/atoms/batch`）与类型筛选 chips（含计数）；2.3 起（c40）新增「深度搜索」（只读 `GET /kb/search.json?workspace&q&limit`，服务端 BM25 顺序展示，本地输入仍子串过滤）；`sidebar.footer.action` 的「刷新界面」主按钮只重读面板快照（软刷新，不卸载页面），右侧菜单的「完整重载界面」空闲即重载、忙时排队到全部会话空闲后自动重载，绝不强制中断 |
 | 数据 | 阅读：只读遍历三层目录 + 读索引行数。写入：只经 `kb.mjs`（append-session / rebuild / candidates / log），不直接改笔记与 `_meta/*.jsonl`；运行状态在 `_meta/state/`（gitignore） |
 | 迭代 | 改源码后在插件管理器 `include:kb-panel` 上禁用→启用才能热加载；`plugin_manager install_bundle` 重装可能需重启 |
 | 验证 | `cordis_inspect_query`（client `Slots.listSubTree` 找 `kb-memory`）+ `GET /kb/panel.json`、`GET /kb/ingest.json` 200；单测十个文件共 149 条（含 stores 20 自动建库判定与改名/迁移/授权来源、context 5 上下文/写权限、promote 5 全局提升、ingest 外部 `--root` 路由、N5 冲突、跨库仲裁/预算与 redact 断言） |
@@ -427,7 +427,7 @@ node _meta/scripts/kb.mjs validate
 node _meta/scripts/kb.mjs rebuild --dry-run
 ```
 
-已知限制（v2.2.0）：frontmatter 解析已收敛到引擎共享模块（`_meta/engine/lib/shared/frontmatter.mjs`，插件直接 import engine，2.1 起 shim 已删除），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），引擎本身不感知会话生命周期；`check-plugin-load.mjs` 是**静态加载形状检查**（JSON 解析/禁 BOM/manifest 与文件存在/patch 形状/`node --check`），不替代真实 DSH Host 启动。**版本号纪律**：UI/文档补丁走 patch，行为变更才 minor（2.1/2.2 均为行为 minor），结构性模块/依赖变化走 major（2.0.0）。
+已知限制（v2.3.0）：frontmatter 解析已收敛到引擎共享模块（`_meta/engine/lib/shared/frontmatter.mjs`，插件直接 import engine，2.1 起 shim 已删除），仍只支持单行 `key: value`、行内数组与布尔/数字标量；裁判需要 LLM，脚本只产候选；`consolidate` 的 stale 判定用 `updated` 与最近召回时间中较晚的一个（`access.jsonl` 已接召回）；第 1/2 步的触发在插件里（§5 触发实现），引擎本身不感知会话生命周期；`check-plugin-load.mjs` 是**静态加载形状检查**（JSON 解析/禁 BOM/manifest 与文件存在/patch 形状/`node --check`），不替代真实 DSH Host 启动；注入读 catalog（派生索引）时，手工改笔记未 `rebuild` 会读到旧值。**版本号纪律**：UI/文档补丁走 patch，行为变更才 minor（2.1–2.3 均为行为 minor），结构性模块/依赖变化走 major（2.0.0）。
 
 ## 13. 工作层（工作页，v1.4 新增）
 
@@ -549,9 +549,9 @@ node _meta/scripts/smoke.ps1   # 冒烟 106/106（夹具自包含）；插件 14
 | 简化 ingest | 先测量接管、自检、去重与失败窗口的故障率再删代码；`test/FAULT-INJECTION.md` 把每类机制映射到测试，删掉会失败；保留 raw 追加这一最小路径 |
 | HTTP 本机令牌 | `index.js` 每次启动生成 local token 写 `_meta/state/http-token`（0600）；非浏览器写请求需 `x-kb-local-token`，loopback 之外的连接一律 403 |
 
-验收：`node _meta/scripts/kb.mjs version` 输出 2.2.0；`node _meta/engine/bin/kb.mjs --root . validate` 通过（engine 直连，零 DSH 依赖）；`node _meta/scripts/check-plugin-load.mjs` 通过（6 个 JSON 配置、9 个 manifest 文件、11 个 engine 文件、2 个 locale、22 个 JS 语法；带 BOM 的 JSON 负向自测 exit 1）；`init` 可重复执行并给项目库写自忽略 `.gitignore`；同一分钟两个会话 validate 通过；`stores` 自动建库判定/已有库不自动接入、`store_id` 补写与文件夹改名重定位/复制库需确认、`autoWritable`/`autoGranted` 授权来源与收回、`folderBirthtimeMs` 双信号迁移、`withRegistryLock` 跨进程 registry 锁、`/kb/remember` 只写当前可写库且默认 inbox、`/kb/session/memory` 的 pin/mute 只影响 live 会话且不改笔记状态、`inject.rankMode` 默认 heat 且 relevance 与 prompt/manifest 同源、`/kb/consolidate` 明细与整理动作只走 `/kb/atoms/batch`、`/kb/panel.json` 的 `injection` manifest 与 prompt 注入同源、engine `runCli`/`createEngine` 进程内 API 不污染宿主状态、legacy 由 policy（`scopeMode`/`injectLimit`/`trustedBy`）表达且 `kind` 仅作标识、ingest 外部 `--root` 路由测试、N5 同 subject 冲突与跨库仲裁测试、promote 5 条全局提升测试通过；`add-atom --json-file` 的 `note` 落到「## 备注」；新项目库首次 `set-status` 自动创建 `_meta/log.md`；冒烟 106/106、插件 172/172（含 `context.test.mjs` 5、`behavior-matrix.test.mjs` 9、`memory-rank.test.mjs` 7、`engine-api.test.mjs` 3）、脚本测试 17/17；**本地完整库** `validate` 11 篇（core.md + 自动捕获的 10_Raw 会话 + 1 工作页 + 4 digest 原子 + 4 决策）/主索引 9 行 + 归档 1 行、0 警告；**公开快照不得含 `access*`（任意后缀）/`_meta/state/`/`10_Raw/`/`PROJECT_PLAN.md`（export 排除 + publish 硬闸双重）**；CI「Build sanitized public snapshot」做植入式负向回归（写入 `_meta/access-test.jsonl` 与 `.jsonl.bak`，导出后断言均不在快照并清理）；导出会把 session UUID/原文路径清洗为 `session-<redacted>`/`10_Raw/sessions/<redacted>.md`，**session id 清洗与断言的 hex 下限为 6**（6–7 位短 id 也清洗），CI 在导出快照上再查一遍禁止文件与 session id，并植入 `_meta/rules/session-test.md`（短/长 id）断言必须被清洗；engine 不 import DSH/插件，依赖方向单向（plugin → engine）。
+验收：`node _meta/scripts/kb.mjs version` 输出 2.3.0；`node _meta/engine/bin/kb.mjs --root . validate` 通过（engine 直连，零 DSH 依赖）；`node _meta/scripts/check-plugin-load.mjs` 通过（6 个 JSON 配置、9 个 manifest 文件、11 个 engine 文件、2 个 locale、22 个 JS 语法；带 BOM 的 JSON 负向自测 exit 1）；`init` 可重复执行并给项目库写自忽略 `.gitignore`；同一分钟两个会话 validate 通过；`stores` 自动建库判定/已有库不自动接入、`store_id` 补写与文件夹改名重定位/复制库需确认、`autoWritable`/`autoGranted` 授权来源与收回、`folderBirthtimeMs` 双信号迁移、`withRegistryLock` 跨进程 registry 锁、`/kb/remember` 只写当前可写库且默认 inbox、`/kb/session/memory` 的 pin/mute 只影响 live 会话且不改笔记状态、`inject.rankMode` 默认 heat 且 relevance 与 prompt/manifest 同源、**热度按 how 加权（inject×0.1、read/grep/manual×1）与项目 store 1 个 exploration 槽**、**注入优先读 catalog 且缺失/损坏回退 scanNotes（手工改后需 rebuild）**、`/kb/consolidate` 明细与整理动作只走 `/kb/atoms/batch`、`/kb/panel.json` 的 `injection` manifest 与 prompt 注入同源、**只读 `GET /kb/search.json` 返回本店白名单内 BM25 结果且不记录 access**、engine `runCli`/`createEngine` 进程内 API 不污染宿主状态、legacy 由 policy（`scopeMode`/`injectLimit`/`trustedBy`）表达且 `kind` 仅作标识、ingest 外部 `--root` 路由测试、N5 同 subject 冲突与跨库仲裁测试、promote 5 条全局提升测试通过；`add-atom --json-file` 的 `note` 落到「## 备注」；新项目库首次 `set-status` 自动创建 `_meta/log.md`；冒烟 106/106、插件 174/174（含 `context.test.mjs` 5、`behavior-matrix.test.mjs` 9、`inject-ranking.test.mjs` 7、`engine-api.test.mjs` 3）、脚本测试 17/17；**本地完整库** `validate` 12 篇（core.md + 自动捕获的 10_Raw 会话 + 1 工作页 + 4 digest 原子 + 5 决策）/主索引 10 行 + 归档 1 行、0 警告；**公开快照不得含 `access*`（任意后缀）/`_meta/state/`/`10_Raw/`/`PROJECT_PLAN.md`（export 排除 + publish 硬闸双重）**；CI「Build sanitized public snapshot」做植入式负向回归（写入 `_meta/access-test.jsonl` 与 `.jsonl.bak`，导出后断言均不在快照并清理）；导出会把 session UUID/原文路径清洗为 `session-<redacted>`/`10_Raw/sessions/<redacted>.md`，**session id 清洗与断言的 hex 下限为 6**（6–7 位短 id 也清洗），CI 在导出快照上再查一遍禁止文件与 session id，并植入 `_meta/rules/session-test.md`（短/长 id）断言必须被清洗；engine 不 import DSH/插件，依赖方向单向（plugin → engine）。
 
-## 17. 多项目记忆库与全局偏好（v1.10 新增，v1.11 外部写入，v1.12 审计清偿，v1.13 跨库仲裁，v1.16 自动建库，v1.17 全局提升，v1.18 改名迁移，v1.18.2 层叠修复，v1.18.3 不透明度，v1.18.4 改名对话框，v1.19 授权/迁移信任硬化，v1.19.1 导出卫生/编号避让，v1.19.2 公开可见卫生，v1.19.3 闸门后缀/本地历史声明，v1.19.4 短 session id 下限，v2.0 引擎解耦/上下文收敛，v2.1 记忆启用/可解释注入，v2.2 记忆控制/相关性/库面 policy）
+## 17. 多项目记忆库与全局偏好（v1.10 新增，v1.11 外部写入，v1.12 审计清偿，v1.13 跨库仲裁，v1.16 自动建库，v1.17 全局提升，v1.18 改名迁移，v1.18.2 层叠修复，v1.18.3 不透明度，v1.18.4 改名对话框，v1.19 授权/迁移信任硬化，v1.19.1 导出卫生/编号避让，v1.19.2 公开可见卫生，v1.19.3 闸门后缀/本地历史声明，v1.19.4 短 session id 下限，v2.0 引擎解耦/上下文收敛，v2.1 记忆启用/可解释注入，v2.2 记忆控制/相关性/库面 policy，v2.3 热度修正/catalog 注入/深度搜索）
 
 ### 17.1 目标
 
@@ -704,7 +704,7 @@ node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tm
 
 验收：插件 149/149（stores 20 与 context 5）；对 project/legacy 工作区改名只变 `project.json.title`、slug/scope 不变，global 改名被拒（400）；改名走自绘对话框（Electron 无 window.prompt，Enter 保存 / Escape 取消）；选择器显示 `project.json.title`（legacy 显示实际名称如 “DSH Memory”），下拉菜单浮于内容卡之上（状态条 z-index），玻璃表面不透明度 ≥90%（92–96%）；自动建库 `provision.autoWritable=false` 时只读、`autoGranted` 记录/清除与 `--read-only` 收回归档；文件夹改名（旧路径消失 + `folderBirthtimeMs` 一致）自动重定位且保留 `writable`/`autoGranted`；复制/克隆或无 birthtime 的旧行需人工确认（确认后保留 `writable`、去掉 `autoGranted`）；未注册 clone 库不自动绑定；`validate` 3 篇/2 行、0 警告。
 
-## 18. 审计清偿与跨库加固（v1.12 新增，v1.13–v2.2.0 扩展）
+## 18. 审计清偿与跨库加固（v1.12 新增，v1.13–v2.3.0 扩展）
 
 - 同一 `subject` 最多一条 `active`；`validate` 是硬门禁，写入 API 在落盘前拦截；替换必须显式 `supersedes`，注入/面板统一按 subject 取最新 active。
 - 跨库同一 subject 冲突由 `selectInjection` 先合并仲裁、再按 source 预算；注入与 `injected` 计数共用该函数，不能先单库截断再拼接（c-0016）。
@@ -718,13 +718,14 @@ node _meta/scripts/kb.mjs --root <tmp>\.dsh-memory attach --write --registry <tm
 - 工作区改名只改 `project.json.title`，不动 slug/scope；文件夹迁移靠 `store_id` 认库：旧路径消失才自动重定向 registry，旧路径仍在必须人工确认，不扫盘、不接受客户端路径（c-0021，§17.11）。
 - 未做项（进程级认证、跨库锁/队列）在 c-0015 记录“不做+理由”；连续复审若仍列为必须项，下一轮 CHANGELOG 必须显式回应，不能静默略过。
 
-## 19. 引擎包与上下文收敛（v2.0，v2.1/v2.2 扩展）
+## 19. 引擎包与上下文收敛（v2.0，v2.1/v2.2/v2.3 扩展）
 
 - **引擎包**：规则层实现位于 `_meta/engine/`（`@local/kb-engine`）：`bin/kb.mjs` → `lib/cli.mjs`（全部 CLI 命令），`lib/stores.mjs`/`work-brief.mjs`/`redact.mjs`/`promote.mjs`/`context.mjs`/`shared/*`/`index.mjs`，加 `package.json`（`bin` + `exports` 子路径）与 README。零 DSH/插件 import，root 由 `--root`/`KB_ROOT`/`KB_DEFAULT_ROOT` 决定。
 - **兼容层**：`_meta/scripts/kb.mjs` 是 20 行兼容包装（默认 root = 本仓库 vault，转 engine CLI）；**2.1 起 6 个插件 shim 已删除**，插件直接 import `_meta/engine/lib/*`（engine ← plugin 单向依赖不变）；**2.2 起 `bin/kb.mjs` 与兼容包装都是薄入口**，真实实现与状态只在 `lib/cli.mjs`；新集成直接用 engine。
 - **上下文语义（context.mjs）**：`describeStore()` 统一 global/legacy/project 同形描述（`root`/`kind`/`slug`/`scope`/`writable`），**2.2 起行为字段由 policy 表达**：legacy = `{ scopeMode: 'global', injectLimit: 5, trustedBy: 'config' }`，project = `scopeMode: 'project'`；`kind` 只作标识（legacy 是 UI/身份标签），registry 行携带 `policy`，`findProjectStore` 为 legacy 根合成 config 策略 entry，`writableProjectStore` 不再排除 legacy。`resolveContext(cwd, opts)` 返回 stores + scope + writeTarget（含 `role`/`trustedBy`）；`resolveWriteTarget()` 是唯一写权限——可写且已接入的 project 优先，其次 cwd 位于显式 legacy vault 内写 legacy，否则 `null`（fail closed）。插件 mode/scope/turn-end 路由/external ingestor 谓词/attach/relocate/workspaceState/`/kb/remember` 全部经它。
 - **公开接口**：CLI（`node _meta/engine/bin/kb.mjs --root <store> validate|rebuild|add-atom|…`）与模块导出（`lib/index.mjs`：context/stores/work-brief/promote/redact/shared；`package.json.exports` 支持子路径 import）；**2.2 起进程内 API**：`runCli(argv, { root })` → `{ code, stdout, stderr }`、不污染宿主 `process.exitCode`/stdout，`createEngine({ root }).run(argv)` 为状态化门面；**同步、单线程、单根顺序**，禁止命令内重入。
 - **2.1 加固**：`stores.mjs` 增加跨进程 registry 锁 `withRegistryLock`（读-改-写串行化，1 条回归）；导出安全规则抽为纯函数 `_meta/scripts/lib/export-rules.mjs`（`_meta/scripts/test/export-rules.test.mjs` 17 用例，CI 新增「Script unit tests (export rules)」步骤）；`check-plugin-load.mjs` 校验 engine 清单/版本/语法（当前 6 JSON / 9 manifest / 11 engine / 2 locale / 22 JS）。
-- **闸门与覆盖**：`behavior-matrix.test.mjs` 9 用例覆盖 legacy / 项目可写 / 项目只读 / 未接入 / 改名双信号 / 复制确认 / 多轮路由序列 / `describeStore` 契约；`memory-rank.test.mjs` 7、`engine-api.test.mjs` 3；插件单测合计 172。
+- **2.3 算法与规模化**：`work-brief.mjs` 的 `rankMemories` 支持 `injectWeight`（默认 0.1，曝光降权）与 `exploration`（默认 0，项目 store 传 1，把最新未曝光条目放到位置 2）；`toRow` 增加 `title`/`scope`/`subject` 并在 `fitRow` 的 300B 预算内按 `summary → title → scope → subject` 缩短；`search` 的 BM25 文档字段权重为 `title×3`、`summary×2`、`tags/scope/body×1`；插件提供只读 `GET /kb/search.json`（白名单过滤、不记 access）。
+- **闸门与覆盖**：`behavior-matrix.test.mjs` 9 用例覆盖 legacy / 项目可写 / 项目只读 / 未接入 / 改名双信号 / 复制确认 / 多轮路由序列 / `describeStore` 契约；`inject-ranking.test.mjs` 7（曝光权重/exploration/relevance）、`engine-api.test.mjs` 3；插件单测合计 174。
 
-验收：`node _meta/engine/bin/kb.mjs --root . validate` 通过（engine 直连，零 DSH 依赖）；`node _meta/scripts/kb.mjs` 旧命令输出不变；`runCli`/`createEngine` 进程内命令与错误码不泄漏；插件 172/172（含 context 5、behavior-matrix 9、memory-rank 7、engine-api 3）、脚本 17/17、冒烟 106/106、本地 `validate` 11 篇（主索引 9 + 归档 1）、0 警告；engine 无 DSH/插件 import，依赖单向（plugin → engine）。
+验收：`node _meta/engine/bin/kb.mjs --root . validate` 通过（engine 直连，零 DSH 依赖）；`node _meta/scripts/kb.mjs` 旧命令输出不变；`runCli`/`createEngine` 进程内命令与错误码不泄漏；插件 174/174（含 context 5、behavior-matrix 9、inject-ranking 7、engine-api 3）、脚本 17/17、冒烟 106/106、本地 `validate` 12 篇（主索引 10 + 归档 1）、0 警告；engine 无 DSH/插件 import，依赖单向（plugin → engine）。

@@ -79,7 +79,15 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 ## 引擎包（可继承性）
 
-v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。v2.1 起 6 个插件 shim 已删除，插件直接 import `_meta/engine/lib/*`；engine 增加跨进程 registry 锁 `withRegistryLock`，导出规则抽为纯函数并进 CI。v2.2 起提供**进程内 API**：`runCli(argv, { root })` → `{ code, stdout, stderr }`、不污染宿主状态，`createEngine({ root }).run(argv)` 为状态化门面（同步、单线程、单根顺序）；同时库面行为改由 **policy** 表达（legacy 不是独立行为分支，见下）。2.0.0 是结构版本（行为不变），2.1/2.2 是行为 minor。
+v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。v2.1 起 6 个插件 shim 已删除，插件直接 import `_meta/engine/lib/*`；engine 增加跨进程 registry 锁 `withRegistryLock`，导出规则抽为纯函数并进 CI。v2.2 起提供**进程内 API**：`runCli(argv, { root })` → `{ code, stdout, stderr }`、不污染宿主状态，`createEngine({ root }).run(argv)` 为状态化门面（同步、单线程、单根顺序）；同时库面行为改由 **policy** 表达（legacy 不是独立行为分支，见下）。v2.3 起排序按曝光加权（`inject`×0.1）、项目 store 带 1 个 exploration 槽，注入优先读 `catalog.jsonl`（含 title/scope/subject），BM25 检索按字段加权。2.0.0 是结构版本（行为不变），2.1–2.3 是行为 minor。
+
+## v2.3 新增（算法正确性与规模化）
+
+- **曝光降权**：access 行按 `how` 加权，`inject`（每轮曝光）×0.1、read/grep/manual×1；旧日志里 99% 是 inject 的自反馈不再主导排序。
+- **exploration 槽**：项目 store 每轮保留 1 个位置给「最新未曝光」记忆（放位置 2，保留第一推荐）。
+- **catalog 驱动注入**：`catalog.jsonl` 行新增 `title`/`scope`/`subject`（300B 行预算内按 summary→title→scope→subject 缩），注入优先读索引（mtime+size 缓存），缺失/损坏回退逐文件扫描；**手工改原子后必须 `rebuild`**。
+- **access 热度缓存**：插件按 `access.jsonl` 的 mtime+size 缓存解析，重复 prompt 不再全量重读遥测。
+- **深度搜索**：engine BM25 字段权重 `title×3`、`summary×2`；记忆页「深度搜索」走只读 `GET /kb/search.json`（本店白名单过滤、不记 access，客户端 c40）。
 
 ## v2.2 新增（记忆控制与库面策略）
 
@@ -130,7 +138,7 @@ node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
 node --test --test-isolation=none _meta/scripts/test/export-rules.test.mjs
 ```
 
-当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 172 条全过、脚本测试 17 条全过；**本地完整库** `validate` 11 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 4 决策）/主索引 9 行 + 归档 1 行、0 警告；公开快照（无 `10_Raw/`）的 `validate` 计数随 2.2.0 快照导出复核后回填。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
+当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 174 条全过、脚本测试 17 条全过；**本地完整库** `validate` 12 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 5 决策）/主索引 10 行 + 归档 1 行、0 警告；公开快照（无 `10_Raw/`）的 `validate` 计数随 2.3.0 快照导出复核后回填。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
 
 ## 裁判评估
 
@@ -152,7 +160,7 @@ node _meta/scripts/eval-judge.mjs --golden _meta/rules/golden.jsonl `
 
 ## 公开快照说明
 
-公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*` 任意后缀、`PROJECT_PLAN.md` 并重建索引；**导出还会清洗 session UUID 与原文文件名**（`session-<redacted>` / `10_Raw/sessions/<redacted>.md`），CI 在导出快照上再查一遍禁止文件与 session id），`publish-public.mjs` 发布前再做一次硬闸。1.19.2 已发布（public commit `55844c3`）；1.19.3（第十二轮小缝清偿）已发布（public commit `4b020ac`、tree `058cc5d`、CI `41434489680` 全绿）；1.19.4（短 session id 下限关闭，最后一个补丁版）已发布；**2.0.0（A/B 结构版本：engine 解耦 + context 收敛）已发布（release commit `30e50f1`）**；**2.1.0（记忆启用/护栏/注入可解释，行为 minor）已发布（public commit `6fae504`）**；**2.2.0（记忆控制/相关性/整理 + 进程内 API/库面 policy，行为 minor）随本次快照发布**，提交与 CI 结果见 `main` 历史。**本地历史**：本 README 与 CHANGELOG 里引用的 git `bdf14e3` 是本地私有仓库历史，公开仓库不可解析（保留 id 仅为对照）。**orphan 残余**：已泄漏提交的 GitHub 对象与既有 clone 不因 force-push/`--orphan` 消失，本仓库只保证 `main` 可达历史不含该文件。
+公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*` 任意后缀、`PROJECT_PLAN.md` 并重建索引；**导出还会清洗 session UUID 与原文文件名**（`session-<redacted>` / `10_Raw/sessions/<redacted>.md`），CI 在导出快照上再查一遍禁止文件与 session id），`publish-public.mjs` 发布前再做一次硬闸。1.19.2 已发布（public commit `55844c3`）；1.19.3（第十二轮小缝清偿）已发布（public commit `4b020ac`、tree `058cc5d`、CI `41434489680` 全绿）；1.19.4（短 session id 下限关闭，最后一个补丁版）已发布；**2.0.0（A/B 结构版本：engine 解耦 + context 收敛）已发布（release commit `30e50f1`）**；**2.1.0（记忆启用/护栏/注入可解释，行为 minor）已发布（public commit `6fae504`）**；**2.2.0（记忆控制/相关性/整理 + 进程内 API/库面 policy，行为 minor）已发布（public commit `02f4442`）**；**2.3.0（曝光降权/exploration/catalog 注入/深度搜索，行为 minor）随本次快照发布**，提交与 CI 结果见 `main` 历史。**本地历史**：本 README 与 CHANGELOG 里引用的 git `bdf14e3` 是本地私有仓库历史，公开仓库不可解析（保留 id 仅为对照）。**orphan 残余**：已泄漏提交的 GitHub 对象与既有 clone 不因 force-push/`--orphan` 消失，本仓库只保证 `main` 可达历史不含该文件。
 
 ## 隐私说明
 

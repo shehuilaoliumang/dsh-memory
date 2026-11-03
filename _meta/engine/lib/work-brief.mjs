@@ -220,20 +220,38 @@ export function pickBySourceControls(entries, options = {}) {
  * Rank injectable memories for the shadow comparison in `consolidate`:
  * current truth (one per subject) × decayed heat × recency.
  * This function is pure so the report can be tested without a vault or clock.
+ *
+ * v2.3 heat correctness: the historical `inject` recall rows count as exposure,
+ * not as user demand, so they are down-weighted (`injectWeight`, default 0.1).
+ * Explicit reads/grep/manual rows keep full weight. Without this split the top
+ * memories reinforce themselves forever (`inject` was 99% of the old log).
+ *
+ * `exploration` (default 0) reserves a slot for the newest never-exposed memory:
+ * the historical order was pure exploitation, so a new atom with heat 0 could
+ * never enter the fixed 2/3/5 budget.
  */
 export function rankMemories(notes, accessRows = [], sessionScope = 'global', options = {}) {
   const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
   const halfLifeDays = Number(options.halfLifeDays) > 0 ? Number(options.halfLifeDays) : 30;
   const limit = Number(options.limit) > 0 ? Number(options.limit) : 5;
+  const injectWeight = Number.isFinite(Number(options.injectWeight)) && Number(options.injectWeight) >= 0
+    ? Number(options.injectWeight)
+    : 0.1;
+  const exploration = Math.max(0, Number(options.exploration) || 0);
   const heat = new Map();
+  const exposed = new Set();
   for (const row of accessRows) {
     if (!row || !row.id) continue;
-    const prev = heat.get(row.id) || { count: 0, lastAt: '' };
-    prev.count += 1;
+    const id = String(row.id);
+    exposed.add(id);
+    const how = String(row.how || '');
+    const weight = how === 'inject' ? injectWeight : 1;
+    const prev = heat.get(id) || { count: 0, lastAt: '' };
+    prev.count += weight;
     if (String(row.t || '') > prev.lastAt) prev.lastAt = String(row.t || '');
-    heat.set(row.id, prev);
+    heat.set(id, prev);
   }
-  return currentTruthNotes(notes, sessionScope)
+  const ordered = currentTruthNotes(notes, sessionScope)
     .map((note) => {
       const recalled = heat.get(note.id);
       return {
@@ -249,7 +267,25 @@ export function rankMemories(notes, accessRows = [], sessionScope = 'global', op
         b.order.date.localeCompare(a.order.date) ||
         b.order.seq - a.order.seq ||
         String(b.note.id).localeCompare(String(a.note.id)),
-    )
-    .slice(0, limit)
-    .map((entry) => entry.note);
+    );
+  // Exploitation with a bounded exploration slot: move the newest unexposed note
+  // to the reserved position so a cold-but-relevant memory can be injected.
+  if (exploration > 0 && ordered.length > exploration) {
+    const cold = ordered
+      .filter((entry) => !exposed.has(String(entry.note.id || '')))
+      .sort(
+        (a, b) =>
+          String(b.note.updated || '').localeCompare(String(a.note.updated || '')) ||
+          String(b.note.id).localeCompare(String(a.note.id)),
+      );
+    const pick = cold[0];
+    if (pick) {
+      const index = ordered.indexOf(pick);
+      if (index > exploration) {
+        ordered.splice(index, 1);
+        ordered.splice(exploration, 0, pick);
+      }
+    }
+  }
+  return ordered.slice(0, limit).map((entry) => entry.note);
 }

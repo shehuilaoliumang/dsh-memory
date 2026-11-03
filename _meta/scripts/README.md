@@ -12,7 +12,7 @@
 | `id-next --kind a\|t\|c\|w` | 生成下一个唯一 id | 不写 |
 | `work-new --scope global\|project:S [--title T] [--json]` | 新建工作页（`type: work`，一个 scope 一页；已存在则返回原页） | 摘要层 |
 | `work-brief --scope global\|project:S [--json]` | 生成一条「项目简报」供注入；工作页不是记忆，不占 5 条预算 | 不写 |
-| `search --query Q [--limit N] [--json]` | 只读检索：BM25 + 中文 bigram，查 digest/canon，供按需回查 | 不写 |
+| `search --query Q [--limit N] [--json]` | 只读检索：BM25 + 中文 bigram（v2.3 字段权重 title×3、summary×2、tags/scope/body×1），查 digest/canon，供按需回查；记忆页「深度搜索」经插件只读 `/kb/search.json` 调用同一实现 | 不写 |
 | `append-session --slug S --title T [--role user\|assistant] [--text ...] [--json]` | 追加本轮原文；同 `session_id` 续写，否则新建；`--json` 返回 `{ok,created,action,role,file}`。日常由插件触发器自动调用 | 原文层 |
 | `candidates [--file F\|--text ...] [--json]` | 门控 + 候选句提取，输出喂给裁判 | 不写 |
 | `add-atom --json-file F [--json] [--dry-run]` | 按 schema 写入原子：分配 id、同 type+summary 去重（重复复用已有 id）、默认 `inbox`、重建索引；可选 `note` 写正文「## 备注」（默认裁判来源说明；显式提升写来源） | 摘要层 |
@@ -55,7 +55,8 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - **兼容层**：`_meta/scripts/kb.mjs` 是默认 root 的兼容包装；**2.1 起 6 个插件 shim 已删除，插件直接 import engine**（`_meta/engine/lib/*`）；依赖方向仍为 **engine ← plugin**。
 - **2.1 加固**：`stores.mjs` 增加跨进程 registry 锁 `withRegistryLock`（读-改-写串行化）；导出安全规则抽为纯函数 `_meta/scripts/lib/export-rules.mjs`（17 单测，CI「Script unit tests」步骤）。
 - **2.2 policy**：库存行为由 `policy`（`scopeMode`/`injectLimit`/`trustedBy`）表达，`kind` 只作标识；registry 行携带 `policy`，`resolveContext`/`resolveWriteTarget` 输出 `role`/`trustedBy`。
-- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 6 JSON / 9 manifest / 11 engine / 2 locale / 22 JS）；插件单测 172 条（含 context 5、behavior-matrix 9、memory-rank 7、engine-api 3）。
+- **2.3 算法与规模化**：`rankMemories` 支持 `injectWeight`（默认 0.1，曝光降权）与 `exploration`（默认 0，项目 store 传 1，把最新未曝光条目放到位置 2）；`search` BM25 字段权重 `title×3`/`summary×2`；`toRow` 增 `title`/`scope`/`subject` 并在 300B 预算内由 `fitRow` 缩短；插件注入优先读 catalog（mtime+size 缓存，缺失/损坏回退 scanNotes）。
+- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 6 JSON / 9 manifest / 11 engine / 2 locale / 22 JS）；插件单测 174 条（含 context 5、behavior-matrix 9、inject-ranking 7、engine-api 3）。
 
 ## 设计约束
 
@@ -80,7 +81,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 用 PowerShell 而非 `node:test`：DSH 沙箱禁止 node 子进程用管道 stdio 再 spawn（EPERM），而 kb.mjs 是独立脚本、需要真实执行。
 
-管理页（`@local/kb-panel` v2.2.0，客户端 c39，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」；2.1 新增「记一条」与「本轮注入」，2.2 新增「本会话固定/排除」、「整理」与类型筛选）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
+管理页（`@local/kb-panel` v2.3.0，客户端 c40，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」；2.1 新增「记一条」与「本轮注入」，2.2 新增「本会话固定/排除」、「整理」与类型筛选，2.3 新增「深度搜索」）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
 
 ## 发布
 
@@ -115,9 +116,9 @@ node _meta/plugin/kb-panel/test/stores.test.mjs
 node _meta/plugin/kb-panel/test/promote.test.mjs
 node _meta/plugin/kb-panel/test/context.test.mjs
 node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
-node _meta/plugin/kb-panel/test/memory-rank.test.mjs
+node _meta/plugin/kb-panel/test/inject-ranking.test.mjs
 node _meta/plugin/kb-panel/test/engine-api.test.mjs
-# 共 172 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 29 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 21 / context 5 / behavior-matrix 9 / memory-rank 7 / engine-api 3
+# 共 174 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 31 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 21 / context 5 / behavior-matrix 9 / inject-ranking 7 / engine-api 3
 ```
 
 ## 脚本单测（export rules）

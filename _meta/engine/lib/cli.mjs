@@ -328,6 +328,7 @@ function idIndex(notes) {
 
 function toRow(note) {
   const d = note.data;
+  const oneLine = (value, max) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
   return {
     id: d.id,
     path: note.rel,
@@ -337,6 +338,11 @@ function toRow(note) {
     tags: Array.isArray(d.tags) ? d.tags : d.tags ? [d.tags] : [],
     summary: typeof d.summary === 'string' ? d.summary : '',
     updated: d.updated,
+    // v2.3: injection can read this derived index instead of re-reading every
+    // note file; keep the fields small so fitRow's byte budget still holds.
+    title: oneLine(d.title, 60),
+    scope: oneLine(d.scope, 40),
+    subject: oneLine(d.subject, 60),
   };
 }
 
@@ -349,13 +355,20 @@ function toRow(note) {
 function fitRow(row, maxBytes) {
   const budget = Number(maxBytes) > 0 ? Number(maxBytes) : 300;
   if (Buffer.byteLength(JSON.stringify(row), 'utf8') <= budget) return row;
-  const chars = [...String(row.summary || '')];
-  while (chars.length > 0) {
-    chars.pop();
-    const candidate = { ...row, summary: chars.join('') };
-    if (Buffer.byteLength(JSON.stringify(candidate), 'utf8') <= budget) return candidate;
+  const candidate = { ...row };
+  const fits = () => Buffer.byteLength(JSON.stringify(candidate), 'utf8') <= budget;
+  // v2.3 added title/scope/subject, so the byte budget may need to shrink more
+  // than the summary: summary first (least useful for recovery), then the new
+  // display fields. The note itself keeps every field intact.
+  for (const field of ['summary', 'title', 'scope', 'subject']) {
+    const chars = [...String(candidate[field] || '')];
+    while (!fits() && chars.length > 0) {
+      chars.pop();
+      candidate[field] = chars.join('');
+    }
+    if (fits()) return candidate;
   }
-  return { ...row, summary: '' };
+  return candidate;
 }
 
 // ---------------------------------------------------------------- 校验
@@ -778,7 +791,7 @@ function cmdSearch(opts) {
       summary: String(d.summary || ''),
       updated: d.updated,
       path: n.rel,
-      text: [d.title, d.title, d.summary, tags, d.scope, body].filter(Boolean).join('\n'),
+      text: [d.title, d.title, d.title, d.summary, d.summary, tags, d.scope, body].filter(Boolean).join('\n'),
     };
   });
   const { total, results } = bm25Rank(docs, query, limit);

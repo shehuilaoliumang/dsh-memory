@@ -97,7 +97,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-11-03-c39';
+    const CLIENT_BUILD = '2026-11-03-c40';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -158,6 +158,16 @@ window.__ModuleLoader__.load({
       head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' },
       title: { fontSize: '14px', lineHeight: '20px', fontWeight: 500 },
       muted: { color: 'var(--dsw-alias-label-secondary)' },
+      linkBtn: {
+        font: 'inherit',
+        fontSize: '11px',
+        padding: 0,
+        color: 'var(--dsw-alias-brand-primary)',
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        textDecoration: 'underline',
+      },
       row: { display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '2px 0' },
       stats: { display: 'flex', gap: '4px', margin: '10px 0 4px' },
       stat: { flex: 1, minWidth: 0, padding: '6px 8px', borderRadius: '10px', background: 'var(--dsw-alias-bg-layer-2)' },
@@ -1867,6 +1877,9 @@ window.__ModuleLoader__.load({
       const [failed, setFailed] = useState(false);
       const [workspace, setWorkspace] = useState('');
       const [query, setQuery] = useState('');
+      /** Server-side BM25 result set (null = use local substring filter). */
+      const [deepResults, setDeepResults] = useState(null);
+      const [deepBusy, setDeepBusy] = useState(false);
       const [tab, setTab] = useState('inbox');
       const [selected, setSelected] = useState(null);
       const [detail, setDetail] = useState(null);
@@ -2209,6 +2222,29 @@ window.__ModuleLoader__.load({
         [load, notify, postAction, workspace],
       );
 
+      /** Server-side BM25 over note bodies; read-only, results are ids only. */
+      const runDeepSearch = useCallback(async () => {
+        const q = query.trim();
+        if (!q || !view) return;
+        setDeepBusy(true);
+        try {
+          const response = await fetch(
+            `/kb/search.json?workspace=${encodeURIComponent(view.id)}&q=${encodeURIComponent(q)}&limit=20`,
+          );
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            setActionError(String((payload && payload.error) || `深度搜索失败（HTTP ${response.status}）`).slice(0, 200));
+            return;
+          }
+          const ids = (Array.isArray(payload.results) ? payload.results : []).map((row) => String(row.id));
+          setDeepResults({ query: q, total: Number(payload.total) || ids.length, ids });
+        } catch {
+          setActionError('深度搜索失败');
+        } finally {
+          setDeepBusy(false);
+        }
+      }, [query, view]);
+
       const humanNotes = useMemo(() => ((data && data.notes) || []).filter((note) => !isRawNote(note)), [data]);
       const typeOptions = useMemo(() => {
         const counts = new Map();
@@ -2234,16 +2270,24 @@ window.__ModuleLoader__.load({
       );
       const notes = useMemo(() => {
         const q = query.trim().toLowerCase();
-        return humanNotes.filter((note) => {
+        const scoped = humanNotes.filter((note) => {
           if (tab === 'inbox' && (note.status !== 'inbox' || isWorkNote(note))) return false;
           if (tab === 'active' && (isWorkNote(note) || !['active', 'canon', 'review'].includes(note.status))) return false;
           if (tab === 'work' && !isWorkNote(note)) return false;
           if (typeFilter !== 'all' && String(note.type || '') !== typeFilter) return false;
-          if (!q) return true;
+          return true;
+        });
+        if (deepResults) {
+          // Keep the server BM25 order; local substring rules do not apply.
+          const byId = new Map(scoped.map((note) => [String(note.id), note]));
+          return deepResults.ids.map((id) => byId.get(id)).filter(Boolean);
+        }
+        if (!q) return scoped;
+        return scoped.filter((note) => {
           const haystack = `${note.id} ${note.title} ${note.summary} ${(note.tags || []).join(' ')}`.toLowerCase();
           return haystack.includes(q);
         });
-      }, [humanNotes, query, tab, typeFilter]);
+      }, [humanNotes, query, tab, typeFilter, deepResults]);
 
       // First load only: with no pending candidates, "已记住" is the meaningful view.
       useEffect(() => {
@@ -2804,15 +2848,43 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { style: S.listHead },
-                h('input', {
-                  style: searchFocused ? { ...S.input, ...S.inputFocus } : S.input,
-                  value: query,
-                  placeholder: '搜索记忆…',
-                  'aria-label': '搜索记忆',
-                  onChange: (event) => setQuery(event.target.value),
-                  onFocus: () => setSearchFocused(true),
-                  onBlur: () => setSearchFocused(false),
-                }),
+                h(
+                  'div',
+                  { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+                  h('input', {
+                    style: searchFocused ? { ...S.input, ...S.inputFocus } : S.input,
+                    value: query,
+                    placeholder: '搜索记忆…',
+                    'aria-label': '搜索记忆',
+                    onChange: (event) => {
+                      setQuery(event.target.value);
+                      setDeepResults(null);
+                    },
+                    onFocus: () => setSearchFocused(true),
+                    onBlur: () => setSearchFocused(false),
+                  }),
+                  h(
+                    KbButton,
+                    { disabled: deepBusy || !query.trim(), onClick: () => void runDeepSearch() },
+                    deepBusy ? '检索中…' : '深度搜索',
+                  ),
+                ),
+                deepResults
+                  ? h(
+                      'div',
+                      { style: { ...S.muted, fontSize: '11px', marginTop: '6px' } },
+                      `全文检索「${deepResults.query}」命中 ${deepResults.total} 条 · `,
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          style: { ...S.linkBtn },
+                          onClick: () => setDeepResults(null),
+                        },
+                        '清除',
+                      ),
+                    )
+                  : null,
               ),
               h(
                 'div',

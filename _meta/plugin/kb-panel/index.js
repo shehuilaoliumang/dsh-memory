@@ -30,7 +30,7 @@ import { randomBytes } from 'node:crypto';
 import { createIngestor, messageText, resolveNode, runProcess } from './ingest.js';
 import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
-import { reorderByRelevance } from './memory-rank.mjs';
+import { rankInjectionCandidates } from './inject-ranking.mjs';
 import {
   DEFAULT_GLOBAL_ROOT,
   DEFAULT_REGISTRY_FILE,
@@ -51,7 +51,7 @@ import {
 } from '../../engine/lib/stores.mjs';
 import { parseFrontmatterData as parseFrontmatter } from '../../engine/lib/shared/frontmatter.mjs';
 import { globalAtomSpec, isGlobalPromotable, localDateStamp } from '../../engine/lib/promote.mjs';
-import { briefText, currentTruthEntries, currentTruthNotes, pickBySource, rankMemories } from '../../engine/lib/work-brief.mjs';
+import { briefText, currentTruthEntries, currentTruthNotes, pickBySource } from '../../engine/lib/work-brief.mjs';
 import { isInsideLegacy, resolveContext, resolveWriteTarget } from '../../engine/lib/context.mjs';
 
 export const inject = ['webServer', 'systemPrompt'];
@@ -1294,18 +1294,76 @@ export function apply(ctx, config = {}) {
     return Boolean(stores && (stores.globalRoot || stores.projectRoot));
   };
 
-  const accessRowsFor = (storeRoot) => {
+  /** Parsed access rows per store, cached until access.jsonl changes. */
+  const accessRowsCache = new Map();
+  /**
+   * v2.3 injection source: the derived catalog already carries id/title/scope/
+   * subject/summary/status, so the prompt does not need to read every note file.
+   * Falls back to `scanNotes` when the index is missing or unreadable. The index
+   * is maintained by every CLI write; a manual edit must run `rebuild` (same
+   * rule as any other index use).
+   */
+  const catalogCache = new Map();
+  const catalogInjectionNotes = (storeRoot) => {
     try {
-      const file = path.join(storeRoot, '_meta', 'access.jsonl');
-      if (!fs.existsSync(file)) return [];
-      return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).flatMap((line) => {
+      const file = path.join(storeRoot, '_meta', 'catalog.jsonl');
+      const stat = fs.statSync(file);
+      const cached = catalogCache.get(storeRoot);
+      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.notes;
+      const rows = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).flatMap((line) => {
         try {
-          const row = JSON.parse(line);
-          return row && row.id ? [{ id: String(row.id), t: String(row.t || '') }] : [];
+          return [JSON.parse(line)];
         } catch {
           return [];
         }
       });
+      const notes = rows
+        .filter((row) => row && row.id && row.level === 'digest' && row.status === 'active'
+          && !['topic', 'work', 'session'].includes(String(row.type || '')))
+        .map((row) => ({
+          id: String(row.id),
+          title: String(row.title || ''),
+          status: 'active',
+          scope: String(row.scope || ''),
+          level: 'digest',
+          type: String(row.type || ''),
+          tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
+          summary: String(row.summary || ''),
+          updated: String(row.updated || ''),
+          subject: String(row.subject || ''),
+          file: String(row.path || ''),
+        }));
+      catalogCache.set(storeRoot, { mtimeMs: stat.mtimeMs, size: stat.size, notes });
+      return notes;
+    } catch {
+      return null;
+    }
+  };
+
+  const accessRowsFor = (storeRoot) => {
+    try {
+      const file = path.join(storeRoot, '_meta', 'access.jsonl');
+      let stat;
+      try {
+        stat = fs.statSync(file);
+      } catch {
+        accessRowsCache.delete(storeRoot);
+        return [];
+      }
+      const cached = accessRowsCache.get(storeRoot);
+      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.rows;
+      const rows = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).flatMap((line) => {
+        try {
+          const row = JSON.parse(line);
+          return row && row.id
+            ? [{ id: String(row.id), t: String(row.t || ''), how: String(row.how || '') }]
+            : [];
+        } catch {
+          return [];
+        }
+      });
+      accessRowsCache.set(storeRoot, { mtimeMs: stat.mtimeMs, size: stat.size, rows });
+      return rows;
     } catch {
       return [];
     }
@@ -1319,9 +1377,11 @@ export function apply(ctx, config = {}) {
    * live in a separate store and must not be double-counted.
    */
   const scopeLeakWarned = new Set();
-  const selectStoreCandidates = (storeRoot, scope, filterScope = '', query = '') => {
+  const selectStoreCandidates = (storeRoot, scope, filterScope = '', query = '', options = {}) => {
     if (!storeRoot) return [];
-    const notes = scanNotes(storeRoot);
+    // Fast path: the derived catalog. Slow path: read every note file (used when
+    // the index is absent/unreadable, or for panel views which need file paths).
+    const notes = catalogInjectionNotes(storeRoot) || scanNotes(storeRoot);
     // In a non-legacy project store, a global-scope memory is a write-layer
     // leak: the judge must downgrade it to unclassified. Existing leaks are
     // excluded, but never silently: surface once per store so the owner can
@@ -1338,16 +1398,15 @@ export function apply(ctx, config = {}) {
         );
       }
     }
-    const ranked = rankMemories(
-      notes.filter((note) => !filterScope
-        || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope)),
-      accessRowsFor(storeRoot),
-      scope,
-      { limit: 500 },
-    );
-    // Relevance mode reorders the heat-ranked list; heat stays the tiebreak and
-    // the fallback order for notes with no query overlap.
-    return query ? reorderByRelevance(ranked, query) : ranked;
+    const filtered = notes.filter((note) => !filterScope
+      || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope));
+    // Current-truth dedupe stays in the engine; heat weighting, exposure-aware
+    // exploration and optional relevance ordering live in inject-ranking.mjs.
+    return rankInjectionCandidates(currentTruthNotes(filtered, scope), accessRowsFor(storeRoot), {
+      limit: 500,
+      query,
+      exploration: options.explore ? 1 : 0,
+    });
   };
 
   /**
@@ -1406,7 +1465,7 @@ export function apply(ctx, config = {}) {
     }
     if (projectLimit && stores.projectRoot) {
       const filterScope = legacy ? '' : scope;
-      add('project', selectStoreCandidates(stores.projectRoot, scope, filterScope, query));
+      add('project', selectStoreCandidates(stores.projectRoot, scope, filterScope, query, { explore: true }));
     }
     const current = currentTruthEntries(entries, scope);
     const picked = pickBySourceWithControls(current, { globalLimit, projectLimit, isPinned, isMuted });
@@ -1549,6 +1608,58 @@ export function apply(ctx, config = {}) {
           sendJson(res, 200, snapshot(sessionId, workspace));
         } catch (error) {
           sendJson(res, 400, { error: String(error && error.message ? error.message : error) });
+        }
+      },
+    }),
+  );
+
+  // Read-only deep search: BM25 over note bodies (title/summary/tags/body),
+  // unlike the Client's local substring filter. It is a GET and never writes.
+  ctx.effect(() =>
+    ctx.webServer.register({
+      kind: 'exact',
+      path: '/kb/search.json',
+      handler: async (req, res) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          sendJson(res, 405, { error: 'method not allowed' });
+          return;
+        }
+        if (requestRejected(req, res)) return;
+        let query = '';
+        let workspace;
+        let limit = 10;
+        try {
+          const params = new URL(req.url || '/', 'http://localhost').searchParams;
+          query = String(params.get('q') || '').trim();
+          workspace = params.get('workspace') || undefined;
+          limit = Number(params.get('limit')) || 10;
+        } catch {
+          /* keep defaults */
+        }
+        if (!query) {
+          sendJson(res, 400, { error: 'missing q' });
+          return;
+        }
+        try {
+          const view = workspaceView(workspace, null);
+          const result = await runProcess(
+            nodeRuntime.command,
+            kbCommand(view, ['search', '--query', query, '--limit', String(Math.min(20, Math.max(1, Math.trunc(limit)))), '--json']),
+            { cwd: view.root, env: { ...process.env, ...nodeRuntime.env }, timeoutMs: 20000 },
+          );
+          if (result.code !== 0) throw new Error(commandError(result));
+          const payload = JSON.parse(result.stdout || '{}') || {};
+          // Only ids the store's own scan can see; the CLI result is not trusted
+          // as a path source by the Client.
+          const allowed = new Set(scanNotes(view.root).map((note) => note.id));
+          sendJson(res, 200, {
+            ok: true,
+            query,
+            total: Number(payload.total) || 0,
+            results: (Array.isArray(payload.results) ? payload.results : []).filter((row) => row && allowed.has(String(row.id))),
+          });
+        } catch (error) {
+          sendJson(res, 500, { error: String(error && error.message ? error.message : error) });
         }
       },
     }),

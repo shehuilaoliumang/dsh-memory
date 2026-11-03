@@ -65,10 +65,18 @@ const stats = kb.run(['stats', '--json']);
 - 兼容层：`_meta/scripts/kb.mjs` 是默认 root 的兼容包装；插件直接 import engine。
 - **registry 跨进程锁**：`lib/stores.mjs` 的 `withRegistryLock(registryFile, fn)` 把
   读-改-写串行化（tmp+rename 之上），多进程/多路由并发写 registry 不再丢更新。
+- **排名正确性（v2.3）**：`lib/work-brief.mjs` 的 `rankMemories(notes, accessRows, opts)`
+  按 access 行 `how` 加权（`injectWeight` 默认 0.1，read/grep/manual×1），`lastAt` 取最大
+  时间；`exploration`（默认 0）把最新未曝光条目移到位置 2，插件仅对项目 store 传 1。
+- **catalog 字段（v2.3）**：`toRow` 增 `title`/`scope`/`subject`（clamp 60/40/60），
+  `fitRow` 在 300B 预算内按 `summary → title → scope → subject` 缩短；注入优先读
+  catalog，缺失/损坏回退逐文件扫描，手工改笔记后必须 `rebuild`。
+- **检索字段权重（v2.3）**：`lib/cli.mjs` 的 BM25 文档为 `title×3`、`summary×2`、
+  `tags/scope/body×1`；插件只读 `GET /kb/search.json`（同一实现 + 白名单过滤 + 不记 access）。
 - 闸门：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本/语法
   （11 个 engine 文件、22 个 JS）；`context.test.mjs` 5 条 + `behavior-matrix.test.mjs`
-  9 条 + `memory-rank.test.mjs` 7 条 + `engine-api.test.mjs` 3 条覆盖上下文/路由/排序/
-  进程内 API，插件单测合计 172 条。
+  9 条 + `inject-ranking.test.mjs` 7 条 + `engine-api.test.mjs` 3 条覆盖上下文/路由/排序/
+  进程内 API，插件单测合计 174 条；`work-brief.test.mjs` 31 条覆盖排名/预算/简报。
 
 ## 复核条件
 
@@ -80,6 +88,10 @@ const stats = kb.run(['stats', '--json']);
   c-1003 的写入边界。
 - policy 回归（legacy 注入预算/过滤变化、registry 丢 `policy`、`kind` 重新变成行为分支）→
   重开 c-1004 并回退到 policy 前的表达。
+- 排名回归（曝光重新主导、exploration 挤掉第一推荐或作用到 legacy/global）→ 重开 c-1005，
+  补 access 权重与槽位测试。
+- catalog 注入读到与笔记不一致的索引（未 rebuild 却不回退 scanNotes）→ 修回一致性规则并
+  重开 c-1005。
 - `runCli`/`createEngine` 污染宿主进程状态、或并发/重入调用出现串扰 → 收窄为显式单实例
   顺序使用，补回归并重开 c-1004 的进程内 API 边界。
 - 多库面合并为单库、或需要进程内长驻引擎时，重新评估 CLI/模块边界。

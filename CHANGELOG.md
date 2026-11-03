@@ -2,6 +2,39 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 2.3.0 — 2026-11-03
+
+算法正确性与规模化：曝光降权、冷启动槽、access 缓存、catalog 驱动注入与字段化检索（行为 minor，默认安全边界不变）。
+
+**热度自反馈修正（曝光降权）**
+
+- `rankMemories`（engine）与插件 `inject-ranking.mjs` 按 access 行 `how` 加权：`inject` 曝光默认 **0.1**，`read`/`grep`/`manual` 全权重 1；`lastAt` 取最大时间，30 天半衰期不变。实测旧全局日志 99% 是 `inject`（257 次中 250 次），修正后曝光不再主导排序。
+
+**exploration 槽（冷启动通道）**
+
+- 排序后把「最新且从未曝光」的 note 移到**位置 2**（0 基 index 1，保留第一推荐）；每轮 1 个槽，**仅项目 store 使用**；不改变预算总数与安全过滤。
+
+**access 热度聚合缓存**
+
+- 插件按 `access.jsonl` 的 mtime+size 缓存解析结果（含 `how`），重复 prompt 不再全量重读/解析遥测。
+
+**catalog 驱动注入（派生索引扩展）**
+
+- `toRow` 增加 `title`/`scope`/`subject`（clamp 60/40/60 字符）；`fitRow` 在 300B 行预算内按 `summary → title → scope → subject` 缩短索引值，不动正文。
+- 注入优先读 `_meta/catalog.jsonl`（mtime+size 缓存），缺失/损坏回退 `scanNotes`；`subject` 进入注入仲裁。**手工改原子后必须 `rebuild`**（与既有索引规则一致）。
+
+**字段化 BM25 与深度搜索**
+
+- engine BM25 文档改为 `title×3`、`summary×2`、`tags/scope/body×1`（替代原 `title×2`）。
+- 新增只读 `GET /kb/search.json?workspace&q&limit`：调用 engine `search`，结果用本店 scan id 白名单过滤、**不记录 access**；记忆页新增「深度搜索」按钮与清除（客户端 c40，服务端 BM25 顺序展示，本地输入仍子串过滤）。
+
+**未做（backlog）**
+
+- embedding/向量检索（零依赖约束下不做）；`inject.rankMode` 默认切 `relevance`（仍默认 `heat`，待 A/B）；多库面真正合并为单库（2.2 仅 policy 表达）；DSH 适配层仍在插件。
+
+- 数字：插件 174/174、脚本 17/17、smoke 106/106、`check-plugin-load` 6 JSON / 9 manifest / 11 engine / 2 locale / 22 JS；本地 `validate` 12 篇（core + raw + work + 4 atoms + 5 canon，主索引 10 + 归档 1）、0 警告；ADR `30_Canon/decisions/2026-11-03-c-1005.md`。
+- 公开快照：2.2.0 已发布（public commit `02f4442`，CI 全绿）；2.3.0 随本次快照发布（提交/CI 发布后回填）。
+
 ## 2.2.0 — 2026-11-03
 
 记忆控制、相关性注入、整理动作与库面策略化（行为 minor：P2 剩余 + P3 进程内 API/多库面 policy 合并）。

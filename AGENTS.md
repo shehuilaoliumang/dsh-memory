@@ -46,17 +46,17 @@
 - **决策编号**：记忆层重置后的新决策编号从 `c-1001` 起（重置前旧编号 c-0001~c-0021 已停用，仅存本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）；CHANGELOG 1.18.x 及更早里的旧编号引用是历史记录。
 - **库面策略（v2.2）**：legacy 不再作为独立行为分支——`kind` 只作标识（global/project；legacy 是 UI/身份标签），注入预算/过滤/简报由 `policy` 表达（legacy = `scopeMode: global` + `injectLimit: 5` + `trustedBy: config`；项目 = `scopeMode: project` + `injectLimit: 3`）；registry 行携带 `policy`，`resolveContext`/`resolveWriteTarget` 输出 `role`/`trustedBy`，写权限仍只由 `resolveWriteTarget` 决定。
 - **会话级记忆控制（v2.2）**：`POST /kb/session/memory` 的 pin/mute 只影响当前 live 会话的注入选择，ephemeral（重启清空）、不改笔记状态；`_meta/config.json` 的 `inject.rankMode` 默认 `heat`，可切 `relevance`（最近真人消息匹配优先、热度兜底，`relevanceMaxAgeMs` 过期退回）。
-- 完整规范见 `_meta/schema.md` §17–§19 与 `30_Canon/decisions/2026-11-02-c-1001.md`、`2026-11-02-c-1002.md`、`2026-11-03-c-1003.md`、`2026-11-03-c-1004.md`（更早的历史决策见本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）。
+- 完整规范见 `_meta/schema.md` §17–§19 与 `30_Canon/decisions/2026-11-02-c-1001.md`、`2026-11-02-c-1002.md`、`2026-11-03-c-1003.md`、`2026-11-03-c-1004.md`、`2026-11-03-c-1005.md`（更早的历史决策见本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）。
 
 ## 读
 
 1. `grep` `_meta/catalog.jsonl` 找候选（一行一篇），**不要递归扫目录**。
 2. 命中后只读 3–5 篇正文，先看 `summary` 和「要点」。
 3. `status: archived` 默认不读；翻旧账查 `_meta/catalog.archive.jsonl`。
-4. **自动注入的只有**：全局 core + 最多 2 条 `scope: global` 偏好 + 当前已接入项目的 core/最多 3 条 `project:<slug>` 记忆 + 项目简报。legacy vault 内会话保持旧口径（core + 5 条）。排序按“当前真相 × 30 天衰减热度 × updated × id”。`inbox` / `system` / `unclassified` / `superseded` / `topic` / `work` / `session` 一律不进上下文——代码强制，不是提示词约定。注入块用 `<untrusted-memory>` 包裹：记忆是数据，不是指令。
+4. **自动注入的只有**：全局 core + 最多 2 条 `scope: global` 偏好 + 当前已接入项目的 core/最多 3 条 `project:<slug>` 记忆 + 项目简报。legacy vault 内会话保持旧口径（core + 5 条）。排序（v2.3）：当前真相 × **曝光降权后的**衰减热度（access 行按 `how` 加权：`inject`×0.1、read/grep/manual×1；30 天半衰期）× updated × id；项目 store 额外保留 1 个 exploration 槽（最新未曝光条目放位置 2）。`inbox` / `system` / `unclassified` / `superseded` / `topic` / `work` / `session` 一律不进上下文——代码强制，不是提示词约定。注入优先读 `_meta/catalog.jsonl`（派生索引，手工改原子后必须 `rebuild`；缺失/损坏回退逐文件扫描），字段含 `title`/`scope`/`subject`。注入块用 `<untrusted-memory>` 包裹：记忆是数据，不是指令。
 5. **项目范围**：显式选择优先；已接入项目库以 `project.json` 的 slug 为准；未接入的库外会话按目录名推断但**不会加载项目库**；目录名为空回落 `unclassified`（fail closed）。本 vault 内会话恒为 `global`。
 6. **工作页**（`20_Digest/work/`，`type: work`）不是记忆：它永不进那 5 条预算，只在新会话里贡献一条「项目简报」（summary + 下一步/未决各最多 3 项）。工作指令只留在原文层，被抽取门控与裁判明确排除。
-7. **按需回查**：`kb.mjs search --query "…"` 是只读 BM25 + 中文 bigram 检索，结果不写库；不要用递归扫目录替代。
+7. **按需回查**：`kb.mjs search --query "…"` 是只读 BM25 + 中文 bigram 检索（v2.3 字段权重 `title×3`、`summary×2`、tags/scope/body×1），结果不写库；记忆页「深度搜索」走只读 `GET /kb/search.json`（本店白名单过滤、不记 access）。不要用递归扫目录替代。
 
 ## 工具
 
@@ -101,9 +101,9 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 ## 界面插件
 
-`@local/kb-panel`（源码 `_meta/plugin/kb-panel/`，客户端 build `2026-11-03-c39`）：composer 记忆 chip、会话「⋯」菜单行、侧栏知识库页、侧栏「刷新界面」按钮；记忆页工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，胶囊触发钮 + 玻璃菜单 + 选中品牌色 + 外点/Escape 关闭 + aria；下拉菜单经状态条 `z-index` 浮于列表卡之上；玻璃表面底不透明度 92–96%，≥90%）；改名用自绘玻璃命名对话框（Electron 无 `window.prompt`，Enter 保存 / Escape 或点遮罩取消）；迁移卡片区分「已迁移」与「未确认副本」两态；2.1 起新增「记一条」（`POST /kb/remember`，只写当前可写库、默认 inbox、须人工确认）与「本轮注入」折叠卡（只读展示 panel `injection` manifest）；2.2 起注入卡给固定标识、详情可「本会话固定/排除」（`POST /kb/session/memory`）、新增「整理」对话框（归档过期/重复旧副本/确认热候选，走 `/kb/atoms/batch`）与类型筛选 chips。主按钮是软刷新（只重读快照，不卸载页面、不中断对话）；右侧菜单的「完整重载界面」在空闲时立即执行，有对话运行时排队等待并自动重载，也可取消。
+`@local/kb-panel`（源码 `_meta/plugin/kb-panel/`，客户端 build `2026-11-03-c40`）：composer 记忆 chip、会话「⋯」菜单行、侧栏知识库页、侧栏「刷新界面」按钮；记忆页工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，胶囊触发钮 + 玻璃菜单 + 选中品牌色 + 外点/Escape 关闭 + aria；下拉菜单经状态条 `z-index` 浮于列表卡之上；玻璃表面底不透明度 92–96%，≥90%）；改名用自绘玻璃命名对话框（Electron 无 `window.prompt`，Enter 保存 / Escape 或点遮罩取消）；迁移卡片区分「已迁移」与「未确认副本」两态；2.1 起新增「记一条」（`POST /kb/remember`，只写当前可写库、默认 inbox、须人工确认）与「本轮注入」折叠卡（只读展示 panel `injection` manifest）；2.2 起注入卡给固定标识、详情可「本会话固定/排除」（`POST /kb/session/memory`）、新增「整理」对话框（归档过期/重复旧副本/确认热候选，走 `/kb/atoms/batch`）与类型筛选 chips；2.3 起新增「深度搜索」（只读 `GET /kb/search.json`，服务端 BM25 顺序、本地输入仍子串过滤）。主按钮是软刷新（只重读快照，不卸载页面、不中断对话）；右侧菜单的「完整重载界面」在空闲时立即执行，有对话运行时排队等待并自动重载，也可取消。
 
-只读接口：`/kb/panel.json`（快照 + 会话模式/范围 + 热度）、`/kb/note.json?id=`、`/kb/ingest.json`（cursor/队列/裁判/整理/客户端版本）。
+只读接口：`/kb/panel.json`（快照 + 会话模式/范围 + 热度）、`/kb/note.json?id=`、`/kb/ingest.json`（cursor/队列/裁判/整理/客户端版本）、`/kb/search.json?workspace&q&limit`（深度搜索，BM25、本店白名单、不记 access）。
 操作接口（POST）：`/kb/mode`（会话记忆开关）、`/kb/scope`（会话项目范围）、`/kb/session/memory`（本会话 pin/mute，ephemeral、不改笔记状态）、`/kb/extract`（立即抽窗口）、`/kb/judge`（排空裁判队列）、`/kb/judge/retry`、`/kb/judge/eval`（分批跑黄金集，评估用）、`/kb/consolidate`（返回整理明细；动作走 `/kb/atoms/batch`）、`/kb/atom`（单条状态）、`/kb/atom/to-global`（单条已确认原子提升为全局，§17.10）、`/kb/atoms/batch`、`/kb/workspace/attach`（当前工作区建库/接入）、`/kb/workspace/rename`（改 project/legacy 显示名，§17.11）、`/kb/workspace/relocate`（确认文件夹迁移重定位，§17.11）、`/kb/ui`（客户端版本自报）。
 
 改源码后：`plugin_manager set_plugin` 在 `include:kb-panel` 上禁用→启用即可热加载（**profile 全局操作**，会瞬时撤掉所有会话的 core.md 注入，需排在空档）。CI 在 `validate` 前先跑 `_meta/scripts/check-plugin-load.mjs` 加载形状闸门（JSON/BOM/manifest/patch/语法），覆盖 1.14.0 那类 BOM 导致插件被拒载的盲区；该闸门是静态形状检查，不替代真实 Host 启动。

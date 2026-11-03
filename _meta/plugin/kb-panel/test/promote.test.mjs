@@ -6,7 +6,7 @@ import {
   globalAtomSpec,
   isGlobalPromotable,
   localDateStamp,
-} from '../promote.js';
+} from '../../../engine/lib/promote.mjs';
 
 function atom(overrides = {}) {
   return {

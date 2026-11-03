@@ -21,6 +21,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  assertPublicText,
+  isForbiddenPublicPath,
+  sanitizePublicText,
+} from './lib/export-rules.mjs';
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 function arg(name, fallback = '') {
@@ -82,13 +88,10 @@ function walk(dir, relative = '') {
 
 function allowed(rel) {
   if (skipFiles.has(rel)) return false;
-  // Telemetry rotates (`access-<stamp>.jsonl`) and backups may carry any suffix
-  // (`access.jsonl.bak`); exclude the whole `access*` family the same way
-  // .gitignore does. Keep this in sync with the publish gate.
-  if (/^_meta\/access[^/]*$/i.test(rel)) return false;
-  if (rel.startsWith('10_Raw/')) return false;
-  if (rel.startsWith('00_Inbox/')) return false;
-  if (rel.includes('/.git/')) return false;
+  // Security rules live in lib/export-rules.mjs (unit-tested in
+  // _meta/scripts/test/export-rules.test.mjs): the access* telemetry family
+  // (any suffix), raw transcripts, runtime state, PROJECT_PLAN and .git.
+  if (isForbiddenPublicPath(rel)) return false;
   if (PUBLIC_ROOT_FILES.has(rel)) return true;
   if (rel.startsWith('20_Digest/')) return true;
   if (rel.startsWith('30_Canon/')) return true;
@@ -98,92 +101,18 @@ function allowed(rel) {
   return false;
 }
 
-function stripRawSources(text) {
-  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/;
-  const match = text.match(frontmatter);
-  if (match) {
-    const body = match[1]
-      .split(/\r?\n/)
-      .filter((line) => !/^source\s*:/.test(line))
-      .join('\n');
-    text = text.replace(frontmatter, `---\n${body}\n---`);
-  }
-  return text.replace(/\[\[10_Raw\/[^\]]*\]\]/g, '');
-}
-
-// Runtime identifiers are not document content: session UUIDs and raw session
-// file names appear in `_meta/log.md` and must not travel with the public repo
-// (same class as the access-*.jsonl telemetry leak; found by the self-audit).
-const SESSION_ID_PATTERN = /session-[0-9a-f]{6}(?:-[0-9a-f]{4}){0,3}(?:-[0-9a-f]{1,12})?/gi;
-const BARE_UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
-const RAW_SESSION_PATH_PATTERN = /10_Raw\/sessions\/[0-9A-Za-z_./-]+\.md/g;
-function stripRuntimeIds(text) {
-  return text
-    .replace(SESSION_ID_PATTERN, 'session-<redacted>')
-    .replace(BARE_UUID_PATTERN, '<uuid>')
-    .replace(RAW_SESSION_PATH_PATTERN, '10_Raw/sessions/<redacted>.md');
-}
-
-// Non-global copies for a final assertion after sanitization.
-const SESSION_ID_FORBIDDEN = /session-[0-9a-f]{6}/i;
-const BARE_UUID_FORBIDDEN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
-const RAW_SESSION_PATH_FORBIDDEN = /10_Raw\/sessions\/[0-9A-Za-z_./-]+\.md/;
-function assertNoRuntimeIds(rel, text) {
-  if (SESSION_ID_FORBIDDEN.test(text) || BARE_UUID_FORBIDDEN.test(text) || RAW_SESSION_PATH_FORBIDDEN.test(text)) {
-    throw new Error(`导出中止：${rel} 仍含 session UUID / 原文文件标识`);
-  }
-}
-
-function sanitizeText(rel, text) {
-  if (rel.endsWith('.md')) text = stripRawSources(text);
-  text = stripRuntimeIds(text);
-  // Control characters (a stray backspace once reached log.md through a shell
-  // escape) have no place in published text.
-  text = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
-  const prefixes = [root, path.dirname(root)];
-  for (const prefix of prefixes) {
-    text = text.split(prefix).join('<vault>');
-    text = text.split(prefix.replaceAll('\\', '/')).join('<vault>');
-  }
-  if (rel === '_meta/plugin/kb-panel/cordis.patch.yml') {
-    text = text.replace(/^(\s*workspaceRoot:\s*)['"].*['"]/m, "$1'<path-to-vault>'");
-  }
-  return text;
-}
-
-const secrets = [
-  new RegExp('\\bgh[pousr]_[A-Za-z0-9_]{20,}\\b'),
-  new RegExp('\\bgithub_' + 'pat_[A-Za-z0-9_]{20,}\\b'),
-  new RegExp('\\bsk-[A-Za-z0-9]{20,}\\b'),
-];
-function assertNoSecrets(rel, text) {
-  for (const pattern of secrets) {
-    if (pattern.test(text)) {
-      throw new Error(`导出中止：${rel} 疑似包含访问令牌`);
-    }
-  }
-}
-
-const localUserPath = new RegExp('[A-Za-z]:[\\\\/]Users[\\\\/]');
-function assertNoLocalPaths(rel, text) {
-  if (localUserPath.test(text)) {
-    throw new Error(`导出中止：${rel} 仍含本地用户目录路径`);
-  }
-}
+// Sanitization (source links, runtime ids, control chars, absolute paths,
+// plugin patch workspaceRoot) and the post-sanitize assertion live in
+// lib/export-rules.mjs so they can be unit-tested edge by edge.
 
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
 const files = walk(root).filter(allowed);
 // Belt-and-braces: if the allow-list changes and a runtime file slips through,
-// abort instead of publishing telemetry or transcripts.
-const forbidden = files.filter(
-  (rel) =>
-    /^_meta\/access[^/]*$/i.test(rel)
-    || rel.startsWith('_meta/state/')
-    || rel.startsWith('10_Raw/')
-    || rel.startsWith('00_Inbox/'),
-);
+// abort instead of publishing telemetry or transcripts. CI repeats this
+// file-level check on the built snapshot independently.
+const forbidden = files.filter(isForbiddenPublicPath);
 if (forbidden.length) {
   throw new Error(`导出中止：禁止导出的运行时文件: ${forbidden.slice(0, 5).join(', ')}`);
 }
@@ -198,10 +127,8 @@ for (const rel of files) {
     fs.writeFileSync(target, buffer);
     continue;
   }
-  const text = sanitizeText(rel, buffer.toString('utf8'));
-  assertNoSecrets(rel, text);
-  assertNoLocalPaths(rel, text);
-  assertNoRuntimeIds(rel, text);
+  const text = sanitizePublicText(rel, buffer.toString('utf8'), { root, parent: path.dirname(root) });
+  assertPublicText(rel, text);
   fs.writeFileSync(target, text, 'utf8');
 }
 

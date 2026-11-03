@@ -44,7 +44,7 @@
 - **显示名改名只动 title**：记忆页“正在查看”旁的「改名」对 **project 与 legacy（知识库本体）且可写**的工作区显示，global 不可（400）；`POST /kb/workspace/rename` 只写 `project.json.title`，slug、`project:<slug>` scope、目录与索引都不变，改显示名不能触发记忆搬家或 scope 重写；选择器显示各库 `project.json` 的实际 `title`（legacy 不再硬编码“旧版”，当前显示 “DSH Memory”）；改名交互用自绘玻璃对话框（Electron 无 `window.prompt`，Enter 保存 / Escape 或点遮罩取消）。
 - **文件夹改名后靠 `store_id` + 双信号认库**：`project.json` 有稳定 `store_id`、registry 行有 `storeId` 与 attach 时的目录创建时间 `folderBirthtimeMs`；只有「旧路径已消失 **且** 目录创建时间一致（容差 5s）」才自动把 registry 指向新路径（保留 `writable`/`autoGranted`，title 未自定义则跟随新文件夹名）。复制/克隆（新创建时间或旧路径仍在）或旧 registry 行无 `folderBirthtimeMs` 时不自动，必须由人在面板确认「检测到一个未确认的记忆库副本」/「检测到已迁移的记忆库」后点「确认这是同一个库」/「重新定位到当前路径」（`POST /kb/workspace/relocate`，只认 live 会话 cwd）；确认迁移保留 `writable`、去掉 `autoGranted`；不扫盘、不改 slug（c-1001）。
 - **决策编号**：记忆层重置后的新决策编号从 `c-1001` 起（重置前旧编号 c-0001~c-0021 已停用，仅存本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）；CHANGELOG 1.18.x 及更早里的旧编号引用是历史记录。
-- 完整规范见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-11-02-c-1001.md`（更早的历史决策见本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）。
+- 完整规范见 `_meta/schema.md` §17–§19 与 `30_Canon/decisions/2026-11-02-c-1001.md`、`2026-11-02-c-1002.md`、`2026-11-03-c-1003.md`（更早的历史决策见本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）。
 
 ## 读
 
@@ -81,11 +81,12 @@ node _meta/scripts/kb.mjs version               # 打印根目录 VERSION（唯�
 node _meta/scripts/kb.mjs init                  # 幂等创建目录骨架
 node _meta/scripts/kb.mjs --root <库> attach [--write|--read-only]   # 显式接入并授权/收回项目库写入
 node _meta/scripts/export-public.mjs --out D:\dsh-memory-public   # 生成脱敏公开快照（排除原文/状态，重建索引）
+node --test --test-isolation=none _meta/scripts/test/export-rules.test.mjs   # 导出安全规则单测（CI 同款）
 ```
 
-同一个 `session_id` 续写同一篇原文；同一分钟新建多个会话时 `id`/文件名加 `-2`/`-3` 后缀，`validate` 同时检查 id 唯一。frontmatter 解析统一用 `_meta/engine/lib/shared/frontmatter.mjs`（插件 `_meta/plugin/kb-panel/shared/frontmatter.mjs` 只是 re-export shim），CLI 与插件不得各自维护；工作页节名以 `_meta/engine/lib/shared/work-sections.mjs` 的 `WORK_SECTIONS` 为准（插件同名 shim 只 re-export）。`access.jsonl` 超阈值自动轮转为 `access-<stamp>.jsonl`，不删除遥测。ingest 的接管/去重/自检/失败窗口机制见 `_meta/plugin/kb-panel/test/FAULT-INJECTION.md`，删减前先跑对应故障注入测试。
+同一个 `session_id` 续写同一篇原文；同一分钟新建多个会话时 `id`/文件名加 `-2`/`-3` 后缀，`validate` 同时检查 id 唯一。frontmatter 解析统一用 `_meta/engine/lib/shared/frontmatter.mjs`（插件直接 import engine，2.1 起无 shim），CLI 与插件不得各自维护；工作页节名以 `_meta/engine/lib/shared/work-sections.mjs` 的 `WORK_SECTIONS` 为准。`access.jsonl` 超阈值自动轮转为 `access-<stamp>.jsonl`，不删除遥测。ingest 的接管/去重/自检/失败窗口机制见 `_meta/plugin/kb-panel/test/FAULT-INJECTION.md`，删减前先跑对应故障注入测试。导出安全规则集中在 `_meta/scripts/lib/export-rules.mjs`（纯函数，`_meta/scripts/test/export-rules.test.mjs` 17 用例，CI「Script unit tests」步骤），`export-public.mjs`/`publish-public.mjs` 都调用它，不要在脚本里另写判断。
 
-**依赖方向**：engine ← plugin（`engine` 不 import DSH/插件；插件 `stores.js`/`work-brief.js`/`redact.js`/`promote.js`/`shared/*.mjs` 是 engine 的兼容 shim）。仓库结构：`_meta/engine/`（引擎）+ `_meta/scripts/`（兼容入口与 CI 脚本）+ `_meta/plugin/kb-panel/`（DSH 适配层）。
+**依赖方向**：engine ← plugin（`engine` 不 import DSH/插件）。2.1 起 shim 已移除，插件直接 import engine（`_meta/engine/lib/*`）；`_meta/scripts/kb.mjs` 仍是默认 root 的兼容包装。仓库结构：`_meta/engine/`（引擎）+ `_meta/scripts/`（兼容入口、导出/发布与 CI 脚本）+ `_meta/plugin/kb-panel/`（DSH 适配层）。
 
 规则层冒烟测试（把 vault 复制到临时目录跑全部命令，不碰真实库）：
 
@@ -98,7 +99,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 ## 界面插件
 
-`@local/kb-panel`（源码 `_meta/plugin/kb-panel/`，客户端 build `2026-11-02-c36`）：composer 记忆 chip、会话「⋯」菜单行、侧栏知识库页、侧栏「刷新界面」按钮；记忆页工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，胶囊触发钮 + 玻璃菜单 + 选中品牌色 + 外点/Escape 关闭 + aria；下拉菜单经状态条 `z-index` 浮于列表卡之上；玻璃表面底不透明度 92–96%，≥90%）；改名用自绘玻璃命名对话框（Electron 无 `window.prompt`，Enter 保存 / Escape 或点遮罩取消）；迁移卡片区分「已迁移」与「未确认副本」两态。主按钮是软刷新（只重读快照，不卸载页面、不中断对话）；右侧菜单的「完整重载界面」在空闲时立即执行，有对话运行时排队等待并自动重载，也可取消。
+`@local/kb-panel`（源码 `_meta/plugin/kb-panel/`，客户端 build `2026-11-02-c37`）：composer 记忆 chip、会话「⋯」菜单行、侧栏知识库页、侧栏「刷新界面」按钮；记忆页工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，胶囊触发钮 + 玻璃菜单 + 选中品牌色 + 外点/Escape 关闭 + aria；下拉菜单经状态条 `z-index` 浮于列表卡之上；玻璃表面底不透明度 92–96%，≥90%）；改名用自绘玻璃命名对话框（Electron 无 `window.prompt`，Enter 保存 / Escape 或点遮罩取消）；迁移卡片区分「已迁移」与「未确认副本」两态；2.1 起新增「记一条」（`POST /kb/remember`，只写当前可写库、默认 inbox、须人工确认）与「本轮注入」折叠卡（只读展示 panel `injection` manifest）。主按钮是软刷新（只重读快照，不卸载页面、不中断对话）；右侧菜单的「完整重载界面」在空闲时立即执行，有对话运行时排队等待并自动重载，也可取消。
 
 只读接口：`/kb/panel.json`（快照 + 会话模式/范围 + 热度）、`/kb/note.json?id=`、`/kb/ingest.json`（cursor/队列/裁判/整理/客户端版本）。
 操作接口（POST）：`/kb/mode`（会话记忆开关）、`/kb/scope`（会话项目范围）、`/kb/extract`（立即抽窗口）、`/kb/judge`（排空裁判队列）、`/kb/judge/retry`、`/kb/judge/eval`（分批跑黄金集，评估用）、`/kb/consolidate`、`/kb/atom`（单条状态）、`/kb/atom/to-global`（单条已确认原子提升为全局，§17.10）、`/kb/atoms/batch`、`/kb/workspace/attach`（当前工作区建库/接入）、`/kb/workspace/rename`（改 project/legacy 显示名，§17.11）、`/kb/workspace/relocate`（确认文件夹迁移重定位，§17.11）、`/kb/ui`（客户端版本自报）。

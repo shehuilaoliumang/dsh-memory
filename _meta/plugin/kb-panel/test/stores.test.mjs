@@ -21,9 +21,10 @@ import {
   syncRegistryStoreIds,
   uniqueWorkspaceSlug,
   updateProjectTitle,
+  withRegistryLock,
   workspaceSlug,
   writableProjectStore,
-} from '../stores.js';
+} from '../../../engine/lib/stores.mjs';
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kb-stores-'));
@@ -149,6 +150,22 @@ test('only an explicitly writable attached project is a write target', () => {
     // Re-attaching without a flag must preserve the explicit grant.
     attachProject(store, registry);
     assert.ok(writableProjectStore(path.join(project, 'src'), { registryFile: registry }));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('registry read-modify-write runs under a lock file and cleans it up', () => {
+  const root = tempDir();
+  const registry = path.join(root, 'projects.json');
+  const lockFile = `${registry}.lock`;
+  try {
+    const value = withRegistryLock(registry, () => {
+      assert.equal(fs.existsSync(lockFile), true, 'lock file exists inside the critical section');
+      return 'ok';
+    });
+    assert.equal(value, 'ok');
+    assert.equal(fs.existsSync(lockFile), false, 'lock file removed after the section');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { briefText, clampText, currentTruthEntries, currentTruthNotes, heatWeight, isInjectable, pickBySource, rankMemories, scopeLabel, sectionItems } from '../work-brief.js';
+import { briefText, clampText, currentTruthEntries, currentTruthNotes, heatWeight, isInjectable, pickBySource, rankMemories, scopeLabel, sectionItems } from '../../../engine/lib/work-brief.mjs';
 
 const atom = (over = {}) => ({ level: 'digest', status: 'active', type: 'preference', scope: 'global', ...over });
 

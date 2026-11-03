@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { parseFrontmatter, parseFrontmatterData } from '../shared/frontmatter.mjs';
-import { WORK_SECTIONS } from '../shared/work-sections.mjs';
+import { parseFrontmatter, parseFrontmatterData } from '../../../engine/lib/shared/frontmatter.mjs';
+import { WORK_SECTIONS } from '../../../engine/lib/shared/work-sections.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const vault = path.resolve(here, '..', '..', '..', '..');

@@ -75,11 +75,11 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 `kb.mjs` 的 `--root` / `KB_ROOT` 指向**库根**（项目库是 `<project>/.dsh-memory`，不是项目目录本身），对所有命令生效；手动 `init` 的新库默认 `ingest.enabled=false`，不会在 clone 后自动写，宿主自动建库才会开启该库 ingest/judge。`attach --write` 只修改用户级 registry 与该库 config，项目自身的 `project.json` 不能自开写入；面板会列出已接入项目的当前/可写/只读状态。注入前会对全局库与项目库的同一 `subject` 先取最新 active，再做全局 2 / 项目 3 的 source-aware 预算；项目库存量 `scope: global` 条目会被排除并显式告警。完整规则见 `_meta/schema.md` §17–§18 与 `30_Canon/decisions/2026-11-02-c-1001.md`（更早的历史决策见 git `bdf14e3`）。
 
-**可维护性**：根目录 `VERSION` 是唯一版本号（**版本号纪律：UI/文档补丁走 patch，行为变更才 minor，结构性模块变化走 major**），`CHANGELOG.md` 记录各阶段；`kb.mjs init` 幂等创建 7 个实际使用的目录（不创建未使用的顶层目录）；frontmatter parser 与工作页节名在 `_meta/engine/lib/shared/`（插件同名文件只是 re-export shim），CLI 与插件共用；同分钟会话按前缀加 `-2`/`-3` 去重；`access.jsonl` 超阈值自动轮转、不删除；`_meta/scripts/check-plugin-load.mjs` 是 CI 第一步的**加载形状闸门**（全部 JSON 禁 BOM/可解析、manifest 与文件存在、engine 清单/版本/语法、bundle patch 形状、`node --check`），本地改插件/engine/清单后先跑它。
+**可维护性**：根目录 `VERSION` 是唯一版本号（**版本号纪律：UI/文档补丁走 patch，行为变更才 minor，结构性模块变化走 major**），`CHANGELOG.md` 记录各阶段；`kb.mjs init` 幂等创建 7 个实际使用的目录（不创建未使用的顶层目录）；frontmatter parser 与工作页节名在 `_meta/engine/lib/shared/`，插件直接 import engine（2.1 起无 shim），CLI 与插件共用；同分钟会话按前缀加 `-2`/`-3` 去重；`access.jsonl` 超阈值自动轮转、不删除；`_meta/scripts/check-plugin-load.mjs` 是 CI 第一步的**加载形状闸门**（全部 JSON 禁 BOM/可解析、manifest 与文件存在、engine 清单/版本/语法、bundle patch 形状、`node --check`），本地改插件/engine/清单后先跑它；导出安全规则集中在 `_meta/scripts/lib/export-rules.mjs`（纯函数 + 17 单测 + CI「Script unit tests」），导出/发布脚本不得另写判断。
 
 ## 引擎包（可继承性）
 
-v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**；插件 `_meta/plugin/kb-panel/` 的 `stores.js`/`work-brief.js`/`redact.js`/`promote.js`/`shared/*.mjs` 是同名 **re-export shim**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。2.0.0 是结构版本：用户数据、CLI 命令与注入行为不变。
+v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。v2.1 起 6 个插件 shim 已删除，插件直接 import `_meta/engine/lib/*`；engine 增加跨进程 registry 锁 `withRegistryLock`，导出规则抽为纯函数并进 CI。2.0.0 是结构版本（行为不变），2.1.0 是行为 minor（记忆启用/可解释注入）。
 
 ## 目录里有什么
 
@@ -90,10 +90,10 @@ v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，
 - `20_Digest/work/`：工作页（项目状态：阶段 / 在办 / 未决 / 下一步）。
 - `_meta/engine/`：宿主无关的 `@local/kb-engine`（零 DSH 依赖；规则引擎：校验、索引重建、写入、整理、工作页、只读检索、多库、脱敏、上下文/写权限；CLI + 模块导出）。
 - `_meta/scripts/kb.mjs`：engine 的兼容包装（默认 root = 本仓库；插件、CI 与冒烟仍调它）。
-- `_meta/plugin/kb-panel/`：DSH 插件（记忆 chip、知识库页、注入与入库触发器、脱敏、HTTP 防护与本机令牌）。
+- `_meta/plugin/kb-panel/`：DSH 插件（记忆 chip、知识库页、注入与入库触发器、`/kb/remember`、脱敏、HTTP 防护与本机令牌；2.1 起直接 import engine，无 shim）。
 - `_meta/schema.md`：完整规范。
 
-侧栏“记忆”页按“人确认过的内容才进入对话”组织：顶部是待确认 / 已记住 / 本轮参考三个数字，页面分待确认、已记住、项目状态、全部四页；候选记忆只有点“记住”后才会参与注入，原文与会话记录不显示在页面上。技术字段收进“运行状态”或详情底部，日常只需要做确认、归档和改范围；已确认原子详情多一个「提升为全局」，把跨项目适用的偏好提升到全局库；顶部“正在查看”工作区选择器是自绘玻璃下拉（非原生 select，v1.18.4 / 客户端 c35，下拉菜单浮于内容卡之上，玻璃表面不透明度 92–96% ≥90%），显示各库 `project.json` 的实际名称（legacy 显示 “DSH Memory”，不再写“旧版”）；project 与 legacy（知识库本体）可写工作区可「改名」（global 不可，自绘玻璃对话框，Enter 保存 / Escape 取消），文件夹迁移后会出现「重新定位到当前路径」确认卡片。
+侧栏“记忆”页按“人确认过的内容才进入对话”组织：顶部是待确认 / 已记住 / 本轮参考三个数字，页面分待确认、已记住、项目状态、全部四页；候选记忆只有点“记住”后才会参与注入，原文与会话记录不显示在页面上。技术字段收进“运行状态”或详情底部，日常只需要做确认、归档和改范围；已确认原子详情多一个「提升为全局」，把跨项目适用的偏好提升到全局库；v2.1 起新增「记一条」（写当前查看的可写库、默认 inbox、须人工确认）与「本轮注入」折叠卡（只读展示本轮实际注入清单与来源库）；顶部“正在查看”工作区选择器是自绘玻璃下拉（非原生 select，v1.18.4 / 客户端 c35，下拉菜单浮于内容卡之上，玻璃表面不透明度 92–96% ≥90%），显示各库 `project.json` 的实际名称（legacy 显示 “DSH Memory”，不再写“旧版”）；project 与 legacy（知识库本体）可写工作区可「改名」（global 不可，自绘玻璃对话框，Enter 保存 / Escape 取消），文件夹迁移后会出现「重新定位到当前路径」确认卡片。
 
 侧栏“刷新界面”主按钮是**软刷新**：只重读 `/kb/panel.json`、`/kb/ingest.json`，不卸载页面，运行中的对话不中断；右侧菜单的“完整重载界面”在空闲时立即执行，忙时按 `/kb/busy` 排队，等所有会话空闲后自动重载，可取消。软刷新不加载新版前端代码，换代码仍需完整重载或 `Ctrl+R`。
 
@@ -117,9 +117,13 @@ node _meta/plugin/kb-panel/test/shared-frontmatter.test.mjs
 node _meta/plugin/kb-panel/test/stores.test.mjs
 node _meta/plugin/kb-panel/test/promote.test.mjs
 node _meta/plugin/kb-panel/test/context.test.mjs
+node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
+
+# 脚本单测（导出安全规则，CI 同款）
+node --test --test-isolation=none _meta/scripts/test/export-rules.test.mjs
 ```
 
-当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 149 条全过；**本地完整库** `validate` 4 篇（core.md + 自动捕获的 `10_Raw` 会话 + c-1001 + c-1002）/3 行、0 警告；**公开快照**（无 `10_Raw/`）`validate` 3 篇（core.md + c-1001 + c-1002）/2 行、0 警告——CI 在导出快照上跑同一套检查。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
+当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 159 条全过、脚本测试 17 条全过；**本地完整库** `validate` 10 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 3 决策）/主索引 8 行 + 归档 1 行、0 警告；公开快照（无 `10_Raw/`）的 `validate` 计数随 2.1.0 快照导出复核后回填。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
 
 ## 裁判评估
 
@@ -141,7 +145,7 @@ node _meta/scripts/eval-judge.mjs --golden _meta/rules/golden.jsonl `
 
 ## 公开快照说明
 
-公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*` 任意后缀、`PROJECT_PLAN.md` 并重建索引；**导出还会清洗 session UUID 与原文文件名**（`session-<redacted>` / `10_Raw/sessions/<redacted>.md`），CI 在导出快照上再查一遍禁止文件与 session id），`publish-public.mjs` 发布前再做一次硬闸。1.19.2 已发布（public commit `55844c3`）；1.19.3（第十二轮小缝清偿）已发布（public commit `4b020ac`、tree `058cc5d`、CI `41434489680` 全绿）；1.19.4（短 session id 下限关闭，最后一个补丁版）已发布；**2.0.0（A/B 结构版本：engine 解耦 + context 收敛，行为不变）随本次快照发布**，提交与 CI 结果见 `main` 历史。**本地历史**：本 README 与 CHANGELOG 里引用的 git `bdf14e3` 是本地私有仓库历史，公开仓库不可解析（保留 id 仅为对照）。**orphan 残余**：已泄漏提交的 GitHub 对象与既有 clone 不因 force-push/`--orphan` 消失，本仓库只保证 `main` 可达历史不含该文件。
+公开仓库（`shehuilaoliumang/dsh-memory`）只分发**规则层 / 插件代码 / 文档与最小 canon**（`30_Canon/core.md` + 当前新决策）；`10_Raw/`、`20_Digest/` 笔记层与 2026-11-02 重置前的旧决策**不随公开仓库分发**——README 里的架构图与目录树描述的是本地完整库。公开快照由 `export-public.mjs` 生成（排除 `10_Raw/`、`_meta/state/`、`access*` 任意后缀、`PROJECT_PLAN.md` 并重建索引；**导出还会清洗 session UUID 与原文文件名**（`session-<redacted>` / `10_Raw/sessions/<redacted>.md`），CI 在导出快照上再查一遍禁止文件与 session id），`publish-public.mjs` 发布前再做一次硬闸。1.19.2 已发布（public commit `55844c3`）；1.19.3（第十二轮小缝清偿）已发布（public commit `4b020ac`、tree `058cc5d`、CI `41434489680` 全绿）；1.19.4（短 session id 下限关闭，最后一个补丁版）已发布；**2.0.0（A/B 结构版本：engine 解耦 + context 收敛）已发布（release commit `30e50f1`）**；**2.1.0（记忆启用/护栏/注入可解释，行为 minor）随本次快照发布**，提交与 CI 结果见 `main` 历史。**本地历史**：本 README 与 CHANGELOG 里引用的 git `bdf14e3` 是本地私有仓库历史，公开仓库不可解析（保留 id 仅为对照）。**orphan 残余**：已泄漏提交的 GitHub 对象与既有 clone 不因 force-push/`--orphan` 消失，本仓库只保证 `main` 可达历史不含该文件。
 
 ## 隐私说明
 

@@ -30,8 +30,8 @@ node _meta/engine/bin/kb.mjs --root <store> add-atom --json-file spec.json --jso
 - `lib/shared/frontmatter.mjs`、`lib/shared/work-sections.mjs` — 共享解析契约
 - `bin/kb.mjs` → `lib/cli.mjs` — 校验/索引/写入/检索/整理/工作页/删除闸门/attach
 
-引擎不 import 任何 DSH 或插件代码；插件只反向依赖引擎（`_meta/plugin/kb-panel/*.js`
-里的同名文件是兼容 shim）。
+引擎不 import 任何 DSH 或插件代码；插件只反向依赖引擎。**v2.1 起插件直接
+`import _meta/engine/lib/*`（6 个 re-export shim 已删除），不再有兼容 shim 层。**
 
 ## 依赖方向与公开模块
 
@@ -42,15 +42,19 @@ node _meta/engine/bin/kb.mjs --root <store> add-atom --json-file spec.json --jso
   `./shared/frontmatter`、`./shared/work-sections`）；CLI 入口 `bin/kb.mjs`。
 - 上下文语义：`lib/context.mjs` 是唯一「会话能看哪些 store、能写哪个 store」的决策
   （`describeStore`/`resolveContext`/`resolveWriteTarget`，写权限 fail closed）。
-- 兼容层：`_meta/scripts/kb.mjs`（默认 root=本仓库）与插件同名文件是包装/shim；
-  新集成直接用 engine 路径。
+- 兼容层：`_meta/scripts/kb.mjs` 是默认 root 的兼容包装；插件直接 import engine。
+- **registry 跨进程锁**：`lib/stores.mjs` 的 `withRegistryLock(registryFile, fn)` 把
+  读-改-写串行化（tmp+rename 之上），多进程/多路由并发写 registry 不再丢更新。
 - 闸门：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本/语法
-  （11 个 engine 文件、25 个 JS）；`_meta/plugin/kb-panel/test/context.test.mjs` 覆盖
-  context 决策，单测合计 149 条。
+  （11 个 engine 文件、21 个 JS）；`context.test.mjs` 5 条 + `behavior-matrix.test.mjs`
+  9 条覆盖上下文与路由，插件单测合计 159 条。
 
 ## 复核条件
 
 - engine 出现 DSH/插件 import、或插件里重新长出第二份路径/kind 判断 → 视为解耦回退，
   重开 c-1002 并回滚相关改动。
-- shim 被外部长期依赖而无法清理 → 评估把 shim 定为长期公开 API 并补文档。
+- 插件重新引入 re-export shim 或私有副本 → 视为解耦回退；shim 如确需恢复，须先改 c-1002
+  的「2.1 起无 shim」结论。
+- registry 锁回归（并发读-改-写）失效或出现丢更新事故 → 复查 `withRegistryLock` 并重开
+  c-1003 的写入边界。
 - 多库面合并为单库、或需要进程内长驻引擎时，重新评估 CLI/模块边界。

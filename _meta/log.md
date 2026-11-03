@@ -112,3 +112,11 @@
 2026-11-02 19:44 | phase16 | Phase 16（2.0.0）A/B 结构收敛：规则层抽出为宿主无关 _meta/engine/（@local/kb-engine，CLI+模块导出、零 DSH 依赖），_meta/scripts/kb.mjs 变兼容包装、插件同名文件变 re-export shim（engine <- plugin 单向）；context.mjs 单一上下文/写权限（describeStore/resolveContext/resolveWriteTarget，fail closed），legacy 数据化并删除插件本地 within/writableProjectStore 重复判断；check-plugin-load 扩 engine 清单（6 JSON/11 engine/25 JS）；context 测试 +5 = 149/149；决策 c-1002；行为不变，2.0.0 待发布
 2026-11-02 19:49 | release | 2.0.0 公开快照已发布：public commit 30e50f1（tree 972af03）、CI run 41439682408 全绿；A 面收敛（context 单一决策、legacy 数据化、插件去重复分支）+ B 引擎解耦（@local/kb-engine、零 DSH 依赖、plugin shim、兼容包装）；公开树 94 项含 _meta/engine 与 c-1002，无 access*/state/10_Raw/PROJECT_PLAN；本地 validate 4 篇/3 行、公开快照 3 篇/2 行
 2026-11-02 20:03 | docs | 第十四轮复审（78→82）两条小缝：cli.mjs frontmatter 注释恢复指向 engine 单一实现（插件路径为 shim）；engine README 增加「任意根与约定根」说明（非 .dsh-memory 根是设计内能力，警告不等于失败）。docs-only，不升版本
+2026-11-02 20:06 | release | 第十四轮复审后文档同步已推送：public commit c9e74a6（父 30e50f1）、CI 41441811513 全绿；版本保持 2.0.0（docs-only，不升版本）；修复 cli.mjs frontmatter 注释漂移 + engine README「任意根与约定根」说明；决定按复审建议在此冻结，不再发新版本
+2026-11-03 09:22 | atom | 2026-11-03-a-0001（fact）测试：手动记录功能端到端验证（验证后可归档）
+2026-11-03 09:22 | status | 2026-11-03-a-0001 → archived
+2026-11-03 09:22 | work | 2026-11-03-w-0001（global）新建工作页
+2026-11-03 09:22 | atom | 2026-11-03-a-0002（fact）项目全景入口 FEATURES.md
+2026-11-03 09:22 | atom | 2026-11-03-a-0003（principle）公开快照发布流程
+2026-11-03 09:22 | atom | 2026-11-03-a-0004（principle）记忆写入与删除边界
+2026-11-03 09:32 | phase17 | Phase 17（2.1.0，行为 minor）：P0 记忆启用 —— POST /kb/remember（只写当前可写库、默认 inbox、须确认）+ 记忆页记一条/空态引导 + legacy 全局工作页与 3 项目工作页 + 首批 3 条 inbox 原子；P1 工程护栏 —— behavior-matrix 9 用例、导出规则纯函数 export-rules.mjs + 17 单测 + CI 脚本测试、engine withRegistryLock 跨进程锁、删除 6 个插件 shim（插件直接 import engine）；P2 注入可解释 —— panel injection manifest + 本轮注入折叠卡（c37）；未做转 2.2：pin/exclude、相关性注入、consolidate 动作、多库面合并、engine 进程内 API；决策 c-1003；2.1.0 待发布

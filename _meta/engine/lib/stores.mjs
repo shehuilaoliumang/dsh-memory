@@ -353,12 +353,70 @@ function writeRegistryFile(registryFile, projects) {
 }
 
 /**
+ * Serialize registry "read → mutate → write" across processes (panel routes,
+ * CLI attach, startup sync). writeRegistryFile is atomic per write, but two
+ * concurrent readers can still lose each other's update; a lock file with a
+ * short stale-takeover deadline closes that window without a dependency.
+ */
+function acquireRegistryLock(registryFile, timeoutMs = 5000) {
+  const lockFile = `${registryFile}.lock`;
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const fd = fs.openSync(lockFile, 'wx');
+      return () => {
+        try {
+          fs.closeSync(fd);
+        } catch {
+          /* already closed */
+        }
+        try {
+          fs.unlinkSync(lockFile);
+        } catch {
+          /* lock already removed */
+        }
+      };
+    } catch (error) {
+      if (error && error.code !== 'EEXIST') throw error;
+      if (Date.now() > deadline) {
+        // A crashed writer may leave the lock behind; take it over once.
+        try {
+          fs.unlinkSync(lockFile);
+        } catch {
+          /* another waiter already removed it */
+        }
+        if (Date.now() > deadline + 2000) throw new Error(`registry lock timeout: ${lockFile}`);
+      } else {
+        // Synchronous API: block briefly instead of introducing async churn.
+        const until = Date.now() + 10;
+        while (Date.now() < until) {
+          /* spin */
+        }
+      }
+    }
+  }
+}
+
+/** Run one registry read-modify-write under the cross-process lock. */
+export function withRegistryLock(registryFile, fn) {
+  const release = acquireRegistryLock(registryFile);
+  try {
+    return fn();
+  } finally {
+    release();
+  }
+}
+
+/**
  * Backfill the stable id and the workspace-folder birthtime into project.json
  * and the user-level registry for every attached store that still exists.
  * Idempotent; safe to run at plugin start.
  */
 export function syncRegistryStoreIds(registryFile = DEFAULT_REGISTRY_FILE) {
-  const registry = readJson(registryFile, null);
+  const release = acquireRegistryLock(registryFile);
+  try {
+    const registry = readJson(registryFile, null);
   const projects = registry && Array.isArray(registry.projects) ? registry.projects : null;
   if (!projects || !projects.length) return 0;
   let changed = 0;
@@ -391,6 +449,9 @@ export function syncRegistryStoreIds(registryFile = DEFAULT_REGISTRY_FILE) {
   }
   if (changed) writeRegistryFile(registryFile, projects);
   return changed;
+  } finally {
+    release();
+  }
 }
 
 /**
@@ -439,7 +500,9 @@ export function relocationCandidate(storeRoot, registryFile = DEFAULT_REGISTRY_F
  * rule; only then the autoGranted provenance survives the move.
  */
 export function relocateProject(storeRoot, oldPath, registryFile = DEFAULT_REGISTRY_FILE, options = {}) {
-  const resolved = path.resolve(storeRoot);
+  const release = acquireRegistryLock(registryFile);
+  try {
+    const resolved = path.resolve(storeRoot);
   const meta = readProjectMeta(resolved);
   if (!meta) throw new Error(`不是项目库（缺少有效 project.json）：${resolved}`);
   const id = ensureStoreId(resolved);
@@ -473,11 +536,16 @@ export function relocateProject(storeRoot, oldPath, registryFile = DEFAULT_REGIS
   kept.push(row);
   writeRegistryFile(registryFile, kept);
   return { root: resolved, slug: meta.slug, storeId: id, oldPath: oldResolved, writable: row.writable };
+  } finally {
+    release();
+  }
 }
 
 /** Idempotently attach a project store in the user-level registry. */
 export function attachProject(storeRoot, registryFile = DEFAULT_REGISTRY_FILE, options = {}) {
-  const root = path.resolve(storeRoot);
+  const release = acquireRegistryLock(registryFile);
+  try {
+    const root = path.resolve(storeRoot);
   const meta = readProjectMeta(root);
   if (!meta) throw new Error(`不是项目库（缺少有效 project.json）：${root}`);
   const registry = readJson(registryFile, null);
@@ -510,6 +578,9 @@ export function attachProject(storeRoot, registryFile = DEFAULT_REGISTRY_FILE, o
   kept.push(row);
   writeRegistryFile(registryFile, kept);
   return { root, slug: meta.slug, registryFile, writable, storeId };
+  } finally {
+    release();
+  }
 }
 
 /**

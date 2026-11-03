@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { redactSecrets, hasSecret } from '../redact.js';
+import { redactSecrets, hasSecret } from '../../../engine/lib/redact.mjs';
 
 test('redacts common provider token shapes', () => {
   // Build the fixtures at runtime so the public-snapshot secret scanner does

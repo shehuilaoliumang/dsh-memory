@@ -97,7 +97,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-11-02-c36';
+    const CLIENT_BUILD = '2026-11-02-c37';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -525,6 +525,23 @@ window.__ModuleLoader__.load({
         outline: 'none',
       },
       renameActions: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '14px' },
+      rememberTextarea: {
+        boxSizing: 'border-box',
+        width: '100%',
+        minHeight: '96px',
+        marginTop: '12px',
+        padding: '10px',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '20px',
+        color: 'var(--dsw-alias-label-primary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 62%, transparent)',
+        borderRadius: '12px',
+        outline: 'none',
+        resize: 'vertical',
+      },
+      injectionRow: { fontSize: '11px', lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
 
       // --- reading surface -------------------------------------------------
       shell: {
@@ -1825,6 +1842,10 @@ window.__ModuleLoader__.load({
        * owns the input. The route still only changes project.json.title. */
       const [renameOpen, setRenameOpen] = useState(false);
       const [renameValue, setRenameValue] = useState('');
+      /** Manual capture dialog: creates an inbox atom in the viewed store. */
+      const [rememberOpen, setRememberOpen] = useState(false);
+      const [rememberText, setRememberText] = useState('');
+      const [rememberBusy, setRememberBusy] = useState(false);
       const [toast, setToast] = useState(null);
       const [health, setHealth] = useState(null);
       const [searchFocused, setSearchFocused] = useState(false);
@@ -2179,6 +2200,38 @@ window.__ModuleLoader__.load({
         }
       }, [load, notify, renameValue, view]);
 
+      /** Manual capture: create an inbox atom in the currently viewed store. */
+      const submitRemember = useCallback(async () => {
+        if (!view) return;
+        const text = String(rememberText || '').trim();
+        if (!text) {
+          setActionError('内容不能为空');
+          return;
+        }
+        setRememberBusy(true);
+        try {
+          const response = await fetch('/kb/remember', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ workspace: view.id, text }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const message = payload && payload.error ? String(payload.error) : `操作被拒绝（HTTP ${response.status}）`;
+            setActionError(message.slice(0, 200));
+            return;
+          }
+          setRememberOpen(false);
+          setRememberText('');
+          notify(payload.duplicate ? '已存在相同摘要，未重复记录' : '已记入待确认');
+          await load();
+        } catch {
+          setActionError('记录失败');
+        } finally {
+          setRememberBusy(false);
+        }
+      }, [load, notify, rememberText, view]);
+
       /** Confirm a copy/clone relocation after a folder rename. */
       const relocateWorkspace = useCallback(async () => {
         if (!currentSessionId) return;
@@ -2249,6 +2302,9 @@ window.__ModuleLoader__.load({
                 )
               : null,
           ),
+          view && viewWritable
+            ? h(KbButton, { onClick: () => { setRememberText(''); setRememberOpen(true); } }, '记一条')
+            : null,
           h(KbButton, { onClick: () => load() }, '刷新'),
         ),
       );
@@ -2642,6 +2698,24 @@ window.__ModuleLoader__.load({
                     { style: { ...S.empty2, flex: 1 } },
                     h('div', { style: S.emptyTitle2 }, emptyTitle),
                     h('div', { style: S.emptyHint2 }, emptyHint),
+                    view && viewWritable && !query.trim()
+                      ? h(
+                          'div',
+                          { style: { marginTop: '12px', display: 'flex', gap: '8px', justifyContent: 'center' } },
+                          h(
+                            KbButton,
+                            {
+                              variant: 'primary',
+                              onClick: () => {
+                                setRememberText('');
+                                setRememberOpen(true);
+                              },
+                            },
+                            '记一条',
+                          ),
+                          h(KbButton, { onClick: () => load() }, '刷新'),
+                        )
+                      : null,
                   ),
             ),
             h(
@@ -2735,6 +2809,26 @@ window.__ModuleLoader__.load({
           )
         : null;
 
+      const injectionCard =
+        data && data.injection && data.injection.total
+          ? h(
+              'details',
+              { style: { ...S.details, margin: '0 0 8px' } },
+              h(
+                'summary',
+                { style: S.summary },
+                `本轮注入 ${data.injection.total} 条（全局 ${data.injection.global} / 项目 ${data.injection.project}）`,
+              ),
+              ...data.injection.entries.map((entry) =>
+                h(
+                  'div',
+                  { key: `${entry.store}:${entry.id}`, style: S.injectionRow },
+                  `· ${entry.summary}（${entry.id} · ${entry.store}）`,
+                ),
+              ),
+            )
+          : null;
+
       const runStatus = healthBar
         ? h(
             'details',
@@ -2752,6 +2846,7 @@ window.__ModuleLoader__.load({
           { style: S.shell },
           header,
           statusBar,
+          injectionCard,
           workspaceSetup,
           actionError ? h('div', { style: S.errorBar }, actionError) : null,
           body,
@@ -2799,6 +2894,48 @@ window.__ModuleLoader__.load({
                     KbButton,
                     { variant: 'primary', disabled: workspaceBusy, onClick: () => void submitRename() },
                     '保存',
+                  ),
+                ),
+              ),
+            )
+          : null,
+        rememberOpen
+          ? h(
+              'div',
+              {
+                style: S.renameOverlay,
+                role: 'dialog',
+                'aria-modal': 'true',
+                'aria-label': '记一条记忆',
+                onMouseDown: (event) => {
+                  if (event.target === event.currentTarget) setRememberOpen(false);
+                },
+              },
+              h(
+                'div',
+                { style: S.renameCard },
+                h('div', { style: S.renameTitle }, '记一条记忆'),
+                h('div', { style: S.renameHint }, '先进入待确认；你确认后才会进入对话。写入当前查看的工作区。'),
+                h('textarea', {
+                  style: S.rememberTextarea,
+                  value: rememberText,
+                  autoFocus: true,
+                  maxLength: 4000,
+                  placeholder: '要记住的事实、偏好或结论…',
+                  'aria-label': '记忆内容',
+                  onChange: (event) => setRememberText(event.target.value),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Escape') setRememberOpen(false);
+                  },
+                }),
+                h(
+                  'div',
+                  { style: S.renameActions },
+                  h(KbButton, { disabled: rememberBusy, onClick: () => setRememberOpen(false) }, '取消'),
+                  h(
+                    KbButton,
+                    { variant: 'primary', disabled: rememberBusy, onClick: () => void submitRemember() },
+                    '记入待确认',
                   ),
                 ),
               ),

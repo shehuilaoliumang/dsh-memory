@@ -24,6 +24,7 @@
  * override map, which only decides whether a session receives the context.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createIngestor, resolveNode, runProcess } from './ingest.js';
@@ -46,10 +47,10 @@ import {
   syncRegistryStoreIds,
   uniqueWorkspaceSlug,
   updateProjectTitle,
-} from './stores.js';
-import { parseFrontmatterData as parseFrontmatter } from './shared/frontmatter.mjs';
-import { globalAtomSpec, isGlobalPromotable, localDateStamp } from './promote.js';
-import { briefText, currentTruthEntries, currentTruthNotes, pickBySource, rankMemories } from './work-brief.js';
+} from '../../engine/lib/stores.mjs';
+import { parseFrontmatterData as parseFrontmatter } from '../../engine/lib/shared/frontmatter.mjs';
+import { globalAtomSpec, isGlobalPromotable, localDateStamp } from '../../engine/lib/promote.mjs';
+import { briefText, currentTruthEntries, currentTruthNotes, pickBySource, rankMemories } from '../../engine/lib/work-brief.mjs';
 import { isInsideLegacy, resolveContext, resolveWriteTarget } from '../../engine/lib/context.mjs';
 
 export const inject = ['webServer', 'systemPrompt'];
@@ -1097,6 +1098,10 @@ export function apply(ctx, config = {}) {
     const sorted = [...notes].sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || b.id.localeCompare(a.id));
 
     const heat = heatTop(5, view.root);
+    // Prompt injection manifest for this session: same selection the prompt uses.
+    const injection = sessionStores
+      ? injectionManifestFor(sessionStores, session.scope || 'global')
+      : { total: 0, global: 0, project: 0, entries: [] };
     return {
       workspace: view.root,
       view,
@@ -1130,15 +1135,8 @@ export function apply(ctx, config = {}) {
       // project scope (when one is selected), capped at the 5-memory budget that
       // the prompt block actually uses. One shared predicate decides this for
       // both the counter and the prompt block — pages are never memories.
-      injected: (() => {
-        if (!sessionStores) return Math.min(5, currentTruthNotes(notes, 'global').length);
-        try {
-          const selected = selectInjection(sessionStores, session.scope || 'global');
-          return selected.globalPicked.length + selected.projectPicked.length;
-        } catch {
-          return 0;
-        }
-      })(),
+      injected: sessionStores ? injection.total : Math.min(5, currentTruthNotes(notes, 'global').length),
+      injection,
       scopes: [...new Set(notes.map((note) => note.scope).filter((scope) => /^project:/.test(scope || '')))].sort(),
       accessRows: heat.rows,
       hot: heat.hot,
@@ -1303,6 +1301,41 @@ export function apply(ctx, config = {}) {
     const legacyGlobal = legacy.globalPicked.slice(0, globalLimit);
     const legacyProject = legacy.projectPicked.slice(0, Math.max(0, 5 - legacyGlobal.length));
     return { globalPicked: legacyGlobal, projectPicked: legacyProject };
+  };
+
+  /**
+   * Panel "why": the exact memories the prompt would inject for a session, with
+   * their source store. Same selection function as the prompt and the counter,
+   * so the panel can never show a different set.
+   */
+  const injectionManifestFor = (stores, scope) => {
+    const empty = { total: 0, global: 0, project: 0, entries: [] };
+    if (!stores) return empty;
+    try {
+      const selected = selectInjection(stores, scope);
+      const entries = [
+        ...selected.globalPicked.map((note) => ({
+          id: String(note.id || ''),
+          summary: String(note.summary || note.title || ''),
+          scope: String(note.scope || 'global'),
+          store: 'global',
+        })),
+        ...selected.projectPicked.map((note) => ({
+          id: String(note.id || ''),
+          summary: String(note.summary || note.title || ''),
+          scope: String(note.scope || ''),
+          store: stores.project && stores.project.legacy ? 'legacy' : 'project',
+        })),
+      ];
+      return {
+        total: entries.length,
+        global: selected.globalPicked.length,
+        project: selected.projectPicked.length,
+        entries,
+      };
+    } catch {
+      return empty;
+    }
   };
 
   // Prompt context: global preferences plus the session's attached project
@@ -1894,6 +1927,80 @@ export function apply(ctx, config = {}) {
           sendJson(res, 200, { ok: true, ...(JSON.parse(result.stdout || '{}') || {}) });
         } catch (error) {
           sendJson(res, error && error.statusCode ? error.statusCode : 500, { error: String(error && error.message ? error.message : error) });
+        }
+      },
+    }),
+  );
+
+  // Manual capture ("记住这条"): create an inbox atom in the currently viewed
+  // writable store. It never goes active by itself — the inbox tab still needs a
+  // human confirmation, so this cannot bypass the judge/injection gate.
+  ctx.effect(() =>
+    ctx.webServer.register({
+      kind: 'exact',
+      path: '/kb/remember',
+      handler: async (req, res) => {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'method not allowed' });
+          return;
+        }
+        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        let specFile = '';
+        try {
+          const body = await readJsonBody(req);
+          const view = workspaceWriteTarget(body && body.workspace);
+          const text = String((body && body.text) || '').trim();
+          if (!text) {
+            sendJson(res, 400, { error: '内容不能为空' });
+            return;
+          }
+          if (text.length > 4000) {
+            sendJson(res, 400, { error: '内容过长（≤4000 字）' });
+            return;
+          }
+          const firstLine = text.split(/\r?\n/)[0].replace(/^[#>\-\s]+/, '').trim();
+          const title = String((body && body.title) || '').trim() || firstLine.slice(0, 60) || '手动记录';
+          const summary = String((body && body.summary) || '').trim()
+            || text.replace(/\s+/g, ' ').slice(0, 40);
+          // Same scope rule as the rest of the panel: project view → project scope.
+          const scope = view.kind === 'project' ? `project:${view.meta.slug}` : 'global';
+          const spec = {
+            title: title.slice(0, 120),
+            type: String((body && body.type) || 'fact').trim() || 'fact',
+            scope,
+            summary: summary.slice(0, 40),
+            points: text
+              .split(/\r?\n/)
+              .map((line) => line.replace(/^[#>\-\s]+/, '').trim())
+              .filter(Boolean)
+              .slice(0, 8),
+            tags: ['manual'],
+            note: '手动记录（记忆页）',
+          };
+          const stateDir = path.join(root, '_meta', 'state');
+          fs.mkdirSync(stateDir, { recursive: true });
+          specFile = path.join(stateDir, `remember-${randomBytes(6).toString('hex')}.json`);
+          fs.writeFileSync(specFile, `${JSON.stringify(spec, null, 2)}\n`, 'utf8');
+          const result = await runProcess(
+            nodeRuntime.command,
+            kbCommand(view, ['add-atom', '--json-file', specFile, '--json']),
+            { cwd: view.root, env: { ...process.env, ...nodeRuntime.env }, timeoutMs: 30000 },
+          );
+          if (result.code !== 0) throw new Error(commandError(result));
+          const payload = JSON.parse(result.stdout || '{}') || {};
+          sendJson(res, 200, { ok: true, id: payload.id || null, duplicate: Boolean(payload.duplicate) });
+        } catch (error) {
+          sendJson(res, error && error.statusCode ? error.statusCode : 500, {
+            error: String(error && error.message ? error.message : error),
+          });
+        } finally {
+          if (specFile) {
+            try {
+              fs.unlinkSync(specFile);
+            } catch {
+              /* the spec file lives in the store's runtime state dir */
+            }
+          }
         }
       },
     }),

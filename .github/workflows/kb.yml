@@ -37,6 +37,16 @@ jobs:
           }
           if ($failed) { exit 1 }
 
+      - name: Script unit tests (export rules)
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem _meta/scripts/test/*.test.mjs | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
+
       - name: Smoke (Windows PowerShell 5.1)
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File _meta/scripts/smoke.ps1

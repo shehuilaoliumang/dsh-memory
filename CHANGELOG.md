@@ -2,6 +2,31 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 2.1.0 — 2026-11-03
+
+记忆启用、工程护栏与注入可解释（行为版本；P0/P1 完成，P2 部分完成，其余转 2.2）。
+
+**P0 记忆启用**
+
+- 新增 `POST /kb/remember`：记忆页「记一条」对话框 + 空态引导按钮；写入当前查看的可写库（复用 `workspaceWriteTarget`，最终写权限仍由 `context.resolveWriteTarget` 决定），默认 **inbox**、必须人工确认后才可能注入；legacy/global 视图 → `scope: global`，项目视图 → `project:<slug>`；正文 ≤4000 字，标题/summary 自动缺省，`tags: ['manual']`；不经过裁判、不绕过确认/注入闸门。
+- 建立 legacy 全局工作页 `20_Digest/work/2026-11-03-w-0001.md`（简报指向 v2.1）与 3 个项目库工作页（插件制作 / 竞对商品筛取及数据匹配 / 友商招商加盟信息收集研究，占位待填）。
+- 首批 3 条 inbox 原子待确认：项目全景入口 FEATURES.md、公开快照发布流程、记忆写入与删除边界（另有 1 条测试原子已 archived）。
+
+**P1 工程护栏**
+
+- 新增 `_meta/plugin/kb-panel/test/behavior-matrix.test.mjs` 9 用例（legacy / 项目可写 / 项目只读 / 未接入 / 改名双信号 / 复制确认 / 复制且旧路径已删 / 多轮路由序列 / `describeStore` 契约）。
+- 导出安全规则抽为纯函数 `_meta/scripts/lib/export-rules.mjs` + `_meta/scripts/test/export-rules.test.mjs` 17 用例（旧/新导出 75 文件 SHA256 一致）；CI 新增「Script unit tests (export rules)」步骤。
+- engine `stores.mjs` 增加跨进程 registry 锁 `withRegistryLock`（读-改-写串行化）+ 1 条回归；删除 6 个插件 shim（`stores`/`work-brief`/`redact`/`promote`/`shared/*`），插件改为**直接 import engine**。
+
+**P2 注入可解释**
+
+- `/kb/panel.json` 新增 `injection` manifest（`total`/`global`/`project`/`entries`：`id`/`summary`/`scope`/`store`），与 prompt 注入/计数共用同一 `selectInjection`；记忆页新增「本轮注入」折叠卡；客户端 build `2026-11-02-c37`。
+
+**未做（转 2.2，FEATURES §9 标注）**：pin/exclude 每会话记忆控制、相关性注入（带开关）、consolidate 一键动作、多库面合并、engine 进程内 API。
+
+- 数字：插件 159/159、脚本 17/17、smoke 106/106、`check-plugin-load` 6 JSON / 9 manifest / 11 engine / 2 locale / 21 JS；`validate` 本地 10 篇（core + raw + work + 4 atoms + 3 canon，主索引 8 + 归档 1）、0 警告；ADR `30_Canon/decisions/2026-11-03-c-1003.md`。
+- 公开快照：2.1.0 随本次发布用干净快照重发（提交/CI 见 `main` 历史）。
+
 ## 2.0.0 — 2026-11-02
 
 结构性 major：A 面收敛（单一上下文与写权限）与 B 引擎解耦（`@local/kb-engine`）；用户数据、CLI 命令与注入行为不变。

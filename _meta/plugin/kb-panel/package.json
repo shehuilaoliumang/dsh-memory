@@ -1,6 +1,6 @@
 {
   "name": "@local/kb-panel",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "description": "Knowledge base page and multi-project memory: global preference store + explicitly attached project stores, schema §5 pipeline trigger, and the local /kb/* surface.",
@@ -8,7 +8,6 @@
     ".": "./index.js",
     "./client": "./client.js",
     "./ingest": "./ingest.js",
-    "./stores": "./stores.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
@@ -17,11 +16,7 @@
     "client.js",
     "ingest.js",
     "judge.js",
-    "stores.js",
-    "work-brief.js",
     "http-guard.js",
-    "redact.js",
-    "shared/*.mjs",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg"

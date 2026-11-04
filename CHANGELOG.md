@@ -2,6 +2,15 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 3.0.1 — 2026-11-04
+
+读面单一入口加固（patch：无新功能、无行为/写入边界变化；对应外部复审第 17 轮 D1/D2）。
+
+- **D1 提示词注入也走单一读面**：`systemPrompt.context` 的候选/预算/排序从插件本地 `selectInjection` 改为 engine `createSurface().selectInjection()`；本地三件套只在 `_meta/config.json` 的 `surface.unified:false` 回退时运行，相关注释同步修正。engine 候选扫描补回项目库 `global` scope 泄漏的一次性告警，保持可观测性。
+- **D2 parity 夹具可证伪**：`compare-parity.mjs` 自包含夹具扩为 6 条（4 条 global 候选竞争 2 个全局槽、精确注入顺序 `[a-0904,a-0900,a-0911]`、跨库同 subject 取代），并实测 `GLOBAL_INJECTION_LIMIT 2→3` 变异会以 3 条 FAIL 退出，不再出现“预算被改仍通过”。
+- 验证：插件 187/187、engine read-model 6/6 + host 6/6、脚本 17/17、smoke 106/106、`check-plugin-load` 7/9/18/2/34；本地 `validate` 14 篇/主索引 12 + 归档 1、0 警告；fixture parity 6 notes/injection 3/6 hits，live parity 3 drift/0 regression；bench 未受影响（5×300，检索 350ms、快照 116ms、`spawnFree:true`）。
+- 公开快照：发布后回填。
+
 ## 3.0.0 — 2026-11-04
 
 结构周期（major：内部架构重构，无用户可见功能删除；写入授权/注入预算/fail-closed 边界不变；对应第 16 轮外审结构项与 ADR `30_Canon/decisions/2026-11-04-c-1007.md`）。

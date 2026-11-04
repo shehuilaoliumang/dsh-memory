@@ -58,6 +58,7 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - **2.3 算法与规模化**：`rankMemories` 支持 `injectWeight`（默认 0.1，曝光降权）与 `exploration`（默认 0，项目 store 传 1，把最新未曝光条目放到位置 2）；`search` BM25 字段权重 `title×3`/`summary×2`；`toRow` 增 `title`/`scope`/`subject` 并在 300B 预算内由 `fitRow` 缩短；插件注入优先读 catalog（mtime+size 缓存，缺失/损坏回退 scanNotes）。
 - **2.4.1 注入解释同源**：`explainInjection` 接收 `selectInjection` 的 catalog-backed 跨库候选（`candidates`），跨库同 subject 与未 `rebuild` 窗口的标签与真实注入一致（第 15 轮复审 B1/B2）。
 - **2.4 检索回退/注入原因**：`lib/search/pinyin.mjs`（vendored tiny-pinyin 1.3.2 MIT，全拼/首字母，ASCII 查询，`Intl.Collator` 缺失降级为空）+ `lib/search/semantic.mjs`（21 组中英同义词，整词/中文 ≥2 字扩展，单组 ≤4、总 ≤10）只在字面命中 < min(limit,3) 时补位，语义分 ×0.5，响应带 `strategy`/`matchedBy`，仍不写 access；`lib/injection-reasons.mjs` 的 `explainInjection` 给逐条注入原因（advisory，不参与选择），插件写入 `/kb/panel.json` 的 `notes[].injection`。
+- **3.0.1 读面单一入口与 parity 可证伪**：插件 prompt 注入也走 `createSurface().selectInjection()`（本地三件套仅 `surface.unified:false` 回退），engine 补回项目库 global 泄漏告警；`compare-parity.mjs` 夹具扩为 6 条（4 个 global 候选竞争 2 槽、精确顺序、跨库同 subject 取代），`GLOBAL_INJECTION_LIMIT 2→3` 变异已验证会失败。
 - **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 7 JSON / 9 manifest / 18 engine / 2 locale / 34 JS）；插件单测 187 条（含 context 5、behavior-matrix 9、inject-ranking 8、engine-api 3、search-fallback 4；work-brief 36），engine 另含 read-model 6 与 host 6，`compare-parity.mjs`/`bench-read-model.mjs` 为 3.0 读面闸门。
 
 ## 设计约束

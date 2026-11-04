@@ -101,6 +101,8 @@ stdio 上只输出 JSON-RPC，诊断信息走 stderr。宿主契约与新增宿�
   与每行 `matchedBy`/`matchLabel`/`matchTerms`；检索仍不写 `access`。拼音库为 vendored
   tiny-pinyin 1.3.2（MIT，约 8KB、6763 常用字），归属见 `PINYIN-NOTICE.md`；多音字不支持，
   这是启发式而非语义检索。
+- **统一读面（v3.0）**：`lib/read-model.mjs` 的 `createSurface()` 是候选/选择/解释/检索/全库快照的唯一入口；v3.0.1 起 prompt 注入路径也调用 `surface.selectInjection()`，插件本地三件套只保留给 `surface.unified:false` 回退，并补回项目库 global-scope 泄漏的一次性告警。
+- **parity 夹具（v3.0.1）**：`test/compare-parity.mjs` 在无私有库时构造 6 条自包含笔记（4 个 global 候选竞争 2 个全局槽、精确注入顺序、跨库同 subject 取代）；已验证把 `GLOBAL_INJECTION_LIMIT` 从 2 改 3 会让夹具以 3 条 FAIL 退出。
 - **注入原因（v2.4）**：`injection-reasons.mjs` 的 `explainInjection({ notes, entries, scope,
   viewKind, mutedIds, inSessionStore, limits })` 返回 `Record<id, { state, label, detail }>`，
   与 `selectInjection` 使用同一份输入但**不参与选择**（advisory）；优先级 other-store →

@@ -53,33 +53,49 @@ function runFixtureParity() {
   function writeAtom(store, atom) {
     fs.writeFileSync(path.join(store, '20_Digest', 'atoms', `${atom.id}.md`), [
       '---', `id: ${atom.id}`, `title: ${atom.title}`, 'level: digest', 'type: fact',
-      'status: active', `scope: ${atom.scope}`, `summary: ${atom.summary}`,
+      'status: active', `scope: ${atom.scope}`, `subject: ${atom.subject || ''}`,
+      `summary: ${atom.summary}`,
       `updated: ${atom.updated || '2026-11-04'}`, '---', '', atom.body || atom.summary, '',
     ].join('\n'));
     fs.appendFileSync(path.join(store, '_meta', 'catalog.jsonl'), `${JSON.stringify({
       id: atom.id, path: `20_Digest/atoms/${atom.id}.md`, level: 'digest', type: 'fact',
       status: 'active', tags: [], summary: atom.summary, updated: atom.updated || '2026-11-04',
-      title: atom.title, scope: atom.scope, subject: '',
+      title: atom.title, scope: atom.scope, subject: atom.subject || '',
     })}\n`);
   }
 
   try {
     const global = makeStore('global', true);
     const legacy = makeStore('legacy', false);
-    writeAtom(global, { id: '2026-11-04-a-0900', title: '全局偏好', summary: 'fixture global preference', scope: 'global' });
-    writeAtom(legacy, { id: '2026-11-04-a-0901', title: 'fixture search', summary: 'fixture local memory', scope: 'global' });
+    // Four global candidates for two global slots, so a budget split
+    // (e.g. GLOBAL_INJECTION_LIMIT 2 -> 3) must fail the exact entry list.
+    writeAtom(global, { id: '2026-11-04-a-0904', title: '新部署', summary: 'fixture deploy newest', scope: 'global', subject: 'deploy', updated: '2026-11-05' });
+    writeAtom(global, { id: '2026-11-04-a-0900', title: '全局偏好 A', summary: 'fixture global alpha', scope: 'global', updated: '2026-11-04' });
+    writeAtom(global, { id: '2026-11-04-a-0901', title: '全局偏好 B', summary: 'fixture global beta', scope: 'global', updated: '2026-11-03' });
+    writeAtom(global, { id: '2026-11-04-a-0902', title: '全局偏好 C', summary: 'fixture global gamma', scope: 'global', updated: '2026-11-02' });
+    // Same subject in the legacy store: the newer global claim must win and the
+    // stale local note must be explained as replaced (cross-store arbitration).
+    writeAtom(legacy, { id: '2026-11-04-a-0910', title: '旧部署', summary: 'fixture deploy stale', scope: 'global', subject: 'deploy', updated: '2026-11-01' });
+    writeAtom(legacy, { id: '2026-11-04-a-0911', title: 'fixture local', summary: 'fixture local memory', scope: 'global', updated: '2026-11-04' });
     const surface = createSurface({ legacyRoot: legacy, globalRoot: global, cwd: legacy, registryFile: path.join(base, 'registry.json') });
     const ids = surface.workspaces().map((store) => store.id);
     check(ids.join(',') === 'global,legacy', `workspace ids ${JSON.stringify(ids)}`);
     const injection = surface.injection('global');
-    check(injection.total === 2, `injection total ${injection.total} !== 2`);
-    check(injection.entries.length === 2 && injection.entries.every((entry) => entry.id), `injection entries ${JSON.stringify(injection.entries)}`);
+    const injectedIds = injection.entries.map((entry) => entry.id);
+    check(injection.total === 3, `injection total ${injection.total} !== 3`);
+    check(injection.global === 2 && injection.project === 1, `injection split global=${injection.global} project=${injection.project}`);
+    check(JSON.stringify(injectedIds) === JSON.stringify([
+      '2026-11-04-a-0904', '2026-11-04-a-0900', '2026-11-04-a-0911',
+    ]), `injection order ${JSON.stringify(injectedIds)}`);
     const notes = surface.notesWithInjection(surface.view('legacy'), { scope: 'global' });
-    check(notes.some((note) => note.id.endsWith('a-0901') && note.injection.state === 'injected'), 'legacy note not injected');
+    check(notes.some((note) => note.id.endsWith('a-0911') && note.injection.state === 'injected'), 'legacy note not injected');
+    const stale = notes.find((note) => note.id.endsWith('a-0910'));
+    check(stale && stale.injection && stale.injection.state === 'replaced', 'cross-store stale note not replaced');
+    check(stale && stale.injection && stale.injection.detail.includes('2026-11-04-a-0904'), 'cross-store replaced detail lacks newer id');
     const all = surface.snapshotAll({ scope: 'global' });
-    check(all.view.id === 'all' && all.view.readOnly === true && all.notes.length === 2, 'all snapshot shape');
+    check(all.view.id === 'all' && all.view.readOnly === true && all.notes.length === 6, 'all snapshot shape');
     check(all.notes.every((note) => note.uid.startsWith('global::') || note.uid.startsWith('legacy::')), 'all snapshot uid');
-    const search = surface.search({ workspace: 'all', query: 'fixture', limit: 5 });
+    const search = surface.search({ workspace: 'all', query: 'fixture', limit: 10 });
     check(search.total >= 1 && search.results.every((row) => ['global', 'legacy'].includes(row.workspace)), 'all search tags');
     console.log(`fixture parity ok: ${all.notes.length} notes, injection ${injection.total}, ${search.total} search hit(s)`);
   } catch (error) {

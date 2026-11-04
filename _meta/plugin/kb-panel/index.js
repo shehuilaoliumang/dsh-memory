@@ -1267,7 +1267,7 @@ export function apply(ctx, config = {}) {
     let injectionCandidates = Array.isArray(injection.candidates) ? injection.candidates : [];
     if (sessionStores && !unifiedSurface) {
       try {
-        injectionCandidates = selectInjection(
+        injectionCandidates = legacySelectInjection(
           sessionStores,
           session.scope || 'global',
           controlsFor(sessionId),
@@ -1485,14 +1485,13 @@ export function apply(ctx, config = {}) {
   };
 
   /**
-   * Rank the injectable candidates of one store. The result is intentionally
-   * uncapped (within a large safety bound): cross-store subject arbitration can
-   * remove earlier entries, so the final budget must be applied after it.
-   * `filterScope` narrows the store's own project scope when global memories
-   * live in a separate store and must not be double-counted.
+   * 2.x rollback only (`surface.unified: false`): rank one store's candidates.
+   * The unified path uses engine `createSurface().selectInjection()`; this copied
+   * implementation exists so a host can fall back without restarting. Main paths
+   * must not call it (c-1007, 3.0.1 D1).
    */
   const scopeLeakWarned = new Set();
-  const selectStoreCandidates = (storeRoot, scope, filterScope = '', query = '', options = {}) => {
+  const legacySelectStoreCandidates = (storeRoot, scope, filterScope = '', query = '', options = {}) => {
     if (!storeRoot) return [];
     // Fast path: the derived catalog. Slow path: read every note file (used when
     // the index is absent/unreadable, or for panel views which need file paths).
@@ -1525,20 +1524,11 @@ export function apply(ctx, config = {}) {
   };
 
   /**
-   * The one selection used by both the prompt block and `snapshot.injected`.
-   *
-   * Global and project stores are validated independently, so the same
-   * `subject` can exist in both. Arbitrate the merged candidates before
-   * applying the 2/3 budget; otherwise a stale global claim can survive next to
-   * a newer project claim. Each candidate keeps its source and rank so the
-   * budget stays source-aware after the loser is removed.
+   * 2.x fallback: source-aware budget with per-session controls. The unified
+   * prompt path uses `surface.selectInjection()` instead; keeping one copy only
+   * for `surface.unified:false` avoids two live orchestration paths (3.0.1 D1).
    */
-  /**
-   * Source-aware budget with per-session controls. Kept local (not imported) so
-   * a live host can hot-reload the plugin without restarting: the engine export
-   * is the tested reference, this is the same rule wired to session state.
-   */
-  const pickBySourceWithControls = (entries, options = {}) => {
+  const legacyPickBySourceWithControls = (entries, options = {}) => {
     const limit = (value) => Math.max(0, Number(value) || 0);
     const globalLimit = limit(options.globalLimit);
     const projectLimit = limit(options.projectLimit);
@@ -1559,7 +1549,12 @@ export function apply(ctx, config = {}) {
     };
   };
 
-  const selectInjection = (stores, scope, controls = {}, options = {}) => {
+  /**
+   * 2.x fallback selection (`surface.unified: false` only). The unified prompt
+   * and panel paths call the engine's `surface.selectInjection()`; this copy is
+   * never used when the unified surface exists.
+   */
+  const legacySelectInjection = (stores, scope, controls = {}, options = {}) => {
     const query = options.query || '';
     const pinned = controls && controls.pinned ? controls.pinned : new Set();
     const muted = controls && controls.muted ? controls.muted : new Set();
@@ -1576,14 +1571,14 @@ export function apply(ctx, config = {}) {
       notes.forEach((note, rank) => entries.push({ note, source, rank }));
     };
     if (globalLimit && stores.globalRoot) {
-      add('global', selectStoreCandidates(stores.globalRoot, 'global', 'global', query));
+      add('global', legacySelectStoreCandidates(stores.globalRoot, 'global', 'global', query));
     }
     if (projectLimit && stores.projectRoot) {
       const filterScope = legacy ? '' : scope;
-      add('project', selectStoreCandidates(stores.projectRoot, scope, filterScope, query, { explore: true }));
+      add('project', legacySelectStoreCandidates(stores.projectRoot, scope, filterScope, query, { explore: true }));
     }
     const current = currentTruthEntries(entries, scope);
-    const picked = pickBySourceWithControls(current, { globalLimit, projectLimit, isPinned, isMuted });
+    const picked = legacyPickBySourceWithControls(current, { globalLimit, projectLimit, isPinned, isMuted });
     // Legacy keeps the historical five-slot total; the project store fills what
     // the global store leaves, so a missing global copy does not shrink the
     // budget. Project stores keep their own 3-slot cap when a global store also
@@ -1597,16 +1592,16 @@ export function apply(ctx, config = {}) {
   };
 
   /**
-   * Panel "why": the exact memories the prompt would inject for a session, with
-   * their source store. Same selection function as the prompt and the counter,
-   * so the panel can never show a different set.
+   * 2.x fallback manifest (`surface.unified: false` only). Unified panels read
+   * the manifest directly from `surface.injection()`, so prompt, panel and
+   * explanation share one orchestration path.
    */
   const injectionManifestFor = (stores, scope, controls = {}, options = {}) => {
     const empty = { total: 0, global: 0, project: 0, entries: [] };
     if (!stores) return empty;
     const pinSet = controls && controls.pinned ? controls.pinned : new Set();
     try {
-      const selected = selectInjection(stores, scope, controls, options);
+      const selected = legacySelectInjection(stores, scope, controls, options);
       const entries = [
         ...selected.globalPicked.map((note) => ({
           id: String(note.id || ''),
@@ -1661,7 +1656,21 @@ export function apply(ctx, config = {}) {
             if (core) chunks.push(core);
           }
 
-          const { globalPicked, projectPicked } = selectInjection(stores, scope, controlsFor(agent.id), { query: recentQueryFor(agent) });
+          // 3.0.1 D1: the prompt path and the panel must use the same engine
+          // selection. Only the explicit 2.x rollback may run the local copy.
+          const sessionQuery = recentQueryFor(agent);
+          const surface = surfaceConfig.unified
+            ? createSurface({
+              legacyRoot: root,
+              globalRoot,
+              registryFile,
+              cwd: cwdOf(agent) || root,
+              stores,
+            })
+            : null;
+          const { globalPicked, projectPicked } = surface
+            ? surface.selectInjection(scope, controlsFor(agent.id), { query: sessionQuery })
+            : legacySelectInjection(stores, scope, controlsFor(agent.id), { query: sessionQuery });
           if (globalPicked.length) {
             recordRecall(globalPicked.map((note) => note.id), 'inject', `session:${bareId(agent.id)}`, stores.globalRoot);
           }

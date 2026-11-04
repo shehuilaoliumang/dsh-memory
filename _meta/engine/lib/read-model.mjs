@@ -32,6 +32,9 @@ export const MEMORY_LAYERS = ['10_Raw', '20_Digest', '30_Canon'];
 export const TOTAL_INJECTION_LIMIT = 5;
 export const GLOBAL_INJECTION_LIMIT = 2;
 
+// Warn once per store for global-scope leaks in non-legacy project stores.
+const scopeLeakWarned = new Set();
+
 function walk(dir, visit) {
   if (!fs.existsSync(dir)) return;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -232,6 +235,22 @@ export function createSurface(options = {}) {
   const candidatesForStore = (storeRoot, scope, filterScope = '', query = '', extra = {}) => {
     if (!storeRoot) return [];
     const notes = readCatalogInjectionNotes(storeRoot) || scanStoreNotes(storeRoot);
+    // A global-scope memory inside a non-legacy project store is a write-layer
+    // leak (the judge must downgrade it). Exclude it, but surface once per store
+    // so the owner can repair the data; the unified path must keep the warning
+    // that used to live only in the plugin fallback (3.0.1 D1).
+    if (filterScope && filterScope.startsWith('project:')) {
+      const leaked = notes.filter(
+        (note) => note.level === 'digest' && note.status === 'active' && note.scope === 'global',
+      );
+      if (leaked.length && !scopeLeakWarned.has(storeRoot)) {
+        scopeLeakWarned.add(storeRoot);
+        console.warn(
+          `[kb-read-model] project store ${storeRoot} contains ${leaked.length} global-scope active memory(s): `
+          + `${leaked.map((note) => note.id).join(', ')}; excluded from injection.`,
+        );
+      }
+    }
     const filtered = notes.filter((note) => !filterScope
       || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope));
     return rankInjectionCandidates(currentTruthNotes(filtered, scope), readAccessRows(storeRoot), {

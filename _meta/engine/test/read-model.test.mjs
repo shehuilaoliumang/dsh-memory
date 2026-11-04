@@ -111,10 +111,20 @@ test('project session injects its own scope and the global store', () => {
   // A global-scope leak inside a project store must never be injected.
   writeAtom(project, { id: '2026-11-04-a-0201', scope: 'global', summary: '泄漏的全局记忆' });
   const surface = surfaceFor({ globalRoot: globalStore, projectRoot: project });
-  const selected = surface.selectInjection('project:demo');
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  let selected;
+  try {
+    selected = surface.selectInjection('project:demo');
+  } finally {
+    console.warn = originalWarn;
+  }
   assert.deepEqual(selected.globalPicked.map((n) => n.id), ['2026-11-04-a-0100']);
   assert.deepEqual(selected.projectPicked.map((n) => n.id), ['2026-11-04-a-0200']);
   assert.equal(selected.candidates.length, 2);
+  // The leak is excluded, but the unified path must still surface it once.
+  assert.ok(warnings.some((line) => line.includes('a-0201')), 'global-scope leak warning missing');
 });
 
 test('cross-store subject arbitration keeps the newer claim', () => {

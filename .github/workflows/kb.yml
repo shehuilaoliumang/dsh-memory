@@ -39,7 +39,13 @@ jobs:
 
       - name: Engine read model and host tests
         shell: pwsh
-        run: node --test --test-isolation=none _meta/engine/test/read-model.test.mjs _meta/engine/test/host.test.mjs
+        run: |
+          $failed = $false
+          Get-ChildItem _meta/engine/test/*.test.mjs | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
 
       - name: Read-surface parity gate
         shell: pwsh

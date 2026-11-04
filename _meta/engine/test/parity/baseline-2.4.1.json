@@ -1,0 +1,816 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-11-04T06:38:04.242Z",
+  "upstreamVersion": "2.4.1",
+  "host": "http://127.0.0.1:1518",
+  "session": "session-<redacted>71-5777-473a-859d-880e2132bb91",
+  "defaultView": {
+    "id": "dsh-memory",
+    "kind": "project",
+    "writable": true
+  },
+  "workspaces": [
+    {
+      "id": "global",
+      "label": "全局记忆",
+      "kind": "global",
+      "writable": true
+    },
+    {
+      "id": "legacy",
+      "label": "DSH Memory",
+      "kind": "legacy",
+      "writable": true
+    },
+    {
+      "id": "p-6ed6171e",
+      "label": "插件制作",
+      "kind": "project",
+      "writable": true
+    },
+    {
+      "id": "p-26552439",
+      "label": "友商招商加盟信息收集研究",
+      "kind": "project",
+      "writable": true
+    },
+    {
+      "id": "p-cb5c6b03",
+      "label": "竞对商品筛取及数据匹配",
+      "kind": "project",
+      "writable": true
+    },
+    {
+      "id": "github",
+      "label": "GitHub作品分析",
+      "kind": "project",
+      "writable": true
+    }
+  ],
+  "panels": {
+    "global": {
+      "view": {
+        "id": "global",
+        "kind": "global",
+        "writable": true
+      },
+      "notes": [
+        {
+          "id": "2026-10-20-a-0011",
+          "status": "active",
+          "level": "digest",
+          "type": "preference",
+          "scope": "global",
+          "subject": "ui-version-visibility",
+          "updated": "2026-10-20",
+          "injection": {
+            "state": "not-selected",
+            "label": "本轮未入选"
+          }
+        },
+        {
+          "id": "2026-10-20-a-0009",
+          "status": "active",
+          "level": "digest",
+          "type": "preference",
+          "scope": "global",
+          "subject": "ui-language-paths",
+          "updated": "2026-10-20",
+          "injection": {
+            "state": "not-selected",
+            "label": "本轮未入选"
+          }
+        }
+      ],
+      "injection": {
+        "total": 3,
+        "global": 0,
+        "project": 3,
+        "entries": [
+          {
+            "id": "2026-11-03-a-0004",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0002",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0003",
+            "store": "legacy",
+            "pinned": false
+          }
+        ]
+      }
+    },
+    "legacy": {
+      "view": {
+        "id": "legacy",
+        "kind": "legacy",
+        "writable": true
+      },
+      "notes": [
+        {
+          "id": "2026-11-04-c-1006",
+          "status": "canon",
+          "level": "canon",
+          "type": "decision",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-04",
+          "injection": {
+            "state": "canon",
+            "label": "结论层"
+          }
+        },
+        {
+          "id": "2026-11-03-w-0001",
+          "status": "active",
+          "level": "digest",
+          "type": "work",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-04",
+          "injection": {
+            "state": "page",
+            "label": "页面不是记忆"
+          }
+        },
+        {
+          "id": "2026-11-02-1553",
+          "status": "active",
+          "level": "raw",
+          "type": "session",
+          "scope": "",
+          "subject": "",
+          "updated": "2026-11-04",
+          "injection": {
+            "state": "raw",
+            "label": "原文层"
+          }
+        },
+        {
+          "id": "2026-11-03-c-1005",
+          "status": "canon",
+          "level": "canon",
+          "type": "decision",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "canon",
+            "label": "结论层"
+          }
+        },
+        {
+          "id": "2026-11-03-c-1004",
+          "status": "canon",
+          "level": "canon",
+          "type": "decision",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "canon",
+            "label": "结论层"
+          }
+        },
+        {
+          "id": "2026-11-03-c-1003",
+          "status": "canon",
+          "level": "canon",
+          "type": "decision",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "canon",
+            "label": "结论层"
+          }
+        },
+        {
+          "id": "2026-11-03-a-0004",
+          "status": "active",
+          "level": "digest",
+          "type": "principle",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "injected",
+            "label": "已注入"
+          }
+        },
+        {
+          "id": "2026-11-03-a-0003",
+          "status": "active",
+          "level": "digest",
+          "type": "principle",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "injected",
+            "label": "已注入"
+          }
+        },
+        {
+          "id": "2026-11-03-a-0002",
+          "status": "active",
+          "level": "digest",
+          "type": "fact",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "injected",
+            "label": "已注入"
+          }
+        },
+        {
+          "id": "2026-11-03-a-0001",
+          "status": "archived",
+          "level": "digest",
+          "type": "fact",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "archived",
+            "label": "已归档"
+          }
+        },
+        {
+          "id": "2026-11-02-c-1002",
+          "status": "canon",
+          "level": "canon",
+          "type": "decision",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-02",
+          "injection": {
+            "state": "canon",
+            "label": "结论层"
+          }
+        },
+        {
+          "id": "2026-11-02-c-1001",
+          "status": "canon",
+          "level": "canon",
+          "type": "decision",
+          "scope": "global",
+          "subject": "",
+          "updated": "2026-11-02",
+          "injection": {
+            "state": "canon",
+            "label": "结论层"
+          }
+        }
+      ],
+      "injection": {
+        "total": 3,
+        "global": 0,
+        "project": 3,
+        "entries": [
+          {
+            "id": "2026-11-03-a-0004",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0002",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0003",
+            "store": "legacy",
+            "pinned": false
+          }
+        ]
+      }
+    },
+    "p-6ed6171e": {
+      "view": {
+        "id": "p-6ed6171e",
+        "kind": "project",
+        "writable": true
+      },
+      "notes": [
+        {
+          "id": "2026-11-03-w-0001",
+          "status": "active",
+          "level": "digest",
+          "type": "work",
+          "scope": "project:p-6ed6171e",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "other-store",
+            "label": "不在当前会话"
+          }
+        }
+      ],
+      "injection": {
+        "total": 3,
+        "global": 0,
+        "project": 3,
+        "entries": [
+          {
+            "id": "2026-11-03-a-0004",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0002",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0003",
+            "store": "legacy",
+            "pinned": false
+          }
+        ]
+      }
+    },
+    "p-26552439": {
+      "view": {
+        "id": "p-26552439",
+        "kind": "project",
+        "writable": true
+      },
+      "notes": [
+        {
+          "id": "2026-11-03-w-0001",
+          "status": "active",
+          "level": "digest",
+          "type": "work",
+          "scope": "project:p-26552439",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "other-store",
+            "label": "不在当前会话"
+          }
+        }
+      ],
+      "injection": {
+        "total": 3,
+        "global": 0,
+        "project": 3,
+        "entries": [
+          {
+            "id": "2026-11-03-a-0004",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0002",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0003",
+            "store": "legacy",
+            "pinned": false
+          }
+        ]
+      }
+    },
+    "p-cb5c6b03": {
+      "view": {
+        "id": "p-cb5c6b03",
+        "kind": "project",
+        "writable": true
+      },
+      "notes": [
+        {
+          "id": "2026-11-03-w-0001",
+          "status": "active",
+          "level": "digest",
+          "type": "work",
+          "scope": "project:p-cb5c6b03",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "other-store",
+            "label": "不在当前会话"
+          }
+        },
+        {
+          "id": "2026-11-03-1132",
+          "status": "active",
+          "level": "raw",
+          "type": "session",
+          "scope": "",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "other-store",
+            "label": "不在当前会话"
+          }
+        },
+        {
+          "id": "2026-11-03-1118",
+          "status": "active",
+          "level": "raw",
+          "type": "session",
+          "scope": "",
+          "subject": "",
+          "updated": "2026-11-03",
+          "injection": {
+            "state": "other-store",
+            "label": "不在当前会话"
+          }
+        }
+      ],
+      "injection": {
+        "total": 3,
+        "global": 0,
+        "project": 3,
+        "entries": [
+          {
+            "id": "2026-11-03-a-0004",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0002",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0003",
+            "store": "legacy",
+            "pinned": false
+          }
+        ]
+      }
+    },
+    "github": {
+      "view": {
+        "id": "github",
+        "kind": "project",
+        "writable": true
+      },
+      "notes": [
+        {
+          "id": "2026-11-04-0954",
+          "status": "active",
+          "level": "raw",
+          "type": "session",
+          "scope": "",
+          "subject": "",
+          "updated": "2026-11-04",
+          "injection": {
+            "state": "other-store",
+            "label": "不在当前会话"
+          }
+        }
+      ],
+      "injection": {
+        "total": 3,
+        "global": 0,
+        "project": 3,
+        "entries": [
+          {
+            "id": "2026-11-03-a-0004",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0002",
+            "store": "legacy",
+            "pinned": false
+          },
+          {
+            "id": "2026-11-03-a-0003",
+            "store": "legacy",
+            "pinned": false
+          }
+        ]
+      }
+    }
+  },
+  "searches": {
+    "all": [
+      {
+        "query": "jiyi",
+        "total": 3,
+        "strategy": {
+          "pinyin": true,
+          "semantic": false
+        },
+        "results": [
+          {
+            "id": "2026-11-03-c-1003",
+            "workspace": "legacy",
+            "matchedBy": "pinyin",
+            "matchLabel": "拼音「jiyi」",
+            "matchTerms": [
+              "jiyi"
+            ]
+          },
+          {
+            "id": "2026-11-03-c-1004",
+            "workspace": "legacy",
+            "matchedBy": "pinyin",
+            "matchLabel": "拼音「jiyi」",
+            "matchTerms": [
+              "jiyi"
+            ]
+          },
+          {
+            "id": "2026-11-04-c-1006",
+            "workspace": "legacy",
+            "matchedBy": "literal",
+            "matchLabel": "",
+            "matchTerms": []
+          }
+        ]
+      },
+      {
+        "query": "发布",
+        "total": 3,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": [
+          {
+            "id": "2026-11-03-a-0003",
+            "workspace": "legacy",
+            "matchedBy": "literal",
+            "matchLabel": "",
+            "matchTerms": []
+          },
+          {
+            "id": "2026-11-04-c-1006",
+            "workspace": "legacy",
+            "matchedBy": "literal",
+            "matchLabel": "",
+            "matchTerms": []
+          },
+          {
+            "id": "2026-11-03-c-1004",
+            "workspace": "legacy",
+            "matchedBy": "literal",
+            "matchLabel": "",
+            "matchTerms": []
+          }
+        ]
+      },
+      {
+        "query": "zzqqxx",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      }
+    ],
+    "global": [
+      {
+        "query": "jiyi",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "发布",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "zzqqxx",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      }
+    ],
+    "legacy": [
+      {
+        "query": "jiyi",
+        "total": 3,
+        "strategy": {
+          "pinyin": true,
+          "semantic": false
+        },
+        "results": [
+          {
+            "id": "2026-11-04-c-1006",
+            "workspace": "legacy",
+            "matchedBy": "literal",
+            "matchLabel": "",
+            "matchTerms": []
+          },
+          {
+            "id": "2026-11-03-c-1003",
+            "workspace": "legacy",
+            "matchedBy": "pinyin",
+            "matchLabel": "拼音「jiyi」",
+            "matchTerms": [
+              "jiyi"
+            ]
+          },
+          {
+            "id": "2026-11-03-c-1004",
+            "workspace": "legacy",
+            "matchedBy": "pinyin",
+            "matchLabel": "拼音「jiyi」",
+            "matchTerms": [
+              "jiyi"
+            ]
+          }
+        ]
+      },
+      {
+        "query": "发布",
+        "total": 3,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": [
+          {
+            "id": "2026-11-03-a-0003",
+            "workspace": "legacy",
+            "matchedBy": "literal",
+            "matchLabel": "",
+            "matchTerms": []
+          },
+          {
+            "id": "2026-11-04-c-1006",
+            "workspace": "legacy",
+            "matchedBy": "literal",
+            "matchLabel": "",
+            "matchTerms": []
+          },
+          {
+            "id": "2026-11-03-c-1004",
+            "workspace": "legacy",
+            "matchedBy": "literal",
+            "matchLabel": "",
+            "matchTerms": []
+          }
+        ]
+      },
+      {
+        "query": "zzqqxx",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      }
+    ],
+    "p-6ed6171e": [
+      {
+        "query": "jiyi",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "发布",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "zzqqxx",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      }
+    ],
+    "p-26552439": [
+      {
+        "query": "jiyi",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "发布",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "zzqqxx",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      }
+    ],
+    "p-cb5c6b03": [
+      {
+        "query": "jiyi",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "发布",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "zzqqxx",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      }
+    ],
+    "github": [
+      {
+        "query": "jiyi",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "发布",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      },
+      {
+        "query": "zzqqxx",
+        "total": 0,
+        "strategy": {
+          "pinyin": false,
+          "semantic": false
+        },
+        "results": []
+      }
+    ]
+  },
+  "notes": {
+    "totalPanels": 6,
+    "queries": [
+      "jiyi",
+      "发布",
+      "zzqqxx"
+    ],
+    "searchTargets": [
+      "all",
+      "global",
+      "legacy",
+      "p-6ed6171e",
+      "p-26552439",
+      "p-cb5c6b03",
+      "github"
+    ]
+  }
+}

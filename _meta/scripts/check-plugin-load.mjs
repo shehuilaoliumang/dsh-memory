@@ -229,6 +229,10 @@ const sources = [
   '_meta/engine/lib/context.mjs',
   '_meta/engine/lib/stores.mjs',
   '_meta/engine/lib/work-brief.mjs',
+  '_meta/engine/lib/injection.mjs',
+  '_meta/engine/lib/read-model.mjs',
+  '_meta/engine/lib/host.mjs',
+  '_meta/engine/hosts/mcp.mjs',
   '_meta/engine/lib/injection-reasons.mjs',
   '_meta/engine/lib/promote.mjs',
   '_meta/engine/lib/redact.mjs',
@@ -236,6 +240,11 @@ const sources = [
   '_meta/engine/lib/search/semantic.mjs',
   '_meta/engine/lib/shared/frontmatter.mjs',
   '_meta/engine/lib/shared/work-sections.mjs',
+  '_meta/engine/test/capture-parity.mjs',
+  '_meta/engine/test/compare-parity.mjs',
+  '_meta/engine/test/read-model.test.mjs',
+  '_meta/engine/test/host.test.mjs',
+  '_meta/engine/test/bench-read-model.mjs',
 ];
 for (const rel of sources) checkSyntax(rel);
 notes.push(`${sources.length} JS file(s) syntax-checked`);

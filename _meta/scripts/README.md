@@ -58,7 +58,7 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - **2.3 算法与规模化**：`rankMemories` 支持 `injectWeight`（默认 0.1，曝光降权）与 `exploration`（默认 0，项目 store 传 1，把最新未曝光条目放到位置 2）；`search` BM25 字段权重 `title×3`/`summary×2`；`toRow` 增 `title`/`scope`/`subject` 并在 300B 预算内由 `fitRow` 缩短；插件注入优先读 catalog（mtime+size 缓存，缺失/损坏回退 scanNotes）。
 - **2.4.1 注入解释同源**：`explainInjection` 接收 `selectInjection` 的 catalog-backed 跨库候选（`candidates`），跨库同 subject 与未 `rebuild` 窗口的标签与真实注入一致（第 15 轮复审 B1/B2）。
 - **2.4 检索回退/注入原因**：`lib/search/pinyin.mjs`（vendored tiny-pinyin 1.3.2 MIT，全拼/首字母，ASCII 查询，`Intl.Collator` 缺失降级为空）+ `lib/search/semantic.mjs`（21 组中英同义词，整词/中文 ≥2 字扩展，单组 ≤4、总 ≤10）只在字面命中 < min(limit,3) 时补位，语义分 ×0.5，响应带 `strategy`/`matchedBy`，仍不写 access；`lib/injection-reasons.mjs` 的 `explainInjection` 给逐条注入原因（advisory，不参与选择），插件写入 `/kb/panel.json` 的 `notes[].injection`。
-- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 6 JSON / 9 manifest / 14 engine / 2 locale / 25 JS）；插件单测 187 条（含 context 5、behavior-matrix 9、inject-ranking 8、engine-api 3、search-fallback 4；work-brief 36）。
+- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 7 JSON / 9 manifest / 18 engine / 2 locale / 34 JS）；插件单测 187 条（含 context 5、behavior-matrix 9、inject-ranking 8、engine-api 3、search-fallback 4；work-brief 36），engine 另含 read-model 6 与 host 6，`compare-parity.mjs`/`bench-read-model.mjs` 为 3.0 读面闸门。
 
 ## 设计约束
 
@@ -100,7 +100,7 @@ node _meta/scripts/publish-public.mjs --dir D:\dsh-memory-public --orphan
 
 ## 加载形状闸门
 
-`node _meta/scripts/check-plugin-load.mjs`（零依赖；CI 第一步，在 validate 之前）：严格解析仓库内全部 JSON 配置并禁止 UTF-8 BOM（对应 1.14.0 的 BOM outage 类问题）；校验插件 manifest 的 `name`/`type`/`dsh.bundle.patch`/`dsh.client.platform`/`version`（与根 `VERSION` 一致）与 engine manifest（`@local/kb-engine`/version 与根 `VERSION` 一致），并确认 `exports`/`files` 指向的文件（含 14 个 engine 文件）都存在；校验 bundle patch 无 BOM、形如 loader patch 列表且含 `@local/kb-panel`；对引擎与插件的 25 个 JS 跑 `node --check`。它是**静态加载形状检查**（不启动 DSH Host），保证“loader 会碰的东西都存在且能解析”；CI 在 `validate` 前先跑它，本地改插件/engine/清单后也应先跑一次。
+`node _meta/scripts/check-plugin-load.mjs`（零依赖；CI 第一步，在 validate 之前）：严格解析仓库内全部 JSON 配置并禁止 UTF-8 BOM（对应 1.14.0 的 BOM outage 类问题）；校验插件 manifest 的 `name`/`type`/`dsh.bundle.patch`/`dsh.client.platform`/`version`（与根 `VERSION` 一致）与 engine manifest（`@local/kb-engine`/version 与根 `VERSION` 一致），并确认 `exports`/`files` 指向的文件（含 18 个 engine 文件）都存在；校验 bundle patch 无 BOM、形如 loader patch 列表且含 `@local/kb-panel`；对引擎与插件的 34 个 JS 跑 `node --check`。它是**静态加载形状检查**（不启动 DSH Host），保证“loader 会碰的东西都存在且能解析”；CI 在 `validate` 前先跑它，本地改插件/engine/清单后也应先跑一次。
 
 ## 插件单测
 

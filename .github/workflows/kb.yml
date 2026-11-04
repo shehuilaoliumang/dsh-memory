@@ -37,6 +37,18 @@ jobs:
           }
           if ($failed) { exit 1 }
 
+      - name: Engine read model and host tests
+        shell: pwsh
+        run: node --test --test-isolation=none _meta/engine/test/read-model.test.mjs _meta/engine/test/host.test.mjs
+
+      - name: Read-surface parity gate
+        shell: pwsh
+        run: node _meta/engine/test/compare-parity.mjs
+
+      - name: Read-surface performance gate
+        shell: pwsh
+        run: node _meta/engine/test/bench-read-model.mjs
+
       - name: Script unit tests (export rules)
         shell: pwsh
         run: |

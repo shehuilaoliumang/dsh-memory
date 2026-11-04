@@ -79,7 +79,13 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 ## 引擎包（可继承性）
 
-v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。v2.1 起 6 个插件 shim 已删除，插件直接 import `_meta/engine/lib/*`；engine 增加跨进程 registry 锁 `withRegistryLock`，导出规则抽为纯函数并进 CI。v2.2 起提供**进程内 API**：`runCli(argv, { root })` → `{ code, stdout, stderr }`、不污染宿主状态，`createEngine({ root }).run(argv)` 为状态化门面（同步、单线程、单根顺序）；同时库面行为改由 **policy** 表达（legacy 不是独立行为分支，见下）。v2.3 起排序按曝光加权（`inject`×0.1）、项目 store 带 1 个 exploration 槽，注入优先读 `catalog.jsonl`（含 title/scope/subject），BM25 检索按字段加权。v2.4 起检索增加拼音/首字母与同义词回退，`/kb/panel.json` 逐条给出注入原因，`workspace=all` 提供只读多库合并视图。2.0.0 是结构版本（行为不变），2.1–2.4 是行为 minor。
+v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。v2.1 起 6 个插件 shim 已删除，插件直接 import `_meta/engine/lib/*`；engine 增加跨进程 registry 锁 `withRegistryLock`，导出规则抽为纯函数并进 CI。v2.2 起提供**进程内 API**：`runCli(argv, { root })` → `{ code, stdout, stderr }`、不污染宿主状态，`createEngine({ root }).run(argv)` 为状态化门面（同步、单线程、单根顺序）；同时库面行为改由 **policy** 表达（legacy 不是独立行为分支，见下）。v2.3 起排序按曝光加权（`inject`×0.1）、项目 store 带 1 个 exploration 槽，注入优先读 `catalog.jsonl`（含 title/scope/subject），BM25 检索按字段加权。v2.4 起检索增加拼音/首字母与同义词回退，`/kb/panel.json` 逐条给出注入原因，`workspace=all` 提供只读多库合并视图。v3.0 起注入选择/解释/检索/全库快照统一到 `read-model.mjs`，并新增宿主契约与零依赖 MCP stdio 第二宿主；2.0.0 是结构版本（行为不变），2.1–2.4 是行为 minor，3.0.0 是内部结构 major（行为边界不变）。
+
+## v3.0 新增（统一读面、MCP 第二宿主）
+
+- **engine 统一读面**：`_meta/engine/lib/read-model.mjs` 的 `createSurface()` 统一收口 notes/候选/选择/解释/检索/全库快照；注入排序规则归位到 `_meta/engine/lib/injection.mjs`。插件 snapshot、注入解释、`/kb/search.json` 全部改走同一 surface，`/kb/panel.json?workspace=all` 由服务端一次返回合并快照（客户端 c45 优先单次读取，保留旧合并回退）；`_meta/config.json` 的 `surface.unified: false` 可回退 2.x 路径。
+- **宿主契约与 MCP**：`_meta/engine/lib/host.mjs` 的 `createHost()` 提供 context/search/remember/status/validate；`_meta/engine/hosts/mcp.mjs` 是零依赖 JSON-RPC 2.0 over stdio 宿主，暴露 `kb_context`/`kb_search`/`kb_remember`/`kb_status`/`kb_validate`，写权限仍 fail closed、默认 `inbox`。DSH 插件只是宿主适配层之一。
+- **闸门**：`compare-parity.mjs` 对 2.4.1 基线做行为 parity（当前 3 条内容漂移、0 回归）；`bench-read-model.mjs` 用 5 库 × 300 条验证全库检索 ~407ms < 500ms、统一面板快照 ~139ms < 300ms、零 spawn；两者进 CI。ADR 见 `30_Canon/decisions/2026-11-04-c-1007.md`。
 
 ## v2.4 新增（检索回退、注入原因、多库只读视图）
 
@@ -145,9 +151,14 @@ node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
 
 # 脚本单测（导出安全规则，CI 同款）
 node --test --test-isolation=none _meta/scripts/test/export-rules.test.mjs
+
+# 3.0 读面/宿主与闸门
+node --test --test-isolation=none _meta/engine/test/read-model.test.mjs _meta/engine/test/host.test.mjs
+node _meta/engine/test/compare-parity.mjs
+node _meta/engine/test/bench-read-model.mjs
 ```
 
-当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 187 条全过、脚本测试 17 条全过；**本地完整库** `validate` 13 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 6 决策）/主索引 11 行 + 归档 1 行、0 警告；闸门 6 JSON / 9 manifest / 14 engine / 2 locale / 25 JS。公开快照（无 `10_Raw/`）12 篇（core.md + 工作页 + 4 digest 原子 + 6 决策）/主索引 10 行 + 归档 1 行、0 警告。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
+当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 187 条全过、脚本测试 17 条全过、引擎 read-model 6/6、host 6/6；**本地完整库** `validate` 14 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 7 决策）/主索引 12 行 + 归档 1 行、0 警告；闸门 7 JSON / 9 manifest / 18 engine / 2 locale / 34 JS。公开快照（无 `10_Raw/`）13 篇（core.md + 工作页 + 4 digest 原子 + 7 决策）/主索引 11 行 + 归档 1 行、0 警告。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
 
 ## 裁判评估
 

@@ -97,7 +97,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-11-04-c44';
+    const CLIENT_BUILD = '2026-11-04-c45';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -1927,43 +1927,58 @@ window.__ModuleLoader__.load({
         try {
           const healthResponse = await fetch('/kb/ingest.json', { cache: 'no-store' });
           if (workspace === 'all') {
-            // Unified read-only view: the Host still owns each store's snapshot.
-            // Merge them in the Client so per-workspace injection counts, trust
-            // flags and write permissions stay untouched.
-            const baseResponse = await fetch(panelUrl(currentSessionId, ''), { cache: 'no-store' });
-            if (!baseResponse.ok) throw new Error(String(baseResponse.status));
-            const base = rememberCsrf(await baseResponse.json());
-            const options = Array.isArray(base.workspaces) ? base.workspaces : [];
-            const panels = await Promise.all(options.map(async (option) => {
-              try {
-                const response = await fetch(panelUrl(currentSessionId, option.id), { cache: 'no-store' });
-                if (!response.ok) return null;
-                return { option, payload: await response.json() };
-              } catch {
-                return null;
+            // 3.0: one server-side union snapshot. The 2.x Client-side merge is
+            // kept only as a fallback for a Host that has not enabled
+            // `surface.unified` yet (rollback path in the plugin).
+            let unified = null;
+            try {
+              const response = await fetch(panelUrl(currentSessionId, 'all'), { cache: 'no-store' });
+              if (response.ok) {
+                const payload = rememberCsrf(await response.json());
+                if (payload && payload.view && payload.view.kind === 'all' && Array.isArray(payload.notes)) {
+                  unified = payload;
+                }
               }
-            }));
-            const notes = [];
-            let total = 0;
-            for (const item of panels) {
-              if (!item || !Array.isArray(item.payload.notes)) continue;
-              total += item.payload.notes.length;
-              for (const note of item.payload.notes) {
-                notes.push({
-                  ...note,
-                  workspaceId: item.option.id,
-                  workspaceLabel: item.option.label,
-                  uid: `${item.option.id}::${note.id}`,
-                });
-              }
+            } catch {
+              unified = null;
             }
-            setData({
-              ...base,
-              view: { id: 'all', kind: 'all', label: '全部记忆库', writable: false, readOnly: true },
-              total,
-              notes,
-              workspaces: options,
-            });
+            if (!unified) {
+              const baseResponse = await fetch(panelUrl(currentSessionId, ''), { cache: 'no-store' });
+              if (!baseResponse.ok) throw new Error(String(baseResponse.status));
+              const base = rememberCsrf(await baseResponse.json());
+              const options = Array.isArray(base.workspaces) ? base.workspaces : [];
+              const panels = await Promise.all(options.map(async (option) => {
+                try {
+                  const response = await fetch(panelUrl(currentSessionId, option.id), { cache: 'no-store' });
+                  if (!response.ok) return null;
+                  return { option, payload: await response.json() };
+                } catch {
+                  return null;
+                }
+              }));
+              const notes = [];
+              let total = 0;
+              for (const item of panels) {
+                if (!item || !Array.isArray(item.payload.notes)) continue;
+                total += item.payload.notes.length;
+                for (const note of item.payload.notes) {
+                  notes.push({
+                    ...note,
+                    workspaceId: item.option.id,
+                    workspaceLabel: item.option.label,
+                    uid: `${item.option.id}::${note.id}`,
+                  });
+                }
+              }
+              unified = {
+                ...base,
+                view: { id: 'all', kind: 'all', label: '全部记忆库', writable: false, readOnly: true },
+                total,
+                notes,
+                workspaces: options,
+              };
+            }
+            setData(unified);
             if (healthResponse.ok) {
               try {
                 setHealth(await healthResponse.json());

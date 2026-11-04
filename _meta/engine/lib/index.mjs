@@ -7,6 +7,8 @@
 export * from './context.mjs';
 export * from './stores.mjs';
 export * from './work-brief.mjs';
+export * from './injection.mjs';
+export * from './read-model.mjs';
 export * from './promote.mjs';
 export * from './redact.mjs';
 export { runCli, createEngine } from './cli.mjs';

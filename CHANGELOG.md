@@ -2,6 +2,29 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 3.0.0 — 2026-11-04
+
+结构周期（major：内部架构重构，无用户可见功能删除；写入授权/注入预算/fail-closed 边界不变；对应第 16 轮外审结构项与 ADR `30_Canon/decisions/2026-11-04-c-1007.md`）。
+
+**统一读面（engine read model）**
+
+- `_meta/engine/lib/injection.mjs`：注入排序规则从插件归位到引擎（曝光加权热度、探索槽、relevance、scope policy、`reduceInjection` 预算），插件只留薄适配。
+- `_meta/engine/lib/read-model.mjs`：`createSurface()` 统一候选/选择/解释/检索/全库快照；`selectInjection` 返回跨库候选，`notesWithInjection` 的解释与选择同源；`search({workspace:'all'})` 在引擎内单进程合并，不再逐库 spawn CLI。
+- 插件 snapshot、注入解释、`/kb/search.json` 全部改走 `createSurface`；`/kb/panel.json?workspace=all` 由服务端一次返回合并快照，客户端 c45 优先单次读取，保留旧合并路径回退。`_meta/config.json` 新增 `surface.unified`（默认 true），false 回退 2.x 行为。
+- 效果：多入口导致的解释/选择漂移类缺陷在结构上收口；5 库 × 300 条全库检索走进程内路径。
+
+**宿主契约与 MCP 第二宿主**
+
+- `_meta/engine/lib/host.mjs`：`createHost()` 提供 context/search/remember/status/validate 五个宿主动作；无 DSH import，写权限仍由 `resolveWriteTarget` fail closed。
+- `_meta/engine/hosts/mcp.mjs`：零依赖 JSON-RPC 2.0 over stdio 宿主，暴露 `kb_context`/`kb_search`/`kb_remember`/`kb_status`/`kb_validate`；工具只回 JSON-RPC，诊断走 stderr；`kb_validate` 只接受已关注库根。
+- 证明：`host.test.mjs` 6/6；真实 stdio 冒烟（initialize/tools/list/kb_status，6 库计数）通过。DSH 插件从此只是宿主适配层之一。
+
+**闸门与验证**
+
+- 新增 `_meta/engine/test/compare-parity.mjs`（对 2.4.1 基线做行为 parity；当前 3 条内容漂移、0 回归）与 `bench-read-model.mjs`（5 库 × 300 条：全库检索中位 ~407ms < 500ms、统一面板快照 ~139ms < 300ms、零 spawn），均进 CI。
+- 数字：插件 187/187、引擎 read-model 6/6、host 6/6、脚本 17/17、smoke 106/106、`check-plugin-load` 7 JSON / 9 manifest / 18 engine / 2 locale / 34 JS；本地 `validate` 14 篇（core + raw + work + 4 atoms + 7 canon，主索引 12 + 归档 1）、0 警告。
+- 公开快照：3.0.0 发布后回填（public commit、tree、CI run 与快照篇数）。
+
 ## 2.4.1 — 2026-11-04
 
 注入解释同源修复（patch：无新功能，选择/预算/写入边界不变；对应外部复审第 15 轮 B1/B2）。

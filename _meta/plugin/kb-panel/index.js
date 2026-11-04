@@ -54,6 +54,7 @@ import { globalAtomSpec, isGlobalPromotable, localDateStamp } from '../../engine
 import { briefText, currentTruthEntries, currentTruthNotes, isInjectable, pickBySource } from '../../engine/lib/work-brief.mjs';
 import { explainInjection } from '../../engine/lib/injection-reasons.mjs';
 import { isInsideLegacy, resolveContext, resolveWriteTarget } from '../../engine/lib/context.mjs';
+import { createSurface } from '../../engine/lib/read-model.mjs';
 
 export const inject = ['webServer', 'systemPrompt'];
 
@@ -176,6 +177,20 @@ export function apply(ctx, config = {}) {
       };
     } catch {
       return fallback;
+    }
+  })();
+  /**
+   * 3.0 read-surface switch. The engine read model is the default panel/search
+   * source; `surface.unified: false` keeps the 2.x plugin path as a rollback for
+   * one release. It is read once per plugin load like the other policy flags.
+   */
+  const surfaceConfig = (() => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(root, '_meta', 'config.json'), 'utf8'));
+      const surface = raw && raw.surface ? raw.surface : {};
+      return { unified: surface.unified !== false };
+    } catch {
+      return { unified: true };
     }
   })();
   const cache = new Map();
@@ -1193,8 +1208,42 @@ export function apply(ctx, config = {}) {
       }
     }
 
-    const view = workspaceView(workspace, sessionStores);
-    const notes = scanNotes(view.root);
+    const unifiedSurface = surfaceConfig.unified
+      ? createSurface({
+        legacyRoot: root,
+        globalRoot,
+        registryFile,
+        cwd: session && session.cwd ? session.cwd : root,
+        stores: sessionStores || undefined,
+      })
+      : null;
+    const allView = String(workspace || '') === 'all';
+    let view;
+    let notes;
+    let allWorkspaces = null;
+    if (allView && unifiedSurface) {
+      // 3.0: one server-side read-only union of every listed store. The client
+      // no longer has to fetch and merge N panels (c-1007).
+      const union = unifiedSurface.snapshotAll({
+        scope: session.scope || 'global',
+        controls: controlsFor(sessionId),
+        query: sessionQuery,
+        sessionStores,
+      });
+      view = union.view;
+      notes = union.notes;
+      allWorkspaces = union.workspaces;
+    } else {
+      view = workspaceView(workspace, sessionStores);
+      notes = unifiedSurface
+        ? unifiedSurface.notesWithInjection(view, {
+          scope: session.scope || 'global',
+          controls: controlsFor(sessionId),
+          query: sessionQuery,
+          sessionStores,
+        })
+        : scanNotes(view.root);
+    }
 
     const layers = {};
     const statuses = {};
@@ -1205,16 +1254,18 @@ export function apply(ctx, config = {}) {
 
     const sorted = [...notes].sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || b.id.localeCompare(a.id));
 
-    const heat = heatTop(5, view.root);
+    const heat = allView ? { rows: 0, hot: [] } : heatTop(5, view.root);
     // Prompt injection manifest for this session: same selection the prompt uses.
     const injection = sessionStores
-      ? injectionManifestFor(sessionStores, session.scope || 'global', controlsFor(sessionId), { query: sessionQuery })
+      ? (unifiedSurface
+        ? unifiedSurface.injection(session.scope || 'global', controlsFor(sessionId), { query: sessionQuery })
+        : injectionManifestFor(sessionStores, session.scope || 'global', controlsFor(sessionId), { query: sessionQuery }))
       : { total: 0, global: 0, project: 0, entries: [] };
     // Same universe the selection (and therefore the prompt) sees: catalog-backed
     // candidates after cross-store subject arbitration. The explanation must not
     // build its own single-store picture, or labels drift from the actual pick.
-    let injectionCandidates = [];
-    if (sessionStores) {
+    let injectionCandidates = Array.isArray(injection.candidates) ? injection.candidates : [];
+    if (sessionStores && !unifiedSurface) {
       try {
         injectionCandidates = selectInjection(
           sessionStores,
@@ -1226,19 +1277,21 @@ export function apply(ctx, config = {}) {
         injectionCandidates = [];
       }
     }
-    const injectionReasons = injectionReasonsFor({
-      sessionStores,
-      scope: session.scope || 'global',
-      notes: sorted,
-      view,
-      entries: injection.entries,
-      candidates: injectionCandidates,
-      sessionId,
-    });
+    const injectionReasons = unifiedSurface
+      ? new Map(sorted.map((note) => [String(note.id), note.injection || null]))
+      : injectionReasonsFor({
+        sessionStores,
+        scope: session.scope || 'global',
+        notes: sorted,
+        view,
+        entries: injection.entries,
+        candidates: injectionCandidates,
+        sessionId,
+      });
     return {
-      workspace: view.root,
+      workspace: allView ? null : view.root,
       view,
-      workspaces: workspaceOptions(),
+      workspaces: allWorkspaces || workspaceOptions(),
       globalRoot,
       registryFile,
       projects: listProjects(),
@@ -1249,8 +1302,8 @@ export function apply(ctx, config = {}) {
       total: notes.length,
       layers,
       statuses,
-      catalog: countLines(path.join('_meta', 'catalog.jsonl'), view.root),
-      archive: countLines(path.join('_meta', 'catalog.archive.jsonl'), view.root),
+      catalog: allView ? 0 : countLines(path.join('_meta', 'catalog.jsonl'), view.root),
+      archive: allView ? 0 : countLines(path.join('_meta', 'catalog.archive.jsonl'), view.root),
       review: notes.filter((note) => note.status === 'review').length,
       inbox: notes.filter((note) => note.status === 'inbox').length,
       pendingIds: notes.filter((note) => note.status === 'inbox').map((note) => note.id),
@@ -1273,8 +1326,8 @@ export function apply(ctx, config = {}) {
       scopes: [...new Set(notes.map((note) => note.scope).filter((scope) => /^project:/.test(scope || '')))].sort(),
       accessRows: heat.rows,
       hot: heat.hot,
-      core: coreText(view.root).replace(/^【核心记忆[^\n]*\n/, '').slice(0, 160),
-      work: (() => {
+      core: allView ? '' : coreText(view.root).replace(/^【核心记忆[^\n]*\n/, '').slice(0, 160),
+      work: allView ? { pages: [], brief: '' } : (() => {
         try {
           const pages = workPageFiles(view.root)
             .map((file) => ({ file, data: parseFrontmatter(readCached(file)) }))
@@ -1293,7 +1346,12 @@ export function apply(ctx, config = {}) {
           return { pages: [], brief: '' };
         }
       })(),
-      notes: sorted.map((note) => ({ ...note, injection: injectionReasons.get(note.id) || null })),
+      notes: sorted.map((note) => ({
+        ...note,
+        injection: note.injection !== undefined
+          ? note.injection
+          : injectionReasons.get(String(note.id)) || null,
+      })),
       recent: sorted.slice(0, 5),
       session,
       ingest: (() => {
@@ -1701,12 +1759,19 @@ export function apply(ctx, config = {}) {
           return;
         }
         try {
-          const options = workspaceOptions();
           const requested = String(workspace || 'session');
           const limitN = Math.min(20, Math.max(1, Math.trunc(limit)));
-          // Unified read-only search across every attached store. Ids are only
-          // unique per store, so every row carries its workspace; the Client
-          // keeps them distinct instead of merging by id.
+          const surface = surfaceConfig.unified
+            ? createSurface({ legacyRoot: root, globalRoot, registryFile, cwd: root })
+            : null;
+          if (surface) {
+            sendJson(res, 200, surface.search({ workspace: requested, query, limit: limitN }));
+            return;
+          }
+          const options = workspaceOptions();
+          // 2.x rollback path (`surface.unified: false`): one CLI call per store.
+          // Ids are only unique per store, so every row carries its workspace; the
+          // Client keeps them distinct instead of merging by id.
           const targets = requested === 'all'
             ? options
             : [workspaceView(workspace, null)];

@@ -1115,7 +1115,7 @@ export function apply(ctx, config = {}) {
    * comes from the same selection manifest the prompt uses, then the predicates
    * in `isInjectable` and the source-aware budget. It never changes injection.
    */
-  const injectionReasonsFor = ({ sessionStores, scope, notes, view, entries, sessionId }) => {
+  const injectionReasonsFor = ({ sessionStores, scope, notes, view, entries, candidates, sessionId }) => {
     const roots = new Set();
     if (sessionStores) {
       if (sessionStores.globalRoot) roots.add(path.resolve(sessionStores.globalRoot));
@@ -1130,6 +1130,7 @@ export function apply(ctx, config = {}) {
     const muted = sessionId ? controlsFor(sessionId).muted : new Set();
     return new Map(Object.entries(explainInjection({
       notes,
+      candidates: candidates || [],
       entries: entries || [],
       scope,
       viewKind: view.kind,
@@ -1209,12 +1210,29 @@ export function apply(ctx, config = {}) {
     const injection = sessionStores
       ? injectionManifestFor(sessionStores, session.scope || 'global', controlsFor(sessionId), { query: sessionQuery })
       : { total: 0, global: 0, project: 0, entries: [] };
+    // Same universe the selection (and therefore the prompt) sees: catalog-backed
+    // candidates after cross-store subject arbitration. The explanation must not
+    // build its own single-store picture, or labels drift from the actual pick.
+    let injectionCandidates = [];
+    if (sessionStores) {
+      try {
+        injectionCandidates = selectInjection(
+          sessionStores,
+          session.scope || 'global',
+          controlsFor(sessionId),
+          { query: sessionQuery },
+        ).candidates || [];
+      } catch {
+        injectionCandidates = [];
+      }
+    }
     const injectionReasons = injectionReasonsFor({
       sessionStores,
       scope: session.scope || 'global',
       notes: sorted,
       view,
       entries: injection.entries,
+      candidates: injectionCandidates,
       sessionId,
     });
     return {
@@ -1514,7 +1532,10 @@ export function apply(ctx, config = {}) {
     // contributes.
     const pickedGlobal = picked.globalPicked.slice(0, globalLimit);
     const pickedProject = picked.projectPicked.slice(0, Math.max(0, totalLimit - pickedGlobal.length));
-    return { globalPicked: pickedGlobal, projectPicked: pickedProject };
+    // `candidates` is the cross-store current-truth universe the pick came from.
+    // The panel explanation consumes it so its labels share the selection's data
+    // source and subject arbitration, not a single-store view.
+    return { globalPicked: pickedGlobal, projectPicked: pickedProject, candidates: current.map((entry) => entry.note) };
   };
 
   /**

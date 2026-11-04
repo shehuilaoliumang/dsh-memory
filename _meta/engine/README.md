@@ -88,15 +88,15 @@ const stats = kb.run(['stats', '--json']);
   与 `selectInjection` 使用同一份输入但**不参与选择**（advisory）；优先级 other-store →
   injected → muted → status(inbox/review/archived/promoted/superseded) → canon/raw →
   topic/work/session → fail-closed scope → 同 subject 更新 → 预算满 → 本轮未入选。插件用它在
-  `/kb/panel.json` 的 `notes[].injection` 展示原因。
+  `/kb/panel.json` 的 `notes[].injection` 展示原因。v2.4.1 起该函数接收 `selectInjection` 的 catalog-backed 跨库候选（`candidates`），同 subject 取代与真实选择同源。
 - **多库只读视图（v2.4，插件层）**：`GET /kb/search.json?workspace=all` 由插件对每个可见
   store 各跑一次引擎检索并只保留本店 `scan` id 白名单内的行，结果带 `workspace`/`workspaceLabel`、
   全局最多 20 条、按 score 排序；只读、不跨库写、不写 access。引擎本身仍是单根/单进程语义。
 - 闸门：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本/语法
   （14 个 engine 文件、25 个 JS）；`context.test.mjs` 5 条 + `behavior-matrix.test.mjs`
   9 条 + `inject-ranking.test.mjs` 8 条 + `engine-api.test.mjs` 3 条 + `search-fallback.test.mjs`
-  4 条覆盖上下文/路由/排序/进程内 API/检索回退，插件单测合计 185 条；`work-brief.test.mjs`
-  31 条覆盖排名/预算/简报。
+  4 条覆盖上下文/路由/排序/进程内 API/检索回退，插件单测合计 187 条；`work-brief.test.mjs`
+  36 条覆盖排名/预算/简报/注入解释同源（v2.4.1）。
 
 ## 复核条件
 

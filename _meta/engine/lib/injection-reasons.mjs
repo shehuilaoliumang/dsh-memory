@@ -7,12 +7,21 @@
  * from the budget. Split out of `work-brief.mjs` so the Host can add the panel
  * explanation without reloading the whole rules module.
  *
+ * `candidates` is the selection layer's own candidate universe *after*
+ * cross-store subject arbitration (normally `selectInjection(...).candidates`).
+ * Passing it fixes two classes of drift:
+ * - the newest-claim label is computed across stores, not from one store's view;
+ * - status/scope/subject come from the same catalog-backed snapshot selection
+ *   used, so a manual edit without `rebuild` cannot make the label disagree
+ *   with what was actually injected.
+ *
  * @returns {Record<string, {state: string, label: string, detail: string}>}
  */
 import { isInjectable } from './work-brief.mjs';
 
 export function explainInjection({
   notes = [],
+  candidates = [],
   entries = [],
   scope = 'global',
   viewKind = 'project',
@@ -23,10 +32,15 @@ export function explainInjection({
   const injectedIds = new Set((entries || []).map((entry) => String(entry && entry.id ? entry.id : '')));
   const muted = new Set((mutedIds || []).map(String));
   const budget = `全局 ${limits.global} / 项目 ${limits.project} / 总计 ${limits.total}`;
-  // Newest injectable claim per subject in the viewed store; only used to
+  // The selection layer's candidate universe is authoritative when supplied.
+  // Older callers (tests, other hosts) may omit it and fall back to the view.
+  const candidateNotes = (candidates || []).filter(Boolean);
+  const candidateById = new Map(candidateNotes.map((note) => [String(note.id), note]));
+  const subjectPool = candidateNotes.length ? candidateNotes : notes;
+  // Newest injectable claim per subject in the selection universe; only used to
   // explain a concrete replacement, never to decide what is injected.
   const newestBySubject = new Map();
-  for (const note of notes) {
+  for (const note of subjectPool) {
     if (!note || !note.subject || !isInjectable(note, scope)) continue;
     const previous = newestBySubject.get(note.subject);
     if (!previous
@@ -38,42 +52,46 @@ export function explainInjection({
   const reasons = {};
   for (const note of notes) {
     if (!note || note.id === undefined || note.id === null) continue;
+    // Prefer the selection snapshot for predicate fields. The view may contain
+    // a manually edited file that the (not yet rebuilt) catalog still describes
+    // differently; the prompt follows the catalog, so must the label.
+    const effective = candidateById.get(String(note.id)) || note;
     let reason;
     if (!inSessionStore) {
       reason = { state: 'other-store', label: '不在当前会话', detail: '这是其他记忆库的只读视图；注入只取当前会话自己的全局库与项目库。' };
-    } else if (injectedIds.has(String(note.id))) {
+    } else if (injectedIds.has(String(effective.id))) {
       reason = { state: 'injected', label: '已注入', detail: '本轮对话已经注入这条记忆。' };
-    } else if (muted.has(String(note.id))) {
+    } else if (muted.has(String(effective.id))) {
       reason = { state: 'muted', label: '本会话已静音', detail: '静音只影响当前会话，不改库内状态。' };
-    } else if (note.status === 'inbox') {
+    } else if (effective.status === 'inbox') {
       reason = { state: 'inbox', label: '待确认', detail: '候选记忆须确认（active）后才会进入注入。' };
-    } else if (note.status === 'review') {
+    } else if (effective.status === 'review') {
       reason = { state: 'review', label: '待复核', detail: '复核完成前不进入注入。' };
-    } else if (note.status === 'archived') {
+    } else if (effective.status === 'archived') {
       reason = { state: 'archived', label: '已归档', detail: '归档条目不再注入，正文保留。' };
-    } else if (note.status === 'promoted') {
+    } else if (effective.status === 'promoted') {
       reason = { state: 'promoted', label: '已晋升', detail: '由更高层结论代替，本层不再注入。' };
-    } else if (note.status === 'superseded') {
+    } else if (effective.status === 'superseded') {
       reason = { state: 'superseded', label: '已被取代', detail: '同主题已有新结论，旧条只保留历史。' };
-    } else if (note.level !== 'digest') {
-      reason = note.level === 'canon'
+    } else if (effective.level !== 'digest') {
+      reason = effective.level === 'canon'
         ? { state: 'canon', label: '结论层', detail: '决策/方法论不参与每轮记忆注入，按需检索。' }
         : { state: 'raw', label: '原文层', detail: '原文只增不改，不参与注入。' };
-    } else if (note.type === 'topic' || note.type === 'work' || note.type === 'session') {
+    } else if (effective.type === 'topic' || effective.type === 'work' || effective.type === 'session') {
       reason = { state: 'page', label: '页面不是记忆', detail: '主题页、工作页与会话原文都不参与注入。' };
-    } else if (!isInjectable(note, scope)) {
-      if (note.scope === 'unclassified' || !note.scope) {
+    } else if (!isInjectable(effective, scope)) {
+      if (effective.scope === 'unclassified' || !effective.scope) {
         reason = { state: 'no-scope', label: '没有范围', detail: '缺失 scope 按 fail closed 处理，永不注入。' };
-      } else if (note.scope === 'global' && viewKind === 'project') {
+      } else if (effective.scope === 'global' && viewKind === 'project') {
         reason = { state: 'scope-leak', label: '项目库隔离', detail: '项目库里的 global 条目被隔离，不进入注入。' };
-      } else if (note.scope === 'global' && viewKind === 'global') {
+      } else if (effective.scope === 'global' && viewKind === 'global') {
         reason = { state: 'scope-leak', label: '范围不符', detail: '全局库只注入 global 范围的记忆。' };
       } else {
-        reason = { state: 'scope', label: '范围不符', detail: `本条范围 ${note.scope || '未设置'}，与当前会话 ${scope || 'global'} 不一致。` };
+        reason = { state: 'scope', label: '范围不符', detail: `本条范围 ${effective.scope || '未设置'}，与当前会话 ${scope || 'global'} 不一致。` };
       }
-    } else if (note.subject && newestBySubject.has(note.subject)
-      && String(newestBySubject.get(note.subject).id) !== String(note.id)) {
-      reason = { state: 'replaced', label: '同主题有更新', detail: `同主题已有更新条目 ${newestBySubject.get(note.subject).id}，本条不占注入位。` };
+    } else if (effective.subject && newestBySubject.has(effective.subject)
+      && String(newestBySubject.get(effective.subject).id) !== String(effective.id)) {
+      reason = { state: 'replaced', label: '同主题有更新', detail: `同主题已有更新条目 ${newestBySubject.get(effective.subject).id}，本条不占注入位。` };
     } else if ((entries || []).length >= (limits.total || 5)) {
       reason = { state: 'budget', label: '预算已满', detail: `记忆注入预算（${budget}）已满，排序靠后的条目本轮不注入。` };
     } else {

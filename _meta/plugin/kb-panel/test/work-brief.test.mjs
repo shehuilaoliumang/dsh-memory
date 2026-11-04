@@ -368,3 +368,41 @@ test('explainInjection: subject replacement and full budget are distinguished', 
   });
   assert.equal(full['a-cold'].state, 'budget');
 });
+
+test('explainInjection: cross-store subject winner explains a stale copy in one view', () => {
+  // Session sees a legacy/global old claim and a newer project claim. Selection
+  // arbitrates across both stores and injects only the newer one; the old copy
+  // shown in the global view must say "replaced by <new id>", not "not selected".
+  const oldGlobal = atom({ id: 'a-global-old', subject: 'deploy', updated: '2026-11-01' });
+  const newProject = atom({
+    id: 'a-project-new',
+    subject: 'deploy',
+    updated: '2026-11-02',
+    scope: 'project:demo',
+  });
+  const reasons = explainInjection({
+    notes: [oldGlobal],
+    candidates: [newProject],
+    entries: [{ id: 'a-project-new' }],
+    scope: 'project:demo',
+    viewKind: 'global',
+  });
+  assert.equal(reasons['a-global-old'].state, 'replaced');
+  assert.match(reasons['a-global-old'].detail, /a-project-new/);
+});
+
+test('explainInjection: labels follow the selection snapshot, not a stale edit', () => {
+  // Selection read `_meta/catalog.jsonl` (still active) while the note file was
+  // manually archived without `rebuild`. The prompt injected the catalog copy,
+  // so the label must say injected rather than claiming it was archived.
+  const disk = atom({ id: 'a-stale', status: 'archived', subject: 'deploy' });
+  const catalog = atom({ id: 'a-stale', status: 'active', subject: 'deploy' });
+  const reasons = explainInjection({
+    notes: [disk],
+    candidates: [catalog],
+    entries: [{ id: 'a-stale' }],
+    scope: 'global',
+    viewKind: 'global',
+  });
+  assert.equal(reasons['a-stale'].state, 'injected');
+});

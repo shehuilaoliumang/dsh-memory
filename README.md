@@ -87,6 +87,7 @@ v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，
 - **逐条注入原因**：`_meta/engine/lib/injection-reasons.mjs` 的 `explainInjection()` 为每条记忆输出 `{state,label,detail}`（已注入 / 未入选 / 不在当前会话 / 本会话已静音 / 状态或层级不参与 / 范围不符 / 同主题有更新 / 预算已满等）；它只解释、不参与选择，选择仍由 `selectInjection` 决定。
 - **多库只读视图**：记忆页工作区 >1 时选择器前置「全部记忆库」；客户端并行取各库快照并按 `uid = workspace::id` 合并，详情显示来源；`GET /kb/search.json?workspace=all` 逐库白名单检索、合并后最多 20 条；该视图隐藏「记一条 / 整理 / 改名 / 接入」等写操作，不跨库写。
 - **服务端**：注入原因与注入选择复用同一套 `isInjectable`/`selectInjection`/budget，原因文案与真实选择同源；`/kb/note.json` 仍按目标库记 read 召回。ADR 见 `30_Canon/decisions/2026-11-04-c-1006.md`。
+- **2.4.1 补丁（注入解释同源）**：`explainInjection` 改为消费 `selectInjection` 的同一份 catalog-backed 跨库候选（含 `candidates` 参数），跨库同 subject 取代与手工改后未 `rebuild` 的窗口内标签都与真实注入一致；插件单测 187。
 
 ## v2.3 新增（算法正确性与规模化）
 
@@ -146,7 +147,7 @@ node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
 node --test --test-isolation=none _meta/scripts/test/export-rules.test.mjs
 ```
 
-当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 185 条全过、脚本测试 17 条全过；**本地完整库** `validate` 13 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 6 决策）/主索引 11 行 + 归档 1 行、0 警告；闸门 6 JSON / 9 manifest / 14 engine / 2 locale / 25 JS。公开快照（无 `10_Raw/`）12 篇（core.md + 工作页 + 4 digest 原子 + 6 决策）/主索引 10 行 + 归档 1 行、0 警告。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
+当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 187 条全过、脚本测试 17 条全过；**本地完整库** `validate` 13 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 6 决策）/主索引 11 行 + 归档 1 行、0 警告；闸门 6 JSON / 9 manifest / 14 engine / 2 locale / 25 JS。公开快照（无 `10_Raw/`）12 篇（core.md + 工作页 + 4 digest 原子 + 6 决策）/主索引 10 行 + 归档 1 行、0 警告。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
 
 ## 裁判评估
 

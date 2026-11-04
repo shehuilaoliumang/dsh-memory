@@ -56,8 +56,9 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - **2.1 加固**：`stores.mjs` 增加跨进程 registry 锁 `withRegistryLock`（读-改-写串行化）；导出安全规则抽为纯函数 `_meta/scripts/lib/export-rules.mjs`（17 单测，CI「Script unit tests」步骤）。
 - **2.2 policy**：库存行为由 `policy`（`scopeMode`/`injectLimit`/`trustedBy`）表达，`kind` 只作标识；registry 行携带 `policy`，`resolveContext`/`resolveWriteTarget` 输出 `role`/`trustedBy`。
 - **2.3 算法与规模化**：`rankMemories` 支持 `injectWeight`（默认 0.1，曝光降权）与 `exploration`（默认 0，项目 store 传 1，把最新未曝光条目放到位置 2）；`search` BM25 字段权重 `title×3`/`summary×2`；`toRow` 增 `title`/`scope`/`subject` 并在 300B 预算内由 `fitRow` 缩短；插件注入优先读 catalog（mtime+size 缓存，缺失/损坏回退 scanNotes）。
+- **2.4.1 注入解释同源**：`explainInjection` 接收 `selectInjection` 的 catalog-backed 跨库候选（`candidates`），跨库同 subject 与未 `rebuild` 窗口的标签与真实注入一致（第 15 轮复审 B1/B2）。
 - **2.4 检索回退/注入原因**：`lib/search/pinyin.mjs`（vendored tiny-pinyin 1.3.2 MIT，全拼/首字母，ASCII 查询，`Intl.Collator` 缺失降级为空）+ `lib/search/semantic.mjs`（21 组中英同义词，整词/中文 ≥2 字扩展，单组 ≤4、总 ≤10）只在字面命中 < min(limit,3) 时补位，语义分 ×0.5，响应带 `strategy`/`matchedBy`，仍不写 access；`lib/injection-reasons.mjs` 的 `explainInjection` 给逐条注入原因（advisory，不参与选择），插件写入 `/kb/panel.json` 的 `notes[].injection`。
-- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 6 JSON / 9 manifest / 14 engine / 2 locale / 25 JS）；插件单测 185 条（含 context 5、behavior-matrix 9、inject-ranking 8、engine-api 3、search-fallback 4）。
+- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 6 JSON / 9 manifest / 14 engine / 2 locale / 25 JS）；插件单测 187 条（含 context 5、behavior-matrix 9、inject-ranking 8、engine-api 3、search-fallback 4；work-brief 36）。
 
 ## 设计约束
 
@@ -120,7 +121,7 @@ node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
 node _meta/plugin/kb-panel/test/inject-ranking.test.mjs
 node _meta/plugin/kb-panel/test/engine-api.test.mjs
 node _meta/plugin/kb-panel/test/search-fallback.test.mjs
-# 共 185 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 31 / http-guard 11 / redact 8 / shared-frontmatter 4 / stores 21 / context 5 / behavior-matrix 9 / inject-ranking 8 / engine-api 3 / search-fallback 4
+# 共 187 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 36 / http-guard 14 / redact 8 / shared-frontmatter 4 / stores 21 / context 5 / behavior-matrix 9 / inject-ranking 8 / engine-api 3 / search-fallback 4
 ```
 
 ## 脚本单测（export rules）

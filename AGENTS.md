@@ -46,7 +46,7 @@
 - **决策编号**：记忆层重置后的新决策编号从 `c-1001` 起（重置前旧编号 c-0001~c-0021 已停用，仅存本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）；CHANGELOG 1.18.x 及更早里的旧编号引用是历史记录。
 - **库面策略（v2.2）**：legacy 不再作为独立行为分支——`kind` 只作标识（global/project；legacy 是 UI/身份标签），注入预算/过滤/简报由 `policy` 表达（legacy = `scopeMode: global` + `injectLimit: 5` + `trustedBy: config`；项目 = `scopeMode: project` + `injectLimit: 3`）；registry 行携带 `policy`，`resolveContext`/`resolveWriteTarget` 输出 `role`/`trustedBy`，写权限仍只由 `resolveWriteTarget` 决定。
 - **会话级记忆控制（v2.2）**：`POST /kb/session/memory` 的 pin/mute 只影响当前 live 会话的注入选择，ephemeral（重启清空）、不改笔记状态；`_meta/config.json` 的 `inject.rankMode` 默认 `heat`，可切 `relevance`（最近真人消息匹配优先、热度兜底，`relevanceMaxAgeMs` 过期退回）。
-- **检索回退与注入解释（v2.4）**：`kb.mjs search` 字面 BM25 优先，仅当字面命中 < `min(limit, 3)` 时用拼音（全拼/首字母）与同义词补位，语义分 ×0.5，响应带 `strategy` 与每行 `matchedBy`/`matchLabel`/`matchTerms`，仍不写 access；`_meta/engine/lib/injection-reasons.mjs` 为每条记忆给出 `{state,label,detail}` 注入原因（只读 advisory，与 `selectInjection` 同源，不参与选择）；`GET /kb/search.json?workspace=all` 与面板「全部记忆库」是**只读多库合并视图**（每库白名单、全局最多 20 条、隐藏写操作），不跨库写。
+- **检索回退与注入解释（v2.4）**：`kb.mjs search` 字面 BM25 优先，仅当字面命中 < `min(limit, 3)` 时用拼音（全拼/首字母）与同义词补位，语义分 ×0.5，响应带 `strategy` 与每行 `matchedBy`/`matchLabel`/`matchTerms`，仍不写 access；`_meta/engine/lib/injection-reasons.mjs` 为每条记忆给出 `{state,label,detail}` 注入原因（只读 advisory，与 `selectInjection` 同源，不参与选择；2.4.1 起消费选择方的 catalog-backed 跨库候选，跨库同 subject 与未 `rebuild` 窗口的标签均与真实注入一致）；`GET /kb/search.json?workspace=all` 与面板「全部记忆库」是**只读多库合并视图**（每库白名单、全局最多 20 条、隐藏写操作），不跨库写。
 - 完整规范见 `_meta/schema.md` §17–§20 与 `30_Canon/decisions/2026-11-02-c-1001.md`、`2026-11-02-c-1002.md`、`2026-11-03-c-1003.md`、`2026-11-03-c-1004.md`、`2026-11-03-c-1005.md`、`2026-11-04-c-1006.md`（更早的历史决策见本地私有 Git 历史 `bdf14e3`，公开仓库不可解析）。
 
 ## 读

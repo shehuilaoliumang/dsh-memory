@@ -30,7 +30,7 @@
 - embedding/向量检索；拼音多音字与词库扩展；同义词表自动学习；跨库写入/批量迁移；all 搜索并行化；DSH 适配层仍在插件。
 
 - 数字：插件 185/185、脚本 17/17、smoke 106/106、`check-plugin-load` 6 JSON / 9 manifest / 14 engine / 2 locale / 25 JS；本地 `validate` 13 篇（core + raw + work + 4 atoms + 6 canon，主索引 11 + 归档 1）、0 警告；ADR `30_Canon/decisions/2026-11-04-c-1006.md`。
-- 公开快照：2.4.0 随本次快照发布（提交/CI 发布后回填）。
+- 公开快照：2.4.0 已发布（public commit `26b6171`，tree `97ec543`，CI `41756688319` 全绿；快照 12 篇/主索引 10 + 归档 1、0 警告）。
 
 ## 2.3.0 — 2026-11-03
 

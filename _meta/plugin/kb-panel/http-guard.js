@@ -1,3 +1,6 @@
+import { appendFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 /**
  * Same-origin / CSRF / loopback guard for the local `/kb/*` HTTP surface.
  *
@@ -7,18 +10,50 @@
  * makes write endpoints reject HTML form posts (`text/plain`,
  * `application/x-www-form-urlencoded`).
  *
- * Browser requests carry `sec-fetch-site` and prove themselves with the CSRF
- * token read from `/kb/panel.json`. Non-browser clients (Node, curl, another
- * local process) should instead read the per-boot `_meta/state/http-token`
- * file and send it as `x-kb-local-token`; this rejects casual writes, but a
- * same-user process can still spoof the browser header or read the token file,
- * so it is not OS-level authentication.
+ * Browser requests prove themselves with the CSRF token read from
+ * `/kb/panel.json`; they normally also carry `sec-fetch-site`, `Origin`, or a
+ * same-origin `Referer`. Non-browser clients (Node, curl, another local
+ * process) should instead read the per-boot `_meta/state/http-token` file and
+ * send it as `x-kb-local-token`; this rejects casual writes, but a same-user
+ * process can still spoof browser headers or read the token file, so it is not
+ * OS-level authentication.
  */
 function reject(res, status, error) {
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');
   res.setHeader('cache-control', 'no-store');
   res.end(JSON.stringify({ error }));
+}
+
+/** Temporary diagnosis trail for write-guard rejections (state is gitignored). */
+function debugReject(req) {
+  try {
+    const file = fileURLToPath(new URL('../../state/http-guard-debug.log', import.meta.url));
+    const headers = req.headers || {};
+    appendFileSync(
+      file,
+      `${JSON.stringify({
+        at: new Date().toISOString(),
+        method: req.method,
+        url: req.url,
+        host: headers.host,
+        origin: headers.origin,
+        referer: headers.referer,
+        secFetchSite: headers['sec-fetch-site'],
+        secFetchMode: headers['sec-fetch-mode'],
+        secFetchDest: headers['sec-fetch-dest'],
+        contentType: headers['content-type'],
+        userAgent: headers['user-agent'],
+        accept: headers.accept,
+        acceptLanguage: headers['accept-language'],
+        hasCsrf: Boolean(headers['x-kb-csrf']),
+        hasLocalToken: Boolean(headers['x-kb-local-token']),
+      })}\n`,
+      'utf8',
+    );
+  } catch {
+    /* diagnostics must never block the guard */
+  }
 }
 
 /** Accept IPv4/IPv6 loopback and the IPv4-mapped form Node may report. */
@@ -35,6 +70,7 @@ export function requestRejected(req, res, options = {}) {
     reject(res, 403, 'non-loopback connection rejected');
     return true;
   }
+  let sameOrigin = false;
   if (origin) {
     let originHost = '';
     try {
@@ -48,7 +84,19 @@ export function requestRejected(req, res, options = {}) {
       reject(res, 403, 'cross-origin request rejected');
       return true;
     }
+    sameOrigin = true;
   }
+  let sameReferer = false;
+  if (!sameOrigin && req.headers.referer) {
+    try {
+      sameReferer = new URL(req.headers.referer).host === host;
+    } catch {
+      sameReferer = false;
+    }
+  }
+  const userAgent = String(req.headers['user-agent'] || '');
+  const acceptLanguage = String(req.headers['accept-language'] || '');
+  const browserUserAgent = /^Mozilla\//.test(userAgent) && acceptLanguage !== '';
   if (String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'cross-site') {
     reject(res, 403, 'cross-site request rejected');
     return true;
@@ -69,13 +117,22 @@ export function requestRejected(req, res, options = {}) {
         return true;
       }
     }
-    // Browser fetches carry `sec-fetch-site`; a non-browser caller must prove
-    // it can read the per-boot token file. A local process can spoof the
-    // browser header — this is a raised bar, not process authentication.
+    // Browser fetches normally carry `sec-fetch-site`; some embedded webviews
+    // omit it, so an explicit same-origin Origin/Referer or a browser
+    // User-Agent + Accept-Language pair counts as the browser signal too. A
+    // non-browser caller that sends none of these must prove it can read the
+    // per-boot token file. A local process can spoof these headers — this is a
+    // raised bar, not process authentication.
     if (options.localToken) {
       const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
-      const browser = fetchSite === 'same-origin' || fetchSite === 'same-site';
+      const browser =
+        fetchSite === 'same-origin' ||
+        fetchSite === 'same-site' ||
+        sameOrigin ||
+        sameReferer ||
+        browserUserAgent;
       if (!browser) {
+        debugReject(req);
         const supplied = String(req.headers['x-kb-local-token'] || '');
         if (supplied !== options.localToken) {
           reject(res, 403, 'non-browser writes require the local token file');

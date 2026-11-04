@@ -7,6 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { briefText, clampText, currentTruthEntries, currentTruthNotes, heatWeight, isInjectable, pickBySource, pickBySourceControls, rankMemories, scopeLabel, sectionItems } from '../../../engine/lib/work-brief.mjs';
+import { explainInjection } from '../../../engine/lib/injection-reasons.mjs';
 
 const atom = (over = {}) => ({ level: 'digest', status: 'active', type: 'preference', scope: 'global', ...over });
 
@@ -308,4 +309,62 @@ test('rankMemories: exploration slot surfaces the newest never-exposed note', ()
   });
   assert.equal(explored[1].id, '2026-11-03-a-0003');
   assert.equal(explored[0].id, '2026-11-02-a-0002');
+});
+
+test('explainInjection: statuses and page layers explain the fail-closed path', () => {
+  const notes = [
+    atom({ id: 'a-inbox', status: 'inbox' }),
+    atom({ id: 'a-canon', level: 'canon' }),
+    atom({ id: 'a-topic', type: 'topic' }),
+    atom({ id: 'a-noscope', scope: '' }),
+    atom({ id: 'a-ok' }),
+  ];
+  const reasons = explainInjection({ notes, entries: [], scope: 'global', viewKind: 'global' });
+  assert.equal(reasons['a-inbox'].label, '待确认');
+  assert.equal(reasons['a-canon'].label, '结论层');
+  assert.equal(reasons['a-topic'].label, '页面不是记忆');
+  assert.equal(reasons['a-noscope'].state, 'no-scope');
+  assert.equal(reasons['a-ok'].state, 'not-selected');
+});
+
+test('explainInjection: injected, muted, other-store and project isolation win by priority', () => {
+  const notes = [
+    atom({ id: 'a-in', status: 'inbox' }),
+    atom({ id: 'a-muted' }),
+    atom({ id: 'a-global', scope: 'global' }),
+    atom({ id: 'a-other', scope: 'project:other' }),
+  ];
+  const reasons = explainInjection({
+    notes,
+    entries: [{ id: 'a-in' }],
+    mutedIds: ['a-muted'],
+    scope: 'project:demo',
+    viewKind: 'project',
+    inSessionStore: true,
+  });
+  assert.equal(reasons['a-in'].state, 'injected');
+  assert.equal(reasons['a-muted'].state, 'muted');
+  // Global memories are intentionally visible inside project sessions; only a
+  // memory scoped to a different project is excluded.
+  assert.equal(reasons['a-global'].state, 'not-selected');
+  assert.equal(reasons['a-other'].state, 'scope');
+  const other = explainInjection({ notes: [atom({ id: 'x' })], entries: [], inSessionStore: false });
+  assert.equal(other.x.state, 'other-store');
+});
+
+test('explainInjection: subject replacement and full budget are distinguished', () => {
+  const notes = [
+    atom({ id: 'a-old', subject: 'deploy', updated: '2026-11-01' }),
+    atom({ id: 'a-new', subject: 'deploy', updated: '2026-11-02' }),
+    atom({ id: 'a-cold' }),
+  ];
+  const replaced = explainInjection({ notes, entries: [], scope: 'global' });
+  assert.equal(replaced['a-old'].label, '同主题有更新');
+  assert.equal(replaced['a-new'].state, 'not-selected');
+  const full = explainInjection({
+    notes: [atom({ id: 'a-cold' })],
+    entries: ['1', '2', '3', '4', '5'].map((id) => ({ id })),
+    scope: 'global',
+  });
+  assert.equal(full['a-cold'].state, 'budget');
 });

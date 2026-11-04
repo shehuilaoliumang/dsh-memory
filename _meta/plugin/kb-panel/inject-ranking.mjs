@@ -19,6 +19,23 @@ const HALF_LIFE_DAYS = 30;
 
 const CJK = /[\u3400-\u9fff]/;
 
+/**
+ * Behaviour policy of a resolved store: the legacy vault arrives from
+ * `resolveStores()` as `{legacy:false, entry:{policy:{scopeMode:'global'}}}`,
+ * so checking only top-level fields silently dropped its five-slot global
+ * policy and left every vault session with zero injected memories.
+ */
+export function isGlobalScopeStore(store) {
+  if (!store) return false;
+  if (store.legacy === true || store.scopeMode === 'global') return true;
+  const policy = store.policy && typeof store.policy === 'object'
+    ? store.policy
+    : store.entry && store.entry.policy && typeof store.entry.policy === 'object'
+      ? store.entry.policy
+      : null;
+  return Boolean(policy && policy.scopeMode === 'global');
+}
+
 function normalize(value) {
   return String(value || '').toLowerCase().normalize('NFKC');
 }

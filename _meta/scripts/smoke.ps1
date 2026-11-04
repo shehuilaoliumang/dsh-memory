@@ -406,7 +406,7 @@ updated: 2026-10-29
   $r = Kb @('search', '--query', '批次二', '--limit', '3', '--json')
   $search = $r.text | ConvertFrom-Json
   Check 'search 返回命中且首位是自造夹具原子' ($r.code -eq 0 -and @($search.results).Count -ge 1 -and $search.results[0].id -eq $atomId2) $r.text
-  $r = Kb @('search', '--query', '不存在的词xyz', '--json')
+  $r = Kb @('search', '--query', 'zzqqxx', '--json')
   $none = $r.text | ConvertFrom-Json
   Check 'search 无意义查询不误命中' ($r.code -eq 0 -and $none.total -eq 0) $r.text
   $r = Kb @('search', '--json')

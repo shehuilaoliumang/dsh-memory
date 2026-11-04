@@ -30,7 +30,7 @@ import { randomBytes } from 'node:crypto';
 import { createIngestor, messageText, resolveNode, runProcess } from './ingest.js';
 import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
-import { rankInjectionCandidates } from './inject-ranking.mjs';
+import { rankInjectionCandidates, isGlobalScopeStore } from './inject-ranking.mjs';
 import {
   DEFAULT_GLOBAL_ROOT,
   DEFAULT_REGISTRY_FILE,
@@ -51,7 +51,8 @@ import {
 } from '../../engine/lib/stores.mjs';
 import { parseFrontmatterData as parseFrontmatter } from '../../engine/lib/shared/frontmatter.mjs';
 import { globalAtomSpec, isGlobalPromotable, localDateStamp } from '../../engine/lib/promote.mjs';
-import { briefText, currentTruthEntries, currentTruthNotes, pickBySource } from '../../engine/lib/work-brief.mjs';
+import { briefText, currentTruthEntries, currentTruthNotes, isInjectable, pickBySource } from '../../engine/lib/work-brief.mjs';
+import { explainInjection } from '../../engine/lib/injection-reasons.mjs';
 import { isInsideLegacy, resolveContext, resolveWriteTarget } from '../../engine/lib/context.mjs';
 
 export const inject = ['webServer', 'systemPrompt'];
@@ -910,6 +911,7 @@ export function apply(ctx, config = {}) {
         type: String(data.type || ''),
         tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
         summary: String(data.summary || ''),
+        subject: String(data.subject || ''),
         updated: String(data.updated || ''),
         file: path.relative(storeRoot, file).split(path.sep).join('/'),
       });
@@ -1108,6 +1110,35 @@ export function apply(ctx, config = {}) {
     return { slug: meta.slug, root: storeRoot, writable, created };
   };
 
+  /**
+   * Why a note is (not) in this turn's prompt. Purely explanatory: the answer
+   * comes from the same selection manifest the prompt uses, then the predicates
+   * in `isInjectable` and the source-aware budget. It never changes injection.
+   */
+  const injectionReasonsFor = ({ sessionStores, scope, notes, view, entries, sessionId }) => {
+    const roots = new Set();
+    if (sessionStores) {
+      if (sessionStores.globalRoot) roots.add(path.resolve(sessionStores.globalRoot));
+      const projectRoot = sessionStores.projectRoot || (sessionStores.project && sessionStores.project.root);
+      if (projectRoot) roots.add(path.resolve(projectRoot));
+    }
+    const legacyProject = Boolean(sessionStores && globalScopeStore(sessionStores.project));
+    const globalLimit = sessionStores && sessionStores.globalRoot ? 2 : 0;
+    const projectLimit = sessionStores && sessionStores.projectRoot
+      ? (legacyProject ? 5 : sessionStores.globalRoot ? 3 : 5)
+      : 0;
+    const muted = sessionId ? controlsFor(sessionId).muted : new Set();
+    return new Map(Object.entries(explainInjection({
+      notes,
+      entries: entries || [],
+      scope,
+      viewKind: view.kind,
+      mutedIds: [...muted],
+      inSessionStore: roots.has(path.resolve(view.root)),
+      limits: { global: globalLimit, project: projectLimit, total: 5 },
+    })));
+  };
+
   const snapshot = (sessionId, workspace) => {
     let sessionStores = null;
     let sessionQuery = '';
@@ -1178,6 +1209,14 @@ export function apply(ctx, config = {}) {
     const injection = sessionStores
       ? injectionManifestFor(sessionStores, session.scope || 'global', controlsFor(sessionId), { query: sessionQuery })
       : { total: 0, global: 0, project: 0, entries: [] };
+    const injectionReasons = injectionReasonsFor({
+      sessionStores,
+      scope: session.scope || 'global',
+      notes: sorted,
+      view,
+      entries: injection.entries,
+      sessionId,
+    });
     return {
       workspace: view.root,
       view,
@@ -1236,7 +1275,7 @@ export function apply(ctx, config = {}) {
           return { pages: [], brief: '' };
         }
       })(),
-      notes: sorted,
+      notes: sorted.map((note) => ({ ...note, injection: injectionReasons.get(note.id) || null })),
       recent: sorted.slice(0, 5),
       session,
       ingest: (() => {
@@ -1272,7 +1311,7 @@ export function apply(ctx, config = {}) {
   };
 
   /** v2.2: legacy behaviour is a global-scope policy, not a separate kind. */
-  const globalScopeStore = (store) => Boolean(store && (store.legacy === true || store.scopeMode === 'global'));
+  const globalScopeStore = isGlobalScopeStore;
 
   const memoryScopeFor = (agent, stores) => {
     try {
@@ -1641,22 +1680,51 @@ export function apply(ctx, config = {}) {
           return;
         }
         try {
-          const view = workspaceView(workspace, null);
-          const result = await runProcess(
-            nodeRuntime.command,
-            kbCommand(view, ['search', '--query', query, '--limit', String(Math.min(20, Math.max(1, Math.trunc(limit)))), '--json']),
-            { cwd: view.root, env: { ...process.env, ...nodeRuntime.env }, timeoutMs: 20000 },
-          );
-          if (result.code !== 0) throw new Error(commandError(result));
-          const payload = JSON.parse(result.stdout || '{}') || {};
-          // Only ids the store's own scan can see; the CLI result is not trusted
-          // as a path source by the Client.
-          const allowed = new Set(scanNotes(view.root).map((note) => note.id));
+          const options = workspaceOptions();
+          const requested = String(workspace || 'session');
+          const limitN = Math.min(20, Math.max(1, Math.trunc(limit)));
+          // Unified read-only search across every attached store. Ids are only
+          // unique per store, so every row carries its workspace; the Client
+          // keeps them distinct instead of merging by id.
+          const targets = requested === 'all'
+            ? options
+            : [workspaceView(workspace, null)];
+          const results = [];
+          let total = 0;
+          const strategy = { pinyin: false, semantic: false };
+          for (const view of targets) {
+            const result = await runProcess(
+              nodeRuntime.command,
+              kbCommand(view, ['search', '--query', query, '--limit', String(limitN), '--json']),
+              { cwd: view.root, env: { ...process.env, ...nodeRuntime.env }, timeoutMs: 20000 },
+            );
+            if (result.code !== 0) throw new Error(commandError(result));
+            const payload = JSON.parse(result.stdout || '{}') || {};
+            total += Number(payload.total) || 0;
+            if (payload.strategy) {
+              strategy.pinyin = strategy.pinyin || payload.strategy.pinyin === true;
+              strategy.semantic = strategy.semantic || payload.strategy.semantic === true;
+            }
+            // Only ids the store's own scan can see; the CLI result is not trusted
+            // as a path source by the Client.
+            const allowed = new Set(scanNotes(view.root).map((note) => note.id));
+            for (const row of Array.isArray(payload.results) ? payload.results : []) {
+              if (!row || !allowed.has(String(row.id))) continue;
+              results.push({
+                ...row,
+                workspace: view.id,
+                workspaceLabel: options.find((option) => option.id === view.id)?.label
+                  || view.meta?.title || view.id || '当前工作区',
+              });
+            }
+          }
+          if (requested === 'all') results.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
           sendJson(res, 200, {
             ok: true,
             query,
-            total: Number(payload.total) || 0,
-            results: (Array.isArray(payload.results) ? payload.results : []).filter((row) => row && allowed.has(String(row.id))),
+            total,
+            strategy,
+            results: results.slice(0, limitN),
           });
         } catch (error) {
           sendJson(res, 500, { error: String(error && error.message ? error.message : error) });

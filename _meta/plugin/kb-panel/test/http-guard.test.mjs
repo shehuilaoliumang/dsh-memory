@@ -94,10 +94,44 @@ test('rejects a non-loopback connection before any other check', () => {
   assert.match(result.body, /non-loopback/);
 });
 
-test('non-browser writes must present the per-boot local token', () => {
+test('a matching Origin alone is accepted as a browser signal', () => {
   const headers = {
     host: '127.0.0.1:9223',
     origin: 'http://127.0.0.1:9223',
+    'content-type': 'application/json',
+    'x-kb-csrf': 'csrf',
+  };
+  const result = exchange(headers, 'POST', { token: 'csrf', localToken: 'local' });
+  assert.equal(result.rejected, false);
+  assert.equal(result.status, 200);
+});
+
+test('accepts a browser-like User-Agent when fetch metadata is absent', () => {
+  const headers = {
+    host: '127.0.0.1:9223',
+    'content-type': 'application/json',
+    'x-kb-csrf': 'csrf',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'accept-language': 'zh-CN,zh;q=0.9',
+  };
+  const result = exchange(headers, 'POST', { token: 'csrf', localToken: 'local' });
+  assert.equal(result.rejected, false);
+});
+
+test('accepts a same-origin Referer when Origin and fetch metadata are absent', () => {
+  const headers = {
+    host: '127.0.0.1:9223',
+    'content-type': 'application/json',
+    'x-kb-csrf': 'csrf',
+    referer: 'http://127.0.0.1:9223/index.html',
+  };
+  const result = exchange(headers, 'POST', { token: 'csrf', localToken: 'local' });
+  assert.equal(result.rejected, false);
+});
+
+test('a write with no Origin and no sec-fetch-site must present the local token', () => {
+  const headers = {
+    host: '127.0.0.1:9223',
     'content-type': 'application/json',
     'x-kb-csrf': 'csrf',
   };

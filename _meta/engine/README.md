@@ -42,6 +42,8 @@ const stats = kb.run(['stats', '--json']);
 - `lib/work-brief.mjs` — 注入排序/预算/项目简报渲染
 - `lib/promote.mjs` — 单条原子提升为全局
 - `lib/redact.mjs` — 写原文/裁判 prompt 前的脱敏
+- `lib/injection-reasons.mjs` — 逐条注入原因（v2.4，纯函数/advisory）
+- `lib/search/pinyin.mjs`、`lib/search/semantic.mjs` — 检索回退（v2.4；拼音 vendored tiny-pinyin 1.3.2 MIT，见 `PINYIN-NOTICE.md`）
 - `lib/shared/frontmatter.mjs`、`lib/shared/work-sections.mjs` — 共享解析契约
 - `bin/kb.mjs` → `lib/cli.mjs` — 校验/索引/写入/检索/整理/工作页/删除闸门/attach
 
@@ -53,8 +55,9 @@ const stats = kb.run(['stats', '--json']);
 - 依赖方向固定为 **engine ← plugin**：engine 零 DSH/插件依赖；插件、`_meta/scripts/`
   与文档都是下游。禁止在 engine 里 import DSH API 或 `_meta/plugin/`。
 - 公开模块：`lib/index.mjs`（聚合导出）与 `package.json` 的 `exports` 子路径
-  （`./context`、`./stores`、`./work-brief`、`./promote`、`./redact`、
-  `./shared/frontmatter`、`./shared/work-sections`）；CLI 入口 `bin/kb.mjs`。
+  （`./context`、`./stores`、`./work-brief`、`./injection-reasons`、`./promote`、`./redact`、
+  `./search/pinyin`、`./search/semantic`、`./shared/frontmatter`、`./shared/work-sections`）；CLI 入口 `bin/kb.mjs`。
+  v2.4 的三个新模块只经 `exports` 子路径提供，`lib/index.mjs` 未再聚合导出。
 - 上下文语义：`lib/context.mjs` 是唯一「会话能看哪些 store、能写哪个 store」的决策
   （`describeStore`/`resolveContext`/`resolveWriteTarget`，写权限 fail closed）。
 - **policy 字段（v2.2）**：`describeStore` 的库存行为由 `policy` 表达——
@@ -73,10 +76,27 @@ const stats = kb.run(['stats', '--json']);
   catalog，缺失/损坏回退逐文件扫描，手工改笔记后必须 `rebuild`。
 - **检索字段权重（v2.3）**：`lib/cli.mjs` 的 BM25 文档为 `title×3`、`summary×2`、
   `tags/scope/body×1`；插件只读 `GET /kb/search.json`（同一实现 + 白名单过滤 + 不记 access）。
+- **检索回退（v2.4）**：字面 BM25 永远优先；只有字面命中数 < `min(limit, 3)` 时才依次用
+  拼音（查询全拼/首字母匹配标题与摘要，ASCII 查询；`Intl.Collator` 不可用时该路降级为空、
+  不抛错）与同义词（`semantic.mjs` 的 21 组中英主题表，整词 ASCII / 中文 ≥2 字扩展，单组 ≤4、
+  总 ≤10）补位；补位语义分 ×0.5，排在字面命中之后；`search` 响应带 `strategy: {pinyin, semantic}`
+  与每行 `matchedBy`/`matchLabel`/`matchTerms`；检索仍不写 `access`。拼音库为 vendored
+  tiny-pinyin 1.3.2（MIT，约 8KB、6763 常用字），归属见 `PINYIN-NOTICE.md`；多音字不支持，
+  这是启发式而非语义检索。
+- **注入原因（v2.4）**：`injection-reasons.mjs` 的 `explainInjection({ notes, entries, scope,
+  viewKind, mutedIds, inSessionStore, limits })` 返回 `Record<id, { state, label, detail }>`，
+  与 `selectInjection` 使用同一份输入但**不参与选择**（advisory）；优先级 other-store →
+  injected → muted → status(inbox/review/archived/promoted/superseded) → canon/raw →
+  topic/work/session → fail-closed scope → 同 subject 更新 → 预算满 → 本轮未入选。插件用它在
+  `/kb/panel.json` 的 `notes[].injection` 展示原因。
+- **多库只读视图（v2.4，插件层）**：`GET /kb/search.json?workspace=all` 由插件对每个可见
+  store 各跑一次引擎检索并只保留本店 `scan` id 白名单内的行，结果带 `workspace`/`workspaceLabel`、
+  全局最多 20 条、按 score 排序；只读、不跨库写、不写 access。引擎本身仍是单根/单进程语义。
 - 闸门：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本/语法
-  （11 个 engine 文件、22 个 JS）；`context.test.mjs` 5 条 + `behavior-matrix.test.mjs`
-  9 条 + `inject-ranking.test.mjs` 7 条 + `engine-api.test.mjs` 3 条覆盖上下文/路由/排序/
-  进程内 API，插件单测合计 174 条；`work-brief.test.mjs` 31 条覆盖排名/预算/简报。
+  （14 个 engine 文件、25 个 JS）；`context.test.mjs` 5 条 + `behavior-matrix.test.mjs`
+  9 条 + `inject-ranking.test.mjs` 8 条 + `engine-api.test.mjs` 3 条 + `search-fallback.test.mjs`
+  4 条覆盖上下文/路由/排序/进程内 API/检索回退，插件单测合计 185 条；`work-brief.test.mjs`
+  31 条覆盖排名/预算/简报。
 
 ## 复核条件
 
@@ -94,4 +114,11 @@ const stats = kb.run(['stats', '--json']);
   重开 c-1005。
 - `runCli`/`createEngine` 污染宿主进程状态、或并发/重入调用出现串扰 → 收窄为显式单实例
   顺序使用，补回归并重开 c-1004 的进程内 API 边界。
+- 检索回退回归（字面命中充足仍被回退结果插队、回退改变 access 写入、拼音/同义词典被替换为
+  不可控来源）→ 重开 c-1006 并恢复「字面优先 + 只读」边界；同义词表或拼音库升级须保留
+  `PINYIN-NOTICE.md` 归属。
+- 注入原因与 `selectInjection` 不同源（标签与实际注入不符）→ 视为可解释性回退，重开 c-1006，
+  补同源回归。
+- 多库只读视图出现写操作、跨库写、或 `workspace=all` 返回白名单外条目 → 立即回滚该视图，
+  重开 c-1006。
 - 多库面合并为单库、或需要进程内长驻引擎时，重新评估 CLI/模块边界。

@@ -2,6 +2,36 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 2.4.0 — 2026-11-04
+
+检索回退、注入可解释与多库统一视图（行为 minor：新增只读能力与解释层，写入授权/注入预算/fail-closed 不变）。
+
+**全文检索回退：拼音 + 同义词**
+
+- vendored tiny-pinyin 1.3.2 字典与算法到 `_meta/engine/lib/search/pinyin.mjs`（MIT，附 `PINYIN-NOTICE.md`；无运行时依赖，约 8 KB，6763 常用字）；ASCII 查询（如 `jiyi`）在字面 BM25 无结果时回退全拼/首字母匹配。
+- 新增 `_meta/engine/lib/search/semantic.mjs`：21 组中英同义主题（发布/上线/deploy、删除/移除、检索/搜索、注入/上下文…），保守扩展（整词/≥2 字、单组 ≤4、总计 ≤10）。
+- 排序规则：字面结果始终在前；回退结果只在字面结果不足 `min(limit,3)` 时补位，语义分 ×0.5，逐行标 `matchedBy`/`matchLabel`/`matchTerms`；响应带 `strategy:{pinyin,semantic}`，记忆页提示「拼音兜底/同义扩展」。回退只读，不写 access、不改注入。
+
+**逐条注入原因（为什么没注入）**
+
+- 新纯函数 `_meta/engine/lib/injection-reasons.mjs#explainInjection`：消费同一份注入 manifest、同一套 `isInjectable` 与预算，给每条笔记下发 `notes[].injection = {state,label,detail}`。
+- 覆盖：其他库视图、已注入、本会话静音、status、canon/raw、topic/work/session、无 scope/项目隔离/范围不符、同 subject 有更新、预算已满、本轮未入选；只解释、不参与选择。
+- 记忆页列表显示短标签，详情显示「标签：原因」；预算文案带「全局 G / 项目 P / 总计 5」。
+
+**多库统一只读视图**
+
+- 选择器在 >1 个工作区时提供「全部记忆库」：客户端并发拉取各库 `panel.json`，按 `uid = workspaceId::noteId` 合并；`view.kind='all'`、只读，隐藏记一条/整理/改名/接入；列表标来源库，详情标「来源：…」。
+- 深度搜索支持 `workspace=all`：服务端遍历各库、每库仍走 engine + scan id 白名单，结果带 `workspace/workspaceLabel`，最多 20 条；不新增跨库写入接口，不改注入计数与写权限。
+- 修正 legacy 的展示 id（`legacy`）与内部 slug（`dsh-memory`）不一致导致的选择/uid 漂移；客户端 build `2026-11-04-c44`。
+- 修复：v2.2 库面合并后 `resolveStores()` 把 legacy policy 嵌套在 `entry.policy`，插件只认顶层 `scopeMode`，导致 vault 会话注入长期为空；现由 `isGlobalScopeStore()` 统一识别并加回归测试。
+
+**未做（backlog）**
+
+- embedding/向量检索；拼音多音字与词库扩展；同义词表自动学习；跨库写入/批量迁移；all 搜索并行化；DSH 适配层仍在插件。
+
+- 数字：插件 185/185、脚本 17/17、smoke 106/106、`check-plugin-load` 6 JSON / 9 manifest / 14 engine / 2 locale / 25 JS；本地 `validate` 13 篇（core + raw + work + 4 atoms + 6 canon，主索引 11 + 归档 1）、0 警告；ADR `30_Canon/decisions/2026-11-04-c-1006.md`。
+- 公开快照：2.4.0 随本次快照发布（提交/CI 发布后回填）。
+
 ## 2.3.0 — 2026-11-03
 
 算法正确性与规模化：曝光降权、冷启动槽、access 缓存、catalog 驱动注入与字段化检索（行为 minor，默认安全边界不变）。

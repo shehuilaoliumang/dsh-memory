@@ -31,6 +31,8 @@ import { briefText, isInjectable, rankMemories } from './work-brief.mjs';
 import { redactSecrets } from './redact.mjs';
 import { parseFrontmatter } from './shared/frontmatter.mjs';
 import { WORK_SECTIONS } from './shared/work-sections.mjs';
+import { pinyinAvailable, toPinyin } from './search/pinyin.mjs';
+import { expandQuery } from './search/semantic.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // A store root is not derivable from the engine package location: the caller
@@ -732,13 +734,15 @@ function tokenizeSearch(text) {
   return tokens;
 }
 
-function bm25Rank(docs, query, limit = 5) {
+function bm25Rank(docs, query, limit = 5, options = {}) {
   const terms = [...new Set(tokenizeSearch(query))];
   if (!terms.length || !docs.length) return { total: 0, results: [] };
   // BM25 alone is OR-like: a nonsense query matched every doc through one
   // common bigram. Require at least 60% of the query terms (and both terms
   // for a two-term query) so results are actually about the query.
-  const requiredMatches = terms.length <= 1 ? 1 : Math.max(2, Math.ceil(terms.length * 0.6));
+  const requiredMatches = Number.isFinite(Number(options.requiredMatches))
+    ? Math.max(1, Math.trunc(Number(options.requiredMatches)))
+    : terms.length <= 1 ? 1 : Math.max(2, Math.ceil(terms.length * 0.6));
   const docTokens = docs.map((doc) => tokenizeSearch(doc.text));
   const avgdl = docTokens.reduce((sum, tokens) => sum + tokens.length, 0) / Math.max(1, docTokens.length);
   const df = new Map();
@@ -765,6 +769,75 @@ function bm25Rank(docs, query, limit = 5) {
   }).filter((doc) => doc.score > 0 && doc.matched >= requiredMatches);
   scored.sort((a, b) => b.score - a.score || String(b.updated || '').localeCompare(String(a.updated || '')) || a.id.localeCompare(b.id));
   return { total: scored.length, results: scored.slice(0, limit) };
+}
+
+/**
+ * Pinyin fallback: for queries typed in Latin letters, match the concatenated
+ * pinyin of note text (full syllables or initials). This is intentionally a
+ * fallback after literal BM25, never the primary ranker: concatenation allows
+ * substring false positives, and the table has one reading per character.
+ */
+function pinyinRank(docs, query, limit = 5) {
+  if (!pinyinAvailable()) return [];
+  const rawQuery = String(query || '');
+  if (!/[a-z]/i.test(rawQuery) || /[\u3400-\u9fff]/.test(rawQuery)) return [];
+  const terms = (rawQuery.toLowerCase().match(/[a-z0-9]+/g) || [])
+    .filter((term) => term.length >= 2)
+    .slice(0, 4);
+  if (!terms.length || !docs.length) return [];
+  const scored = [];
+  for (const doc of docs) {
+    const form = toPinyin(doc.text);
+    if (!form.full && !form.initials) continue;
+    let score = 0;
+    let matched = 0;
+    for (const term of terms) {
+      let hits = 0;
+      let index = form.full.indexOf(term);
+      while (index >= 0) {
+        hits += 1;
+        index = form.full.indexOf(term, index + term.length);
+      }
+      if (!hits) {
+        index = form.initials.indexOf(term);
+        while (index >= 0) {
+          hits += 1;
+          index = form.initials.indexOf(term, index + term.length);
+        }
+      }
+      if (hits) {
+        matched += 1;
+        score += hits * (2 + Math.min(3, term.length - 1));
+      }
+    }
+    if (!matched) continue;
+    // All query words must be present; pinyin queries are usually one word.
+    if (matched < terms.length) continue;
+    scored.push({ ...doc, score, matchedBy: 'pinyin', matchLabel: `拼音「${terms.join(' ')}」`, matchTerms: terms });
+  }
+  scored.sort((a, b) => b.score - a.score
+    || String(b.updated || '').localeCompare(String(a.updated || ''))
+    || a.id.localeCompare(b.id));
+  return scored.slice(0, limit);
+}
+
+/**
+ * Synonym fallback: expand the query through `search/semantic.mjs`, rank the
+ * expanded terms with a relaxed match requirement, then halve the score so a
+ * literal hit always wins. Every result carries the alias that caused it.
+ */
+function semanticRank(docs, query, limit = 5) {
+  const expansion = expandQuery(query);
+  if (!expansion.terms.length || !docs.length) return [];
+  const expanded = `${query} ${expansion.terms.join(' ')}`;
+  const { results } = bm25Rank(docs, expanded, limit, { requiredMatches: 1 });
+  return results.map((row) => ({
+    ...row,
+    score: Number((row.score * 0.5).toFixed(4)),
+    matchedBy: 'semantic',
+    matchLabel: `同义扩展：${expansion.via.join(' / ')}`,
+    matchTerms: expansion.terms,
+  }));
 }
 
 function cmdSearch(opts) {
@@ -794,20 +867,48 @@ function cmdSearch(opts) {
       text: [d.title, d.title, d.title, d.summary, d.summary, tags, d.scope, body].filter(Boolean).join('\n'),
     };
   });
-  const { total, results } = bm25Rank(docs, query, limit);
+  const literal = bm25Rank(docs, query, limit);
+  const merged = literal.results.map((row) => ({ ...row, matchedBy: 'literal', matchLabel: '' }));
+  const seen = new Set(merged.map((row) => row.id));
+  const strategy = { pinyin: false, semantic: false };
+  const fallbackTarget = Math.min(limit, 3);
+  const append = (rows, flag) => {
+    let added = 0;
+    for (const row of rows) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      merged.push(row);
+      added += 1;
+      if (merged.length >= fallbackTarget) break;
+    }
+    if (added) strategy[flag] = true;
+    return added;
+  };
+  if (merged.length < fallbackTarget) append(pinyinRank(docs, query, limit), 'pinyin');
+  if (merged.length < fallbackTarget) append(semanticRank(docs, query, limit), 'semantic');
+  const total = literal.total + merged.filter((row) => row.matchedBy !== 'literal').length;
+  const results = merged.slice(0, limit);
   const payload = {
     query,
     limit,
     total,
-    results: results.map(({ id, title, level, type, status, scope, summary, updated, path, score }) => ({
-      id, title, level, type, status, scope, summary, updated, path, score: Number(score.toFixed(4)),
+    strategy,
+    results: results.map(({ id, title, level, type, status, scope, summary, updated, path, score, matchedBy, matchLabel, matchTerms }) => ({
+      id, title, level, type, status, scope, summary, updated, path,
+      score: Number(Number(score).toFixed(4)),
+      matchedBy,
+      matchLabel,
+      matchTerms: matchTerms || [],
     })),
   };
   if (opts.json) return out(JSON.stringify(payload, null, 2));
   if (!results.length) return out(`没有匹配：「${query}」`);
   out(`检索「${query}」：${total} 条命中，显示前 ${results.length} 条`);
+  if (strategy.pinyin || strategy.semantic) {
+    out(`（回退：${[strategy.pinyin ? '拼音' : '', strategy.semantic ? '同义扩展' : ''].filter(Boolean).join(' + ')}）`);
+  }
   for (const [i, row] of results.entries()) {
-    out(`${i + 1}. [${row.id}] ${row.title}（${row.score.toFixed(2)}）`);
+    out(`${i + 1}. [${row.id}] ${row.title}（${row.score.toFixed(2)}）${row.matchLabel ? ` ${row.matchLabel}` : ''}`);
     if (row.summary) out(`   ${row.summary}`);
     out(`   ${row.path}`);
   }

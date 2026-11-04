@@ -229,8 +229,11 @@ const sources = [
   '_meta/engine/lib/context.mjs',
   '_meta/engine/lib/stores.mjs',
   '_meta/engine/lib/work-brief.mjs',
+  '_meta/engine/lib/injection-reasons.mjs',
   '_meta/engine/lib/promote.mjs',
   '_meta/engine/lib/redact.mjs',
+  '_meta/engine/lib/search/pinyin.mjs',
+  '_meta/engine/lib/search/semantic.mjs',
   '_meta/engine/lib/shared/frontmatter.mjs',
   '_meta/engine/lib/shared/work-sections.mjs',
 ];

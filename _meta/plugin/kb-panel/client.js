@@ -97,7 +97,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-11-03-c40';
+    const CLIENT_BUILD = '2026-11-04-c44';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -191,6 +191,7 @@ window.__ModuleLoader__.load({
         border: '0.5px solid var(--dsw-alias-border-l2)',
         borderRadius: '8px',
         cursor: 'pointer',
+        whiteSpace: 'nowrap',
       },
       btnHover: { background: 'var(--dsw-alias-bg-layer-2)' },
       btnPrimary: {
@@ -1880,6 +1881,9 @@ window.__ModuleLoader__.load({
       /** Server-side BM25 result set (null = use local substring filter). */
       const [deepResults, setDeepResults] = useState(null);
       const [deepBusy, setDeepBusy] = useState(false);
+      // Snapshot workspace id, read from data so early callbacks never touch the
+      // later `view` binding (temporal dead zone). */
+      const targetWorkspaceId = (data && data.view && data.view.id) || '';
       const [tab, setTab] = useState('inbox');
       const [selected, setSelected] = useState(null);
       const [detail, setDetail] = useState(null);
@@ -1921,16 +1925,81 @@ window.__ModuleLoader__.load({
 
       const load = useCallback(async () => {
         try {
-          const [panelResponse, healthResponse] = await Promise.all([
-            fetch(panelUrl(currentSessionId, workspace), { cache: 'no-store' }),
-            fetch('/kb/ingest.json', { cache: 'no-store' }),
-          ]);
+          const healthResponse = await fetch('/kb/ingest.json', { cache: 'no-store' });
+          if (workspace === 'all') {
+            // Unified read-only view: the Host still owns each store's snapshot.
+            // Merge them in the Client so per-workspace injection counts, trust
+            // flags and write permissions stay untouched.
+            const baseResponse = await fetch(panelUrl(currentSessionId, ''), { cache: 'no-store' });
+            if (!baseResponse.ok) throw new Error(String(baseResponse.status));
+            const base = rememberCsrf(await baseResponse.json());
+            const options = Array.isArray(base.workspaces) ? base.workspaces : [];
+            const panels = await Promise.all(options.map(async (option) => {
+              try {
+                const response = await fetch(panelUrl(currentSessionId, option.id), { cache: 'no-store' });
+                if (!response.ok) return null;
+                return { option, payload: await response.json() };
+              } catch {
+                return null;
+              }
+            }));
+            const notes = [];
+            let total = 0;
+            for (const item of panels) {
+              if (!item || !Array.isArray(item.payload.notes)) continue;
+              total += item.payload.notes.length;
+              for (const note of item.payload.notes) {
+                notes.push({
+                  ...note,
+                  workspaceId: item.option.id,
+                  workspaceLabel: item.option.label,
+                  uid: `${item.option.id}::${note.id}`,
+                });
+              }
+            }
+            setData({
+              ...base,
+              view: { id: 'all', kind: 'all', label: '全部记忆库', writable: false, readOnly: true },
+              total,
+              notes,
+              workspaces: options,
+            });
+            if (healthResponse.ok) {
+              try {
+                setHealth(await healthResponse.json());
+              } catch {
+                setHealth(null);
+              }
+            }
+            setFailed(false);
+            return;
+          }
+          const panelResponse = await fetch(panelUrl(currentSessionId, workspace), { cache: 'no-store' });
           if (!panelResponse.ok) throw new Error(String(panelResponse.status));
           const payload = rememberCsrf(await panelResponse.json());
+          // The session default view may use the store's internal slug while the
+          // selector lists the synthetic `legacy` id. Tag notes with the listed
+          // id so selection, deep-search uids and the picker all agree.
+          const listed = Array.isArray(payload.workspaces) ? payload.workspaces : [];
+          const viewId = payload.view && payload.view.id ? payload.view.id : '';
+          const storeId = listed.some((option) => option.id === viewId)
+            ? viewId
+            : ((listed.find((option) => payload.view && option.root === payload.view.root) || {}).id || viewId);
+          // Tag every note with its source so the unified view can keep ids from
+          // different stores distinct (`uid`), and single-store views share the
+          // same selection code.
+          if (Array.isArray(payload.notes)) {
+            payload.notes = payload.notes.map((note) => ({
+              ...note,
+              workspaceId: storeId,
+              workspaceLabel: payload.view && payload.view.label ? payload.view.label : '',
+              uid: `${storeId}::${note.id}`,
+            }));
+          }
           setData(payload);
           // The Host resolves the default view (session project, else legacy).
           // Persist that id so the selector and note reads address the same store.
-          if (!workspace && payload.view && payload.view.id) setWorkspace(payload.view.id);
+          if (!workspace && storeId) setWorkspace(storeId);
           if (healthResponse.ok) {
             try {
               setHealth(await healthResponse.json());
@@ -1958,22 +2027,43 @@ window.__ModuleLoader__.load({
         return () => window.removeEventListener(REFRESH_EVENT, onRefresh);
       }, [load]);
 
-      const openNote = useCallback(async (id) => {
-        setSelected(id);
+      const openNote = useCallback(async (target, workspaceOverride) => {
+        const id = typeof target === 'string' ? String(target) : String((target && target.id) || '');
+        if (!id) return;
+        // Lifecycle actions only pass the id; recover the snapshot row so the
+        // detail still explains injection and names its source store.
+        const row = typeof target === 'string'
+          ? ((data && data.notes) || []).find((note) => note.id === id)
+          : target;
+        let source = workspaceOverride || (row && row.workspaceId) || workspace;
+        // A lifecycle action only has the id; in the unified view find the row so
+        // the detail read goes back to the store the note came from.
+        if (source === 'all') {
+          const row = ((data && data.notes) || []).find((note) => note.id === id);
+          source = row && row.workspaceId ? row.workspaceId : '';
+        }
+        const uid = row && row.uid ? row.uid : `${source}::${id}`;
+        setSelected(uid);
         setDetailBusy(true);
         setDetail(null);
         try {
-          const params = new URLSearchParams({ id: String(id) });
-          if (workspace) params.set('workspace', workspace);
+          const params = new URLSearchParams({ id });
+          if (source) params.set('workspace', source);
           const response = await fetch(`/kb/note.json?${params.toString()}`, { cache: 'no-store' });
           if (!response.ok) throw new Error(String(response.status));
-          setDetail(await response.json());
+          const payload = await response.json();
+          setDetail({
+            ...payload,
+            workspaceId: source,
+            workspaceLabel: (row && row.workspaceLabel) || '',
+            injection: (row && row.injection) || payload.injection || null,
+          });
         } catch {
           setDetail(null);
         } finally {
           setDetailBusy(false);
         }
-      }, [workspace]);
+      }, [data, workspace]);
 
       /** POST one lifecycle action; surfaces the Host's error text on failure. */
       const postAction = useCallback(async (url, body) => {
@@ -2225,25 +2315,40 @@ window.__ModuleLoader__.load({
       /** Server-side BM25 over note bodies; read-only, results are ids only. */
       const runDeepSearch = useCallback(async () => {
         const q = query.trim();
-        if (!q || !view) return;
+        // The workspace selector value is the trust-gated id (or "all" for the
+        // unified read-only view); never derive it from `view`, which is declared
+        // later in the component body.
+        const target = workspace || targetWorkspaceId;
+        if (!q || !target) return;
         setDeepBusy(true);
         try {
           const response = await fetch(
-            `/kb/search.json?workspace=${encodeURIComponent(view.id)}&q=${encodeURIComponent(q)}&limit=20`,
+            `/kb/search.json?workspace=${encodeURIComponent(target)}&q=${encodeURIComponent(q)}&limit=20`,
           );
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
             setActionError(String((payload && payload.error) || `深度搜索失败（HTTP ${response.status}）`).slice(0, 200));
             return;
           }
-          const ids = (Array.isArray(payload.results) ? payload.results : []).map((row) => String(row.id));
-          setDeepResults({ query: q, total: Number(payload.total) || ids.length, ids });
+          const ids = (Array.isArray(payload.results) ? payload.results : []).map((row) => {
+            // In one-store views the selector id is the uid key, even when the
+            // Host's internal view id differs (legacy keeps both). In the unified
+            // view rows are the only source of truth, since they name their store.
+            const store = target === 'all' ? (row.workspace || '') : target;
+            return `${store}::${row.id}`;
+          });
+          setDeepResults({
+            query: q,
+            total: Number(payload.total) || ids.length,
+            ids,
+            strategy: payload.strategy || { pinyin: false, semantic: false },
+          });
         } catch {
           setActionError('深度搜索失败');
         } finally {
           setDeepBusy(false);
         }
-      }, [query, view]);
+      }, [query, targetWorkspaceId, workspace]);
 
       const humanNotes = useMemo(() => ((data && data.notes) || []).filter((note) => !isRawNote(note)), [data]);
       const typeOptions = useMemo(() => {
@@ -2279,7 +2384,7 @@ window.__ModuleLoader__.load({
         });
         if (deepResults) {
           // Keep the server BM25 order; local substring rules do not apply.
-          const byId = new Map(scoped.map((note) => [String(note.id), note]));
+          const byId = new Map(scoped.map((note) => [note.uid || note.id, note]));
           return deepResults.ids.map((id) => byId.get(id)).filter(Boolean);
         }
         if (!q) return scoped;
@@ -2302,7 +2407,7 @@ window.__ModuleLoader__.load({
           setDetail(null);
           return;
         }
-        if (!selected || !notes.some((note) => note.id === selected)) openNote(notes[0].id);
+        if (!selected || !notes.some((note) => (note.uid || note.id) === selected)) openNote(notes[0]);
       }, [notes, selected, openNote]);
 
       const toggleMode = useCallback(
@@ -2345,6 +2450,7 @@ window.__ModuleLoader__.load({
         setSelected(null);
         setDetail(null);
         setQuery('');
+        setDeepResults(null);
         pickedInitialTab.current = false;
       }, [workspace]);
 
@@ -2519,6 +2625,12 @@ window.__ModuleLoader__.load({
         ),
       );
 
+      const pickerOptions = (() => {
+        const list = (data && data.workspaces) || [];
+        return list.length > 1
+          ? [{ id: 'all', label: '全部记忆库', kind: 'all', writable: false }, ...list]
+          : list;
+      })();
       const statusBar = h(
         'div',
         { style: S.statusStrip },
@@ -2527,7 +2639,7 @@ window.__ModuleLoader__.load({
           { style: S.statusGroup },
           h('span', { style: S.statusStrong }, '正在查看'),
           h(WorkspacePicker, {
-            options: (data && data.workspaces) || [],
+            options: pickerOptions,
             value: workspace || (view && view.id) || '',
             onChange: switchWorkspace,
           }),
@@ -2852,7 +2964,9 @@ window.__ModuleLoader__.load({
                   'div',
                   { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
                   h('input', {
-                    style: searchFocused ? { ...S.input, ...S.inputFocus } : S.input,
+                    style: searchFocused
+                      ? { ...S.input, ...S.inputFocus, flex: '1 1 auto', minWidth: 0, width: 'auto' }
+                      : { ...S.input, flex: '1 1 auto', minWidth: 0, width: 'auto' },
                     value: query,
                     placeholder: '搜索记忆…',
                     'aria-label': '搜索记忆',
@@ -2860,30 +2974,46 @@ window.__ModuleLoader__.load({
                       setQuery(event.target.value);
                       setDeepResults(null);
                     },
+                    onKeyDown: (event) => {
+                      if (event.key !== 'Enter') return;
+                      event.preventDefault();
+                      void runDeepSearch();
+                    },
                     onFocus: () => setSearchFocused(true),
                     onBlur: () => setSearchFocused(false),
                   }),
                   h(
                     KbButton,
-                    { disabled: deepBusy || !query.trim(), onClick: () => void runDeepSearch() },
-                    deepBusy ? '检索中…' : '深度搜索',
+                    {
+                      disabled: deepBusy || !query.trim(),
+                      title: '按笔记正文做全文检索（BM25）；输入框实时筛选标题/摘要',
+                      onClick: () => void runDeepSearch(),
+                    },
+                    deepBusy ? '检索中…' : '全文检索',
                   ),
                 ),
                 deepResults
-                  ? h(
-                      'div',
-                      { style: { ...S.muted, fontSize: '11px', marginTop: '6px' } },
-                      `全文检索「${deepResults.query}」命中 ${deepResults.total} 条 · `,
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          style: { ...S.linkBtn },
-                          onClick: () => setDeepResults(null),
-                        },
-                        '清除',
-                      ),
-                    )
+                  ? (() => {
+                      const fallback = [];
+                      if (deepResults.strategy && deepResults.strategy.pinyin) fallback.push('拼音兜底');
+                      if (deepResults.strategy && deepResults.strategy.semantic) fallback.push('同义扩展');
+                      return h(
+                        'div',
+                        { style: { ...S.muted, fontSize: '11px', marginTop: '6px' } },
+                        `全文检索「${deepResults.query}」命中 ${deepResults.total} 条`,
+                        fallback.length ? `（${fallback.join(' + ')}）` : '',
+                        ' · ',
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            style: { ...S.linkBtn },
+                            onClick: () => setDeepResults(null),
+                          },
+                          '清除',
+                        ),
+                      );
+                    })()
                   : null,
               ),
               h(
@@ -2944,19 +3074,19 @@ window.__ModuleLoader__.load({
                     notes.map((note) =>
                       h(
                         'li',
-                        { key: note.id },
+                        { key: note.uid || note.id },
                         h(
                           'button',
                           {
                             type: 'button',
                             style: {
                               ...S.noteBtn2,
-                              ...(selected === note.id ? S.noteOn : null),
-                              ...(hoveredNote === note.id && selected !== note.id ? S.noteHover : null),
+                              ...(selected === (note.uid || note.id) ? S.noteOn : null),
+                              ...(hoveredNote === (note.uid || note.id) && selected !== (note.uid || note.id) ? S.noteHover : null),
                             },
-                            onMouseEnter: () => setHoveredNote(note.id),
+                            onMouseEnter: () => setHoveredNote(note.uid || note.id),
                             onMouseLeave: () => setHoveredNote(null),
-                            onClick: () => openNote(note.id),
+                            onClick: () => openNote(note),
                           },
                           h(
                             'div',
@@ -2973,6 +3103,13 @@ window.__ModuleLoader__.load({
                             h('span', { style: { ...S.statusDot, background: dotColor(note.status) } }),
                             h('span', { style: S.noteFooterLabel }, STATUS_LABEL[note.status] || note.status || '—'),
                             scopeText(note.scope) ? h('span', { style: { opacity: 0.65 } }, scopeText(note.scope)) : null,
+                            view && view.kind === 'all' && note.workspaceLabel
+                              ? h('span', { style: { opacity: 0.65 } }, note.workspaceLabel)
+                              : null,
+                            note.injection && note.injection.state !== 'injected'
+                              && !(view && view.kind === 'all' && note.injection.state === 'other-store')
+                              ? h('span', { style: { opacity: 0.65 }, title: note.injection.detail }, note.injection.label)
+                              : null,
                             isWorkNote(note) ? h('span', { style: { opacity: 0.65 } }, TYPE_LABEL.work) : null,
                           ),
                         ),
@@ -3023,6 +3160,9 @@ window.__ModuleLoader__.load({
                           h('span', { style: { ...S.statusDot, background: dotColor(detail.status) } }),
                           h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, STATUS_LABEL[detail.status] || detail.status || '—'),
                           scopeText(detail.scope) ? h('span', null, scopeText(detail.scope)) : null,
+                          view && view.kind === 'all' && detail.workspaceLabel
+                            ? h('span', null, `来源：${detail.workspaceLabel}`)
+                            : null,
                           isWorkNote(detail) ? h('span', null, TYPE_LABEL.work) : null,
                           detail.updated ? h('span', null, detail.updated) : null,
                           pinnedIds.has(detail.id) ? h('span', { style: { color: 'var(--dsw-alias-brand-primary)' } }, '本会话固定') : null,
@@ -3033,6 +3173,22 @@ window.__ModuleLoader__.load({
                           { style: S.detailIntro },
                           h('span', { style: S.detailIntroStrong }, detailKind),
                           h('span', { style: { display: 'block', marginTop: '2px' } }, detailHint),
+                          detail.injection
+                            ? h(
+                                'span',
+                                {
+                                  style: {
+                                    display: 'block',
+                                    marginTop: '6px',
+                                    color: detail.injection.state === 'injected'
+                                      ? 'var(--dsw-alias-state-success-primary)'
+                                      : 'var(--dsw-alias-label-secondary)',
+                                  },
+                                  title: detail.injection.detail,
+                                },
+                                `${detail.injection.label}：${detail.injection.detail}`,
+                              )
+                            : null,
                         ),
                         h('div', { style: S.detailActions }, detailActions),
                       ),

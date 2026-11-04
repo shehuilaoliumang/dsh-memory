@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 
 import {
   heatWeight,
+  isGlobalScopeStore,
   matchTokens,
   rankInjectionCandidates,
   relevanceScore,
@@ -110,4 +111,24 @@ test('exploration: no cold candidate leaves order unchanged, query reorders afte
     { now: NOW, query: '界面' },
   );
   assert.equal(queried[0].id, 'a');
+});
+
+test('store policy: legacy vault resolves as a global-scope (5-slot) store', () => {
+  // resolveStores() shape since the v2.2 surface merge: legacy is an ordinary
+  // project store whose global-scope policy is nested under entry.policy.
+  const legacy = {
+    root: 'C:/tmp/vault',
+    legacy: false,
+    entry: { policy: { scopeMode: 'global', injectLimit: 5 } },
+  };
+  assert.equal(isGlobalScopeStore(legacy), true, 'nested legacy policy must count as global scope');
+
+  assert.equal(isGlobalScopeStore(null), false);
+  assert.equal(isGlobalScopeStore({ legacy: true }), true);
+  assert.equal(isGlobalScopeStore({ scopeMode: 'global' }), true);
+  assert.equal(isGlobalScopeStore({ policy: { scopeMode: 'global' } }), true);
+  assert.equal(
+    isGlobalScopeStore({ root: 'C:/tmp/app/.dsh-memory', entry: { policy: { scopeMode: 'project' } } }),
+    false,
+  );
 });

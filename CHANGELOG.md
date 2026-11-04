@@ -23,7 +23,7 @@
 
 - 新增 `_meta/engine/test/compare-parity.mjs`（对 2.4.1 基线做行为 parity；当前 3 条内容漂移、0 回归）与 `bench-read-model.mjs`（5 库 × 300 条：全库检索中位 ~407ms < 500ms、统一面板快照 ~139ms < 300ms、零 spawn），均进 CI。
 - 数字：插件 187/187、引擎 read-model 6/6、host 6/6、脚本 17/17、smoke 106/106、`check-plugin-load` 7 JSON / 9 manifest / 18 engine / 2 locale / 34 JS；本地 `validate` 14 篇（core + raw + work + 4 atoms + 7 canon，主索引 12 + 归档 1）、0 警告。
-- 公开快照：3.0.0 发布后回填（public commit、tree、CI run 与快照篇数）。
+- 公开快照：3.0.0 已发布（public commit `e141a6d`，tree `fa1dffa`，CI `41793193678` 全绿；快照 13 篇/主索引 11 + 归档 1、0 警告；首轮 `f0ebe1f`/`fdd3789` 因 CI Node 22 参数与 parity 需夹具回退已重发）。
 
 ## 2.4.1 — 2026-11-04
 

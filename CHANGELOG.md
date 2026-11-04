@@ -9,7 +9,7 @@
 - **B2 同源**：`/kb/panel.json` 的 `notes[].injection` 改为消费 `selectInjection` 使用的同一份 catalog-backed 跨库候选（`catalogInjectionNotes()`），不再另读磁盘 `scanNotes()`；手工改原子、尚未 `rebuild` 的窗口内，标签与真实注入仍一致。
 - **B1 跨库仲裁**：`explainInjection` 新增 `candidates` 参数，同 subject 取代判断与 `currentTruthEntries` 的跨库仲裁同源；被其他库新结论取代的条目正确标为「同主题有更新」，不再误标「本轮未入选」。
 - 回归：`work-brief.test.mjs` 36 条（新增「陈旧 catalog 下标签跟随选择快照」「跨库取代标签正确」），插件合计 187/187。
-- 公开快照：发布后回填。
+- 公开快照：2.4.1 已发布（public commit `e78be02`，tree `ce71803`，CI `41779872772` 全绿；快照 12 篇/主索引 10 + 归档 1、0 警告）。
 
 ## 2.4.0 — 2026-11-04
 
@@ -72,7 +72,7 @@
 - embedding/向量检索（零依赖约束下不做）；`inject.rankMode` 默认切 `relevance`（仍默认 `heat`，待 A/B）；多库面真正合并为单库（2.2 仅 policy 表达）；DSH 适配层仍在插件。
 
 - 数字：插件 174/174、脚本 17/17、smoke 106/106、`check-plugin-load` 6 JSON / 9 manifest / 11 engine / 2 locale / 22 JS；本地 `validate` 12 篇（core + raw + work + 4 atoms + 5 canon，主索引 10 + 归档 1）、0 警告；ADR `30_Canon/decisions/2026-11-03-c-1005.md`。
-- 公开快照：2.2.0 已发布（public commit `02f4442`，CI 全绿）；2.3.0 随本次快照发布（提交/CI 发布后回填）。
+- 公开快照：2.2.0 已发布（public commit `02f4442`，tree `d49e58e`，CI `41563752460` 全绿）。
 
 ## 2.2.0 — 2026-11-03
 
@@ -106,7 +106,7 @@
 - FEATURES §10 算法优化（热度自反馈 inject 降权、exploration 槽、access 热度聚合、字段化 BM25 等）与记忆页服务端 BM25 检索仍未做，转 2.3 评估；DSH 适配层仍在插件。
 
 - 数字：插件 172/172、脚本 17/17、smoke 106/106、`check-plugin-load` 6 JSON / 9 manifest / 11 engine / 2 locale / 22 JS；本地 `validate` 11 篇（core + raw + work + 4 atoms + 4 canon，主索引 9 + 归档 1）、0 警告；ADR `30_Canon/decisions/2026-11-03-c-1004.md`。
-- 公开快照：2.1.0 已发布（public commit `6fae504`，CI 全绿）；2.2.0 随本次快照发布（提交/CI 发布后回填）。
+- 公开快照：2.1.0 已发布（public commit `6fae504`，tree `e7bf960`，CI `41560776728` 全绿）。
 
 ## 2.1.0 — 2026-11-03
 

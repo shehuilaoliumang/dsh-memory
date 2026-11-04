@@ -9,7 +9,7 @@
 - **D1 提示词注入也走单一读面**：`systemPrompt.context` 的候选/预算/排序从插件本地 `selectInjection` 改为 engine `createSurface().selectInjection()`；本地三件套只在 `_meta/config.json` 的 `surface.unified:false` 回退时运行，相关注释同步修正。engine 候选扫描补回项目库 `global` scope 泄漏的一次性告警，保持可观测性。
 - **D2 parity 夹具可证伪**：`compare-parity.mjs` 自包含夹具扩为 6 条（4 条 global 候选竞争 2 个全局槽、精确注入顺序 `[a-0904,a-0900,a-0911]`、跨库同 subject 取代），并实测 `GLOBAL_INJECTION_LIMIT 2→3` 变异会以 3 条 FAIL 退出，不再出现“预算被改仍通过”。
 - 验证：插件 187/187、engine read-model 6/6 + host 6/6、脚本 17/17、smoke 106/106、`check-plugin-load` 7/9/18/2/34；本地 `validate` 14 篇/主索引 12 + 归档 1、0 警告；fixture parity 6 notes/injection 3/6 hits，live parity 3 drift/0 regression；bench 未受影响（5×300，检索 350ms、快照 116ms、`spawnFree:true`）。
-- 公开快照：发布后回填。
+- 公开快照：3.0.1 已发布（public commit `41a651a`，tree `66b7a21`，CI `41799315065` 全绿；快照 13 篇/主索引 11 + 归档 1、0 警告）。
 
 ## 3.0.0 — 2026-11-04
 

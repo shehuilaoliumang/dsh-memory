@@ -10,7 +10,7 @@
 - **三宿主一致性**：新增 `_meta/engine/test/host-conformance.test.mjs`（4 条）：direct/MCP/HTTP 的 context/search/status/validate 逐字段一致；三者对无可写库的 remember 全部 fail closed；HTTP 覆盖 token/方法/Content-Type/跨站/大小边界，并验证 inbox 不注入。
 - **回退删除**：移除 `_meta/config.json` 的 `surface.unified` 与插件 `legacySelectStoreCandidates`/`legacyPickBySourceWithControls`/`legacySelectInjection` 等本地实现；prompt/panel/explanation/all-view/search 只剩 `createSurface()` 一条路径。项目库 global-scope 泄漏告警归位 engine read model，并有测试。
 - **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.1.0；engine 16/16（read-model 6 + host 6 + conformance 4）、插件 187/187、脚本 17/17、smoke 106/106、`check-plugin-load` 7 JSON / 9 manifest / 19 engine / 2 locale / 36 JS；本地 `validate` 14 篇/主索引 12 + 归档 1、0 警告；parity 0 regression、bench 5×300 检索约 350ms/快照约 116ms/零 spawn。
-- 公开快照：3.1.0 发布后回填（public commit/tree/CI/快照计数）。
+- 公开快照：3.1.0 已发布（public commit `844eb17`，tree `e20984f`，CI `41944944571` 全绿；快照 13 篇/主索引 11 + 归档 1、0 警告）。
 
 ## 3.0.1 — 2026-11-04
 

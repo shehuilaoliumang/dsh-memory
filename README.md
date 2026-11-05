@@ -86,7 +86,7 @@ v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，
 - **HTTP 宿主**：`_meta/engine/hosts/http.mjs` 以本地 HTTP JSON 复用 `createHost()` 的五个动作；`GET /health` 与 `POST /v1/{context,search,remember,status,validate}`，Bearer token（常量时间比较）、仅 loopback、1MB body、JSON 错误；写仍 fail-closed inbox。CLI `node _meta/engine/hosts/http.mjs --root <库> [--port 0]`，启动 stdout 一条 `{ok,origin,token,version}`。
 - **三宿主一致性**：`host-conformance.test.mjs` 4 条证明 direct/MCP/HTTP 的 context/search/status/validate 一致，三者 remember 在无可写库时都 fail-closed；HTTP 另测 token/方法/Content-Type/跨站/大小边界。
 - **回退删除**：`_meta/config.json` 的 `surface.unified` 与插件 legacy 三件套已删除，prompt/panel/explanation/all-view/search 只剩 `createSurface()` 一条路径；项目库 global-scope 泄漏告警归位 read model。
-- **闸门/发布**：engine 16/16（read-model 6 + host 6 + conformance 4）、插件 187/187、check 7 JSON / 9 manifest / 19 engine / 2 locale / 36 JS；3.1.0 公开哈希发布后回填。
+- **闸门/发布**：engine 16/16（read-model 6 + host 6 + conformance 4）、插件 187/187、check 7 JSON / 9 manifest / 19 engine / 2 locale / 36 JS；3.1.0 已发布（public `844eb17`，tree `e20984f`，CI `41944944571` 全绿；快照 13 篇/11+1、0 警告）。
 
 ## v3.0 新增（统一读面、MCP 第二宿主）
 

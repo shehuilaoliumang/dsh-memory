@@ -2,6 +2,16 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 3.1.0 — 2026-11-05
+
+第三宿主与 legacy 回退删除（minor：新增本地 HTTP 宿主与三宿主一致性闸门；删除 3.0 的 `surface.unified` 回退与插件本地三件套；写入授权/注入预算/fail-closed 边界不变）。
+
+- **HTTP 第三宿主**：新增 `_meta/engine/hosts/http.mjs`，复用 `createHost()` 的 `context/search/remember/status/validate`；`GET /health` 与 `POST /v1/{context,search,remember,status,validate}`，只绑 `127.0.0.1`、Bearer token（常量时间比较）、拒绝跨站/非 loopback、1MB body、JSON 错误；写侧仍 fail-closed inbox。CLI `node _meta/engine/hosts/http.mjs --root <库> [--port 0]`，启动 stdout 一条 `{ok,origin,token,version}`。
+- **三宿主一致性**：新增 `_meta/engine/test/host-conformance.test.mjs`（4 条）：direct/MCP/HTTP 的 context/search/status/validate 逐字段一致；三者对无可写库的 remember 全部 fail closed；HTTP 覆盖 token/方法/Content-Type/跨站/大小边界，并验证 inbox 不注入。
+- **回退删除**：移除 `_meta/config.json` 的 `surface.unified` 与插件 `legacySelectStoreCandidates`/`legacyPickBySourceWithControls`/`legacySelectInjection` 等本地实现；prompt/panel/explanation/all-view/search 只剩 `createSurface()` 一条路径。项目库 global-scope 泄漏告警归位 engine read model，并有测试。
+- **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.1.0；engine 16/16（read-model 6 + host 6 + conformance 4）、插件 187/187、脚本 17/17、smoke 106/106、`check-plugin-load` 7 JSON / 9 manifest / 19 engine / 2 locale / 36 JS；本地 `validate` 14 篇/主索引 12 + 归档 1、0 警告；parity 0 regression、bench 5×300 检索约 350ms/快照约 116ms/零 spawn。
+- 公开快照：3.1.0 发布后回填（public commit/tree/CI/快照计数）。
+
 ## 3.0.1 — 2026-11-04
 
 读面单一入口加固（patch：无新功能、无行为/写入边界变化；对应外部复审第 17 轮 D1/D2）。

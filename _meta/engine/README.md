@@ -36,19 +36,22 @@ const stats = kb.run(['stats', '--json']);
   对非约定根，引擎按普通 store 处理，宿主可自行决定如何命名与发现。
 - 因此「仓库外任意目录跑通全链路」是设计内能力；警告只表示宿主约定未满足，不是失败。
 
-## 宿主与 MCP（3.0）
+## 宿主：MCP stdio 与 HTTP（3.0/3.1）
 
-引擎暴露宿主无关的 `createHost()`（`lib/host.mjs`）与一个零依赖的 MCP stdio 宿主
-（`hosts/mcp.mjs`），DSH 插件只是其中一个适配层：
+引擎暴露宿主无关的 `createHost()`（`lib/host.mjs`）与两个零依赖宿主：
+MCP stdio（`hosts/mcp.mjs`，3.0）和本地 HTTP JSON（`hosts/http.mjs`，3.1）；
+DSH 插件只是其中一个适配层：
 
 ```text
 node _meta/engine/hosts/mcp.mjs --root <legacy-store> [--global-root <store>] [--registry <file>]
+node _meta/engine/hosts/http.mjs --root <legacy-store> [--port 0] [--token <token>]
 ```
 
-MCP 工具：`kb_context`、`kb_search`、`kb_remember`、`kb_status`、`kb_validate`；写入只落
-会话可写库且默认 `inbox`，不存在可写库时 fail closed；`kb_validate` 只接受已关注的库根。
-stdio 上只输出 JSON-RPC，诊断信息走 stderr。宿主契约与新增宿主的步骤见
-`hosts/README.md`。
+MCP 工具：`kb_context`、`kb_search`、`kb_remember`、`kb_status`、`kb_validate`；HTTP 提供
+`/health` 与 `/v1/{context,search,remember,status,validate}`（Bearer token、仅 loopback）。
+写入只落会话可写库且默认 `inbox`，不存在可写库时 fail closed；`kb_validate` 只接受已关注的库根。
+MCP stdout 只输出 JSON-RPC；HTTP 启动时向 stdout 输出一条启动记录；诊断信息都走 stderr。
+宿主契约与新增宿主的步骤见 `hosts/README.md`。
 
 ## 模块
 
@@ -56,6 +59,7 @@ stdio 上只输出 JSON-RPC，诊断信息走 stderr。宿主契约与新增宿�
 - `lib/read-model.mjs` — 统一读面 `createSurface`（notes/candidates/selection/explanations/search/snapshotAll；3.0）
 - `lib/host.mjs` — 宿主 API `createHost`（context/search/remember/status/validate；3.0）
 - `hosts/mcp.mjs` — 零依赖 MCP stdio 第二宿主（3.0）
+- `hosts/http.mjs` — 零依赖本地 HTTP JSON 第三宿主（3.1；Bearer token + loopback）
 - `lib/stores.mjs` — 多库 registry、store_id、attach/relocate、自动建库目标判定
 - `lib/work-brief.mjs` — 注入排序/预算/项目简报渲染
 - `lib/promote.mjs` — 单条原子提升为全局
@@ -73,7 +77,7 @@ stdio 上只输出 JSON-RPC，诊断信息走 stderr。宿主契约与新增宿�
 - 依赖方向固定为 **engine ← plugin**：engine 零 DSH/插件依赖；插件、`_meta/scripts/`
   与文档都是下游。禁止在 engine 里 import DSH API 或 `_meta/plugin/`。
 - 公开模块：`lib/index.mjs`（聚合导出）与 `package.json` 的 `exports` 子路径
-  （`./context`、`./stores`、`./work-brief`、`./injection`、`./read-model`、`./host`、`./injection-reasons`、`./promote`、`./redact`、
+  （`./context`、`./stores`、`./work-brief`、`./injection`、`./read-model`、`./host`、`./hosts/http`、`./injection-reasons`、`./promote`、`./redact`、
   `./search/pinyin`、`./search/semantic`、`./shared/frontmatter`、`./shared/work-sections`）；CLI 入口 `bin/kb.mjs`。
   v2.4 的检索/解释模块经 `exports` 子路径提供；3.0 起 `lib/index.mjs` 聚合导出 `injection.mjs`/`read-model.mjs`，`read-model`/`host` 也作为子路径导出。
 - 上下文语义：`lib/context.mjs` 是唯一「会话能看哪些 store、能写哪个 store」的决策
@@ -101,7 +105,8 @@ stdio 上只输出 JSON-RPC，诊断信息走 stderr。宿主契约与新增宿�
   与每行 `matchedBy`/`matchLabel`/`matchTerms`；检索仍不写 `access`。拼音库为 vendored
   tiny-pinyin 1.3.2（MIT，约 8KB、6763 常用字），归属见 `PINYIN-NOTICE.md`；多音字不支持，
   这是启发式而非语义检索。
-- **统一读面（v3.0）**：`lib/read-model.mjs` 的 `createSurface()` 是候选/选择/解释/检索/全库快照的唯一入口；v3.0.1 起 prompt 注入路径也调用 `surface.selectInjection()`，插件本地三件套只保留给 `surface.unified:false` 回退，并补回项目库 global-scope 泄漏的一次性告警。
+- **统一读面（v3.0，v3.1 收口）**：`lib/read-model.mjs` 的 `createSurface()` 是候选/选择/解释/检索/全库快照的唯一入口；v3.0.1 起 prompt 注入路径也调用 `surface.selectInjection()`。v3.1.0 删除 `surface.unified:false` 开关与插件本地三件套，prompt/panel/explanation/all-view/search 只剩一条路径；项目库 global-scope 泄漏告警已归位 read model（一次性 `console.warn`），并有测试断言。
+- **第三宿主（v3.1）**：`hosts/http.mjs` 以本地 HTTP JSON 复用同一 host API；`test/host-conformance.test.mjs` 断言 direct/MCP/HTTP 的 context/search/status/validate 逐字段一致，三者对无可写库的 remember 全部 fail closed，HTTP 另测 token/loopback/方法/Content-Type/跨站/大小边界；HTTP 写只落 `inbox` 且不注入。
 - **parity 夹具（v3.0.1）**：`test/compare-parity.mjs` 在无私有库时构造 6 条自包含笔记（4 个 global 候选竞争 2 个全局槽、精确注入顺序、跨库同 subject 取代）；已验证把 `GLOBAL_INJECTION_LIMIT` 从 2 改 3 会让夹具以 3 条 FAIL 退出。
 - **注入原因（v2.4）**：`injection-reasons.mjs` 的 `explainInjection({ notes, entries, scope,
   viewKind, mutedIds, inSessionStore, limits })` 返回 `Record<id, { state, label, detail }>`，
@@ -111,7 +116,8 @@ stdio 上只输出 JSON-RPC，诊断信息走 stderr。宿主契约与新增宿�
   `/kb/panel.json` 的 `notes[].injection` 展示原因。v2.4.1 起该函数接收 `selectInjection` 的 catalog-backed 跨库候选（`candidates`），同 subject 取代与真实选择同源。
 - **多库只读视图（v2.4 起；v3.0 服务端单快照）**：3.0 起插件 `/kb/panel.json?workspace=all` 由 `surface.snapshotAll()` 一次合并（每库候选/注入/标签均由 read model 产出，`uid = workspaceId::noteId`），`GET /kb/search.json?workspace=all` 也走 `surface.search()`，逐库白名单过滤、结果带 `workspace`/`workspaceLabel`、全局最多 20 条、按 score 排序；只读、不跨库写、不写 access。2.x 客户端并发合并仅作为 `surface.unified:false` 回退。
 - 闸门：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本/语法
-  （18 个 engine 文件、34 个 JS）；`read-model.test.mjs` 6 条 + `host.test.mjs` 6 条覆盖统一读面/宿主/MCP；
+  （19 个 engine 文件、36 个 JS）；`read-model.test.mjs` 6 条 + `host.test.mjs` 6 条 +
+  `host-conformance.test.mjs` 4 条覆盖统一读面/宿主/MCP/HTTP 三宿主一致性；
   `context.test.mjs` 5 条 + `behavior-matrix.test.mjs` 9 条 + `inject-ranking.test.mjs` 8 条 +
   `engine-api.test.mjs` 3 条 + `search-fallback.test.mjs` 4 条覆盖上下文/路由/排序/进程内 API/检索回退，
   插件单测合计 187 条；`work-brief.test.mjs` 36 条覆盖排名/预算/简报/注入解释同源（v2.4.1）。

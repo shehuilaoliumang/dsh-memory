@@ -30,7 +30,7 @@ import { randomBytes } from 'node:crypto';
 import { createIngestor, messageText, resolveNode, runProcess } from './ingest.js';
 import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
-import { rankInjectionCandidates, isGlobalScopeStore } from './inject-ranking.mjs';
+import { isGlobalScopeStore } from './inject-ranking.mjs';
 import {
   DEFAULT_GLOBAL_ROOT,
   DEFAULT_REGISTRY_FILE,
@@ -51,8 +51,7 @@ import {
 } from '../../engine/lib/stores.mjs';
 import { parseFrontmatterData as parseFrontmatter } from '../../engine/lib/shared/frontmatter.mjs';
 import { globalAtomSpec, isGlobalPromotable, localDateStamp } from '../../engine/lib/promote.mjs';
-import { briefText, currentTruthEntries, currentTruthNotes, isInjectable, pickBySource } from '../../engine/lib/work-brief.mjs';
-import { explainInjection } from '../../engine/lib/injection-reasons.mjs';
+import { briefText, currentTruthNotes } from '../../engine/lib/work-brief.mjs';
 import { isInsideLegacy, resolveContext, resolveWriteTarget } from '../../engine/lib/context.mjs';
 import { createSurface } from '../../engine/lib/read-model.mjs';
 
@@ -177,20 +176,6 @@ export function apply(ctx, config = {}) {
       };
     } catch {
       return fallback;
-    }
-  })();
-  /**
-   * 3.0 read-surface switch. The engine read model is the default panel/search
-   * source; `surface.unified: false` keeps the 2.x plugin path as a rollback for
-   * one release. It is read once per plugin load like the other policy flags.
-   */
-  const surfaceConfig = (() => {
-    try {
-      const raw = JSON.parse(fs.readFileSync(path.join(root, '_meta', 'config.json'), 'utf8'));
-      const surface = raw && raw.surface ? raw.surface : {};
-      return { unified: surface.unified !== false };
-    } catch {
-      return { unified: true };
     }
   })();
   const cache = new Map();
@@ -1125,36 +1110,6 @@ export function apply(ctx, config = {}) {
     return { slug: meta.slug, root: storeRoot, writable, created };
   };
 
-  /**
-   * Why a note is (not) in this turn's prompt. Purely explanatory: the answer
-   * comes from the same selection manifest the prompt uses, then the predicates
-   * in `isInjectable` and the source-aware budget. It never changes injection.
-   */
-  const injectionReasonsFor = ({ sessionStores, scope, notes, view, entries, candidates, sessionId }) => {
-    const roots = new Set();
-    if (sessionStores) {
-      if (sessionStores.globalRoot) roots.add(path.resolve(sessionStores.globalRoot));
-      const projectRoot = sessionStores.projectRoot || (sessionStores.project && sessionStores.project.root);
-      if (projectRoot) roots.add(path.resolve(projectRoot));
-    }
-    const legacyProject = Boolean(sessionStores && globalScopeStore(sessionStores.project));
-    const globalLimit = sessionStores && sessionStores.globalRoot ? 2 : 0;
-    const projectLimit = sessionStores && sessionStores.projectRoot
-      ? (legacyProject ? 5 : sessionStores.globalRoot ? 3 : 5)
-      : 0;
-    const muted = sessionId ? controlsFor(sessionId).muted : new Set();
-    return new Map(Object.entries(explainInjection({
-      notes,
-      candidates: candidates || [],
-      entries: entries || [],
-      scope,
-      viewKind: view.kind,
-      mutedIds: [...muted],
-      inSessionStore: roots.has(path.resolve(view.root)),
-      limits: { global: globalLimit, project: projectLimit, total: 5 },
-    })));
-  };
-
   const snapshot = (sessionId, workspace) => {
     let sessionStores = null;
     let sessionQuery = '';
@@ -1208,23 +1163,24 @@ export function apply(ctx, config = {}) {
       }
     }
 
-    const unifiedSurface = surfaceConfig.unified
-      ? createSurface({
-        legacyRoot: root,
-        globalRoot,
-        registryFile,
-        cwd: session && session.cwd ? session.cwd : root,
-        stores: sessionStores || undefined,
-      })
-      : null;
+    // 3.1: the read surface is unconditional. The 2.x plugin-local selection and
+    // single-store scan fallback were removed after the 3.0 stabilization window
+    // so prompt, panel, explanation, all-view and search share exactly one path.
+    const surface = createSurface({
+      legacyRoot: root,
+      globalRoot,
+      registryFile,
+      cwd: session && session.cwd ? session.cwd : root,
+      stores: sessionStores || undefined,
+    });
     const allView = String(workspace || '') === 'all';
     let view;
     let notes;
     let allWorkspaces = null;
-    if (allView && unifiedSurface) {
-      // 3.0: one server-side read-only union of every listed store. The client
-      // no longer has to fetch and merge N panels (c-1007).
-      const union = unifiedSurface.snapshotAll({
+    if (allView) {
+      // One server-side read-only union of every listed store. The client does
+      // not fetch and merge N panels (c-1007).
+      const union = surface.snapshotAll({
         scope: session.scope || 'global',
         controls: controlsFor(sessionId),
         query: sessionQuery,
@@ -1235,14 +1191,12 @@ export function apply(ctx, config = {}) {
       allWorkspaces = union.workspaces;
     } else {
       view = workspaceView(workspace, sessionStores);
-      notes = unifiedSurface
-        ? unifiedSurface.notesWithInjection(view, {
-          scope: session.scope || 'global',
-          controls: controlsFor(sessionId),
-          query: sessionQuery,
-          sessionStores,
-        })
-        : scanNotes(view.root);
+      notes = surface.notesWithInjection(view, {
+        scope: session.scope || 'global',
+        controls: controlsFor(sessionId),
+        query: sessionQuery,
+        sessionStores,
+      });
     }
 
     const layers = {};
@@ -1257,37 +1211,11 @@ export function apply(ctx, config = {}) {
     const heat = allView ? { rows: 0, hot: [] } : heatTop(5, view.root);
     // Prompt injection manifest for this session: same selection the prompt uses.
     const injection = sessionStores
-      ? (unifiedSurface
-        ? unifiedSurface.injection(session.scope || 'global', controlsFor(sessionId), { query: sessionQuery })
-        : injectionManifestFor(sessionStores, session.scope || 'global', controlsFor(sessionId), { query: sessionQuery }))
+      ? surface.injection(session.scope || 'global', controlsFor(sessionId), { query: sessionQuery })
       : { total: 0, global: 0, project: 0, entries: [] };
-    // Same universe the selection (and therefore the prompt) sees: catalog-backed
-    // candidates after cross-store subject arbitration. The explanation must not
-    // build its own single-store picture, or labels drift from the actual pick.
-    let injectionCandidates = Array.isArray(injection.candidates) ? injection.candidates : [];
-    if (sessionStores && !unifiedSurface) {
-      try {
-        injectionCandidates = legacySelectInjection(
-          sessionStores,
-          session.scope || 'global',
-          controlsFor(sessionId),
-          { query: sessionQuery },
-        ).candidates || [];
-      } catch {
-        injectionCandidates = [];
-      }
-    }
-    const injectionReasons = unifiedSurface
-      ? new Map(sorted.map((note) => [String(note.id), note.injection || null]))
-      : injectionReasonsFor({
-        sessionStores,
-        scope: session.scope || 'global',
-        notes: sorted,
-        view,
-        entries: injection.entries,
-        candidates: injectionCandidates,
-        sessionId,
-      });
+    // explanation labels are carried on the notes by notesWithInjection/
+    // snapshotAll from the same catalog-backed candidate universe as selection.
+    const injectionReasons = new Map(sorted.map((note) => [String(note.id), note.injection || null]));
     return {
       workspace: allView ? null : view.root,
       view,
@@ -1409,226 +1337,6 @@ export function apply(ctx, config = {}) {
     return Boolean(stores && (stores.globalRoot || stores.projectRoot));
   };
 
-  /** Parsed access rows per store, cached until access.jsonl changes. */
-  const accessRowsCache = new Map();
-  /**
-   * v2.3 injection source: the derived catalog already carries id/title/scope/
-   * subject/summary/status, so the prompt does not need to read every note file.
-   * Falls back to `scanNotes` when the index is missing or unreadable. The index
-   * is maintained by every CLI write; a manual edit must run `rebuild` (same
-   * rule as any other index use).
-   */
-  const catalogCache = new Map();
-  const catalogInjectionNotes = (storeRoot) => {
-    try {
-      const file = path.join(storeRoot, '_meta', 'catalog.jsonl');
-      const stat = fs.statSync(file);
-      const cached = catalogCache.get(storeRoot);
-      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.notes;
-      const rows = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).flatMap((line) => {
-        try {
-          return [JSON.parse(line)];
-        } catch {
-          return [];
-        }
-      });
-      const notes = rows
-        .filter((row) => row && row.id && row.level === 'digest' && row.status === 'active'
-          && !['topic', 'work', 'session'].includes(String(row.type || '')))
-        .map((row) => ({
-          id: String(row.id),
-          title: String(row.title || ''),
-          status: 'active',
-          scope: String(row.scope || ''),
-          level: 'digest',
-          type: String(row.type || ''),
-          tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
-          summary: String(row.summary || ''),
-          updated: String(row.updated || ''),
-          subject: String(row.subject || ''),
-          file: String(row.path || ''),
-        }));
-      catalogCache.set(storeRoot, { mtimeMs: stat.mtimeMs, size: stat.size, notes });
-      return notes;
-    } catch {
-      return null;
-    }
-  };
-
-  const accessRowsFor = (storeRoot) => {
-    try {
-      const file = path.join(storeRoot, '_meta', 'access.jsonl');
-      let stat;
-      try {
-        stat = fs.statSync(file);
-      } catch {
-        accessRowsCache.delete(storeRoot);
-        return [];
-      }
-      const cached = accessRowsCache.get(storeRoot);
-      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.rows;
-      const rows = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).flatMap((line) => {
-        try {
-          const row = JSON.parse(line);
-          return row && row.id
-            ? [{ id: String(row.id), t: String(row.t || ''), how: String(row.how || '') }]
-            : [];
-        } catch {
-          return [];
-        }
-      });
-      accessRowsCache.set(storeRoot, { mtimeMs: stat.mtimeMs, size: stat.size, rows });
-      return rows;
-    } catch {
-      return [];
-    }
-  };
-
-  /**
-   * 2.x rollback only (`surface.unified: false`): rank one store's candidates.
-   * The unified path uses engine `createSurface().selectInjection()`; this copied
-   * implementation exists so a host can fall back without restarting. Main paths
-   * must not call it (c-1007, 3.0.1 D1).
-   */
-  const scopeLeakWarned = new Set();
-  const legacySelectStoreCandidates = (storeRoot, scope, filterScope = '', query = '', options = {}) => {
-    if (!storeRoot) return [];
-    // Fast path: the derived catalog. Slow path: read every note file (used when
-    // the index is absent/unreadable, or for panel views which need file paths).
-    const notes = catalogInjectionNotes(storeRoot) || scanNotes(storeRoot);
-    // In a non-legacy project store, a global-scope memory is a write-layer
-    // leak: the judge must downgrade it to unclassified. Existing leaks are
-    // excluded, but never silently: surface once per store so the owner can
-    // repair the data. Legacy roots legitimately still hold global memories.
-    if (filterScope && filterScope[0] !== '!' && filterScope.startsWith('project:')) {
-      const leaked = notes.filter(
-        (note) => note.level === 'digest' && note.status === 'active' && note.scope === 'global',
-      );
-      if (leaked.length && !scopeLeakWarned.has(storeRoot)) {
-        scopeLeakWarned.add(storeRoot);
-        console.warn(
-          `[kb-panel] project store ${storeRoot} contains ${leaked.length} global-scope active memory(s): `
-          + `${leaked.map((note) => note.id).join(', ')}; excluded from injection.`,
-        );
-      }
-    }
-    const filtered = notes.filter((note) => !filterScope
-      || (filterScope[0] === '!' ? note.scope !== filterScope.slice(1) : note.scope === filterScope));
-    // Current-truth dedupe stays in the engine; heat weighting, exposure-aware
-    // exploration and optional relevance ordering live in inject-ranking.mjs.
-    return rankInjectionCandidates(currentTruthNotes(filtered, scope), accessRowsFor(storeRoot), {
-      limit: 500,
-      query,
-      exploration: options.explore ? 1 : 0,
-    });
-  };
-
-  /**
-   * 2.x fallback: source-aware budget with per-session controls. The unified
-   * prompt path uses `surface.selectInjection()` instead; keeping one copy only
-   * for `surface.unified:false` avoids two live orchestration paths (3.0.1 D1).
-   */
-  const legacyPickBySourceWithControls = (entries, options = {}) => {
-    const limit = (value) => Math.max(0, Number(value) || 0);
-    const globalLimit = limit(options.globalLimit);
-    const projectLimit = limit(options.projectLimit);
-    const isPinned = typeof options.isPinned === 'function' ? options.isPinned : () => false;
-    const isMuted = typeof options.isMuted === 'function' ? options.isMuted : () => false;
-    const pick = (source, cap) => {
-      const candidates = (entries || [])
-        .filter((entry) => entry && entry.note && entry.source === source)
-        .filter((entry) => !isMuted(String(entry.note.id || '')))
-        .sort((a, b) => (Number(a.rank) || 0) - (Number(b.rank) || 0));
-      const pinned = candidates.filter((entry) => isPinned(String(entry.note.id || '')));
-      const rest = candidates.filter((entry) => !isPinned(String(entry.note.id || '')));
-      return [...pinned, ...rest].slice(0, cap).map((entry) => entry.note);
-    };
-    return {
-      globalPicked: pick('global', globalLimit),
-      projectPicked: pick('project', projectLimit),
-    };
-  };
-
-  /**
-   * 2.x fallback selection (`surface.unified: false` only). The unified prompt
-   * and panel paths call the engine's `surface.selectInjection()`; this copy is
-   * never used when the unified surface exists.
-   */
-  const legacySelectInjection = (stores, scope, controls = {}, options = {}) => {
-    const query = options.query || '';
-    const pinned = controls && controls.pinned ? controls.pinned : new Set();
-    const muted = controls && controls.muted ? controls.muted : new Set();
-    const isPinned = (id) => pinned.has(String(id || ''));
-    const isMuted = (id) => muted.has(String(id || ''));
-    const globalLimit = stores.globalRoot ? 2 : 0;
-    const legacy = Boolean(globalScopeStore(stores.project));
-    // Unified surface policy (v2.2): the legacy vault and a project store differ
-    // only by scopeMode / slot cap, not by separate code paths.
-    const projectLimit = stores.projectRoot ? (legacy ? 5 : stores.globalRoot ? 3 : 5) : 0;
-    const totalLimit = 5;
-    const entries = [];
-    const add = (source, notes) => {
-      notes.forEach((note, rank) => entries.push({ note, source, rank }));
-    };
-    if (globalLimit && stores.globalRoot) {
-      add('global', legacySelectStoreCandidates(stores.globalRoot, 'global', 'global', query));
-    }
-    if (projectLimit && stores.projectRoot) {
-      const filterScope = legacy ? '' : scope;
-      add('project', legacySelectStoreCandidates(stores.projectRoot, scope, filterScope, query, { explore: true }));
-    }
-    const current = currentTruthEntries(entries, scope);
-    const picked = legacyPickBySourceWithControls(current, { globalLimit, projectLimit, isPinned, isMuted });
-    // Legacy keeps the historical five-slot total; the project store fills what
-    // the global store leaves, so a missing global copy does not shrink the
-    // budget. Project stores keep their own 3-slot cap when a global store also
-    // contributes.
-    const pickedGlobal = picked.globalPicked.slice(0, globalLimit);
-    const pickedProject = picked.projectPicked.slice(0, Math.max(0, totalLimit - pickedGlobal.length));
-    // `candidates` is the cross-store current-truth universe the pick came from.
-    // The panel explanation consumes it so its labels share the selection's data
-    // source and subject arbitration, not a single-store view.
-    return { globalPicked: pickedGlobal, projectPicked: pickedProject, candidates: current.map((entry) => entry.note) };
-  };
-
-  /**
-   * 2.x fallback manifest (`surface.unified: false` only). Unified panels read
-   * the manifest directly from `surface.injection()`, so prompt, panel and
-   * explanation share one orchestration path.
-   */
-  const injectionManifestFor = (stores, scope, controls = {}, options = {}) => {
-    const empty = { total: 0, global: 0, project: 0, entries: [] };
-    if (!stores) return empty;
-    const pinSet = controls && controls.pinned ? controls.pinned : new Set();
-    try {
-      const selected = legacySelectInjection(stores, scope, controls, options);
-      const entries = [
-        ...selected.globalPicked.map((note) => ({
-          id: String(note.id || ''),
-          summary: String(note.summary || note.title || ''),
-          scope: String(note.scope || 'global'),
-          store: 'global',
-          pinned: pinSet.has(String(note.id || '')),
-        })),
-        ...selected.projectPicked.map((note) => ({
-          id: String(note.id || ''),
-          summary: String(note.summary || note.title || ''),
-          scope: String(note.scope || ''),
-          store: globalScopeStore(stores.project) ? 'legacy' : 'project',
-          pinned: pinSet.has(String(note.id || '')),
-        })),
-      ];
-      return {
-        total: entries.length,
-        global: selected.globalPicked.length,
-        project: selected.projectPicked.length,
-        entries,
-      };
-    } catch {
-      return empty;
-    }
-  };
-
   // Prompt context: global preferences plus the session's attached project
   // store. A session with neither renders '', so the system-prompt service
   // drops it and the model sees no memory block.
@@ -1656,21 +1364,22 @@ export function apply(ctx, config = {}) {
             if (core) chunks.push(core);
           }
 
-          // 3.0.1 D1: the prompt path and the panel must use the same engine
-          // selection. Only the explicit 2.x rollback may run the local copy.
+          // 3.1: prompt selection is the engine surface, unconditionally. The 2.x
+          // plugin-local selection copy was removed after the stabilization
+          // window, so this path cannot drift from the panel (c-1007, 3.0.1 D1).
           const sessionQuery = recentQueryFor(agent);
-          const surface = surfaceConfig.unified
-            ? createSurface({
-              legacyRoot: root,
-              globalRoot,
-              registryFile,
-              cwd: cwdOf(agent) || root,
-              stores,
-            })
-            : null;
-          const { globalPicked, projectPicked } = surface
-            ? surface.selectInjection(scope, controlsFor(agent.id), { query: sessionQuery })
-            : legacySelectInjection(stores, scope, controlsFor(agent.id), { query: sessionQuery });
+          const surface = createSurface({
+            legacyRoot: root,
+            globalRoot,
+            registryFile,
+            cwd: cwdOf(agent) || root,
+            stores,
+          });
+          const { globalPicked, projectPicked } = surface.selectInjection(
+            scope,
+            controlsFor(agent.id),
+            { query: sessionQuery },
+          );
           if (globalPicked.length) {
             recordRecall(globalPicked.map((note) => note.id), 'inject', `session:${bareId(agent.id)}`, stores.globalRoot);
           }
@@ -1770,57 +1479,8 @@ export function apply(ctx, config = {}) {
         try {
           const requested = String(workspace || 'session');
           const limitN = Math.min(20, Math.max(1, Math.trunc(limit)));
-          const surface = surfaceConfig.unified
-            ? createSurface({ legacyRoot: root, globalRoot, registryFile, cwd: root })
-            : null;
-          if (surface) {
-            sendJson(res, 200, surface.search({ workspace: requested, query, limit: limitN }));
-            return;
-          }
-          const options = workspaceOptions();
-          // 2.x rollback path (`surface.unified: false`): one CLI call per store.
-          // Ids are only unique per store, so every row carries its workspace; the
-          // Client keeps them distinct instead of merging by id.
-          const targets = requested === 'all'
-            ? options
-            : [workspaceView(workspace, null)];
-          const results = [];
-          let total = 0;
-          const strategy = { pinyin: false, semantic: false };
-          for (const view of targets) {
-            const result = await runProcess(
-              nodeRuntime.command,
-              kbCommand(view, ['search', '--query', query, '--limit', String(limitN), '--json']),
-              { cwd: view.root, env: { ...process.env, ...nodeRuntime.env }, timeoutMs: 20000 },
-            );
-            if (result.code !== 0) throw new Error(commandError(result));
-            const payload = JSON.parse(result.stdout || '{}') || {};
-            total += Number(payload.total) || 0;
-            if (payload.strategy) {
-              strategy.pinyin = strategy.pinyin || payload.strategy.pinyin === true;
-              strategy.semantic = strategy.semantic || payload.strategy.semantic === true;
-            }
-            // Only ids the store's own scan can see; the CLI result is not trusted
-            // as a path source by the Client.
-            const allowed = new Set(scanNotes(view.root).map((note) => note.id));
-            for (const row of Array.isArray(payload.results) ? payload.results : []) {
-              if (!row || !allowed.has(String(row.id))) continue;
-              results.push({
-                ...row,
-                workspace: view.id,
-                workspaceLabel: options.find((option) => option.id === view.id)?.label
-                  || view.meta?.title || view.id || '当前工作区',
-              });
-            }
-          }
-          if (requested === 'all') results.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
-          sendJson(res, 200, {
-            ok: true,
-            query,
-            total,
-            strategy,
-            results: results.slice(0, limitN),
-          });
+          const surface = createSurface({ legacyRoot: root, globalRoot, registryFile, cwd: root });
+          sendJson(res, 200, surface.search({ workspace: requested, query, limit: limitN }));
         } catch (error) {
           sendJson(res, 500, { error: String(error && error.message ? error.message : error) });
         }

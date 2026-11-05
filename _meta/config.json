@@ -49,10 +49,6 @@
     "rankMode": "heat",
     "relevanceMaxAgeMs": 1800000
   },
-  "surface": {
-    "note": "3.0 统一读面开关：true=面板/检索/注入解释走 engine read-model（默认）；false=回退到 2.x 插件内实现，仅保留一个发布周期的回滚能力。",
-    "unified": true
-  },
   "limits": {
     "catalog_max_rows": 3000,
     "catalog_max_bytes": 300,

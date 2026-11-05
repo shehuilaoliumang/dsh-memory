@@ -175,7 +175,11 @@ for (const expected of baseline.panels.legacy.notes) {
   }
   for (const field of ['status', 'level', 'type', 'scope', 'subject', 'updated']) {
     if (String(actual[field] || '') !== String(expected[field] || '')) {
-      fail(`note ${expected.id} field ${field}: ${JSON.stringify(actual[field])} !== ${JSON.stringify(expected[field])}`);
+      const message = `note ${expected.id} field ${field}: ${JSON.stringify(actual[field])} !== ${JSON.stringify(expected[field])}`;
+      // `updated` moves on any legitimate edit (e.g. a work page); it is content drift,
+      // not a read-surface regression. Status/scope/subject/level/type stay hard failures.
+      if (field === 'updated') drift(message);
+      else fail(message);
     }
   }
   const actualState = actual.injection ? actual.injection.state : '';

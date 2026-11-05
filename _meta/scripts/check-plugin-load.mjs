@@ -233,6 +233,7 @@ const sources = [
   '_meta/engine/lib/read-model.mjs',
   '_meta/engine/lib/host.mjs',
   '_meta/engine/hosts/mcp.mjs',
+  '_meta/engine/hosts/http.mjs',
   '_meta/engine/lib/injection-reasons.mjs',
   '_meta/engine/lib/promote.mjs',
   '_meta/engine/lib/redact.mjs',
@@ -244,6 +245,7 @@ const sources = [
   '_meta/engine/test/compare-parity.mjs',
   '_meta/engine/test/read-model.test.mjs',
   '_meta/engine/test/host.test.mjs',
+  '_meta/engine/test/host-conformance.test.mjs',
   '_meta/engine/test/bench-read-model.mjs',
 ];
 for (const rel of sources) checkSyntax(rel);

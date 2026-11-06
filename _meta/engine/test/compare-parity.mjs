@@ -67,8 +67,9 @@ function runFixtureParity() {
   try {
     const global = makeStore('global', true);
     const legacy = makeStore('legacy', false);
-    // Four global candidates for two global slots, so a budget split
-    // (e.g. GLOBAL_INJECTION_LIMIT 2 -> 3) must fail the exact entry list.
+    // Four global candidates compete for two base global slots; with only one
+    // project candidate, 3.2 adaptive budget back-fills the two unused total
+    // slots from global overflow (global hard cap 4, total 5).
     writeAtom(global, { id: '2026-11-04-a-0904', title: '新部署', summary: 'fixture deploy newest', scope: 'global', subject: 'deploy', updated: '2026-11-05' });
     writeAtom(global, { id: '2026-11-04-a-0900', title: '全局偏好 A', summary: 'fixture global alpha', scope: 'global', updated: '2026-11-04' });
     writeAtom(global, { id: '2026-11-04-a-0901', title: '全局偏好 B', summary: 'fixture global beta', scope: 'global', updated: '2026-11-03' });
@@ -82,10 +83,10 @@ function runFixtureParity() {
     check(ids.join(',') === 'global,legacy', `workspace ids ${JSON.stringify(ids)}`);
     const injection = surface.injection('global');
     const injectedIds = injection.entries.map((entry) => entry.id);
-    check(injection.total === 3, `injection total ${injection.total} !== 3`);
-    check(injection.global === 2 && injection.project === 1, `injection split global=${injection.global} project=${injection.project}`);
+    check(injection.total === 5, `injection total ${injection.total} !== 5`);
+    check(injection.global === 4 && injection.project === 1, `injection split global=${injection.global} project=${injection.project}`);
     check(JSON.stringify(injectedIds) === JSON.stringify([
-      '2026-11-04-a-0904', '2026-11-04-a-0900', '2026-11-04-a-0911',
+      '2026-11-04-a-0904', '2026-11-04-a-0900', '2026-11-04-a-0901', '2026-11-04-a-0902', '2026-11-04-a-0911',
     ]), `injection order ${JSON.stringify(injectedIds)}`);
     const notes = surface.notesWithInjection(surface.view('legacy'), { scope: 'global' });
     check(notes.some((note) => note.id.endsWith('a-0911') && note.injection.state === 'injected'), 'legacy note not injected');

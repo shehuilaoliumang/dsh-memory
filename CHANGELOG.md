@@ -12,7 +12,7 @@
 - **记忆健康（④）**：新增 `_meta/engine/lib/health.mjs` 纯函数健康分析（冲突、孤儿取代、待生效取代、缺 subject、scope 可疑、陈旧、到期复核、重复、未分类、低召回），`/kb/panel.json` 返回报告 + headline，记忆页展示健康卡与问题明细。
 - **检索升级（⑤）**：新增 `intent.mjs` 查询意图分类（状态/决策/偏好/通用）与 `vector.mjs` 零依赖 2048 桶 FNV n-gram 向量回退（特征重叠阈值 + minScore 0.12），`semantic.mjs` 增加 catalog 行 tags/subject/title 同义扩展；`kb search` 字面命中按意图 ×1.15 重排，回退链拼音→同义→向量；JSON 增 `intent` 与 `strategy.vector`，面板深度搜索显示意图与「向量近似」。
 - **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.2.0，客户端 c47；插件 193/193、engine 78/78（read-model 8 + host 6 + conformance 4 + candidates 15 + health 33 + search-upgrade 12）、脚本 17/17、smoke 106/106、`check-plugin-load` 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS；本地 `validate` 15 篇/主索引 13 + 归档 1、0 警告；parity 6 content drift / 0 regression；bench 5×300 检索约 346ms/快照约 125ms/零 spawn。
-- 公开快照：3.2.0 发布后回填。
+- 公开快照：3.2.0 已发布（public commit `7f0542`，tree `58ee709`，CI `42151847837` 全绿；快照 14 篇/主索引 12 + 归档 1、0 警告）。首个快照 `4aba2a9` 因 3.2 自适应预算的 parity 夹具未更新（期望 3 条、实际 5 条）CI 失败，已修夹具（`f5ec20e`）后重发。
 
 ## 3.1.0 — 2026-11-05
 

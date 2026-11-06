@@ -87,7 +87,7 @@ v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，
 - **自适应预算与排序实验**：`read-model.mjs` 在全局 2/项目 3/总计 5 上把未用槽位按排名回填（global 硬上限 4、total 5），`injection.suggestions` 给出最多 3 条“预算已满但接近入选”；`rank-experiment.mjs` 按 session 稳定分桶记录 heat/relevance 分配（默认关闭）。
 - **记忆健康**：`_meta/engine/lib/health.mjs` 纯函数检查冲突/孤儿取代/待生效取代/缺 subject/scope 可疑/陈旧/到期复核/重复/未分类/低召回，`/kb/panel.json` 返回报告与 headline，面板健康卡展示明细；只读 advisory。
 - **检索升级**：`intent.mjs` 查询意图分类（状态/决策/偏好/通用）+ `vector.mjs` 零依赖 2048 桶 FNV n-gram 向量回退 + catalog 行同义扩展；`kb search` 按意图重排字面命中，回退链拼音→同义→向量，JSON 新增 `intent`/`strategy.vector`，面板深度搜索显示意图与「向量近似」。仍不写 access、不做 embedding。
-- **闸门/发布**：插件 193/193、engine 78/78、脚本 17/17、smoke 106/106、check 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS、本地 validate 15 篇/13+1、parity 0 回归；3.2.0 发布后回填 public commit/CI/快照。
+- **闸门/发布**：插件 193/193、engine 78/78、脚本 17/17、smoke 106/106、check 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS、本地 validate 15 篇/13+1、parity 0 回归；3.2.0 已发布（public `7f0542`，tree `58ee709`，CI `42151847837` 全绿；快照 14 篇/12+1、0 警告）。
 
 ## v3.1 新增（HTTP 第三宿主、删除回退）
 

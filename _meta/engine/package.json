@@ -1,6 +1,6 @@
 {
   "name": "@local/kb-engine",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Zero-dependency knowledge-base engine: notes/index/validation/write/search, store registry and injection planning. Host-agnostic (no DSH imports).",
   "type": "module",
   "private": true,
@@ -16,6 +16,8 @@
     "./work-brief": "./lib/work-brief.mjs",
     "./injection": "./lib/injection.mjs",
     "./read-model": "./lib/read-model.mjs",
+    "./candidates": "./lib/candidates.mjs",
+    "./health": "./lib/health.mjs",
     "./host": "./lib/host.mjs",
     "./hosts/http": "./hosts/http.mjs",
     "./injection-reasons": "./lib/injection-reasons.mjs",
@@ -23,6 +25,8 @@
     "./redact": "./lib/redact.mjs",
     "./search/pinyin": "./lib/search/pinyin.mjs",
     "./search/semantic": "./lib/search/semantic.mjs",
+    "./search/vector": "./lib/search/vector.mjs",
+    "./search/intent": "./lib/search/intent.mjs",
     "./shared/frontmatter": "./lib/shared/frontmatter.mjs",
     "./shared/work-sections": "./lib/shared/work-sections.mjs"
   },

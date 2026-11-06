@@ -16,6 +16,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { redactSecrets } from '../../engine/lib/redact.mjs';
+import {
+  DEFAULT_AUTO_ACTIVATE,
+  autoActivateDecision,
+  candidateNote,
+  enrichCandidate,
+  summarizeFeedback,
+} from '../../engine/lib/candidates.mjs';
 
 const DEFAULT_JUDGE = {
   enabled: false,
@@ -39,6 +46,10 @@ const DEFAULT_JUDGE = {
   // hour. A successful job resets both counters.
   breakerThreshold: 3,
   breakerCooldownMs: 3600000,
+  // Opt-in tiered confirmation. Disabled by default: the judge keeps writing
+  // inbox candidates until the human feedback labels prove the explicit-memory
+  // path is reliable enough to skip one manual click.
+  autoActivate: { ...DEFAULT_AUTO_ACTIVATE },
 };
 
 const TYPES = ['fact', 'preference', 'decision', 'opinion', 'question', 'task', 'definition', 'principle'];
@@ -450,6 +461,26 @@ export function createJudgeWorker(deps = {}) {
     return path.join(root, rel);
   };
 
+  const feedbackFile = () => path.join(stateDir(), 'judge-feedback.jsonl');
+
+  const feedbackStats = () => summarizeFeedback(readJsonl(feedbackFile()));
+
+  /** Scope of the store this judge serves: global stores vs project:<slug>. */
+  const storeContext = () => {
+    let meta = {};
+    try {
+      meta = JSON.parse(readText(path.join(root, 'project.json'))) || {};
+    } catch {
+      meta = {};
+    }
+    const slug = String(meta.slug || '').trim();
+    const storeKind = allowGlobal ? 'global' : 'project';
+    return {
+      storeKind,
+      sessionScope: allowGlobal ? 'global' : slug ? `project:${slug}` : 'global',
+    };
+  };
+
   /** Distilled memories already in the index; raw sessions and pages are not memories. */
   const loadKnownSummaries = () =>
     readJsonl(catalogFile())
@@ -465,7 +496,17 @@ export function createJudgeWorker(deps = {}) {
           row.type !== 'work' &&
           row.type !== 'topic',
       )
-      .map((row) => ({ id: row.id, summary: row.summary, level: row.level }));
+      .map((row) => ({
+        id: row.id,
+        summary: row.summary,
+        level: row.level,
+        title: String(row.title || ''),
+        type: String(row.type || ''),
+        scope: String(row.scope || ''),
+        subject: String(row.subject || ''),
+        status: String(row.status || ''),
+        updated: String(row.updated || ''),
+      }));
 
   async function callModel(prompt) {
     const cfg = settings();
@@ -546,6 +587,19 @@ export function createJudgeWorker(deps = {}) {
       ...atom,
       supersedes: (atom.supersedes || []).filter((id) => shownIds.has(id)),
     }));
+    const { storeKind, sessionScope } = storeContext();
+    const candidateText = (job.candidates || [])
+      .map((candidate) => String(candidate.text || candidate))
+      .join('\n');
+    verdict.atoms = verdict.atoms.map((atom) =>
+      enrichCandidate({ atom, text: candidateText, knownRows: known, sessionScope, storeKind }),
+    );
+    verdict.autoActivate = {
+      enabled: settings().autoActivate && settings().autoActivate.enabled === true,
+      feedback: feedbackStats(),
+      sessionScope,
+      storeKind,
+    };
     state.lastVerdictAt = new Date().toISOString();
     state.lastVerdict = { jobId: job.id, ...verdict };
 
@@ -571,7 +625,17 @@ export function createJudgeWorker(deps = {}) {
     let written = 0;
     let duplicates = 0;
     const writtenIds = [];
+    const autoActivated = [];
+    const feedback = feedbackStats();
+    const autoConfig = settings().autoActivate || {};
     for (const atom of verdict.shouldRecord ? verdict.atoms : []) {
+      const auto = autoActivateDecision({
+        atom,
+        feedback,
+        config: autoConfig,
+        storeKind,
+        sessionScope,
+      });
       const spec = {
         title: atom.title,
         type: atom.type,
@@ -583,8 +647,10 @@ export function createJudgeWorker(deps = {}) {
         tags: atom.tags,
         quote: atom.quote,
         confidence: atom.confidence,
-        // No `status`: add-atom defaults to `inbox`, so a fresh judgement never
-        // reaches the model until someone confirms it.
+        note: candidateNote(atom) || undefined,
+        // Inbox is the default; only the explicit, project-scoped, evidence-
+        // backed path above may pass `active` here. `global` is never auto.
+        status: auto.status === 'active' ? 'active' : undefined,
         source: job.raw ? [`[[${job.raw.replace(/\.md$/, '')}]]`] : [],
       };
       const specFile = path.join(stateDir(), 'tmp', `atom-${job.id}-${written}.json`);
@@ -594,6 +660,7 @@ export function createJudgeWorker(deps = {}) {
         if (result.code !== 0) throw new Error((result.stderr || result.stdout || '').trim().slice(0, 200));
         const parsed = JSON.parse(result.stdout);
         writtenIds.push(parsed.id);
+        if (auto.status === 'active' && !parsed.duplicate) autoActivated.push({ id: parsed.id, reason: auto.reason });
         if (parsed.duplicate) duplicates += 1;
         else written += 1;
       } finally {
@@ -618,6 +685,8 @@ export function createJudgeWorker(deps = {}) {
             written,
             duplicates,
             ids: writtenIds,
+            autoActivated,
+            autoActivate: verdict.autoActivate,
             // Audit trail: which rows the judge was shown, and what the exact
             // near-duplicate net dropped. Without this a semantic duplicate is
             // indistinguishable from an honest new memory after the fact.
@@ -788,6 +857,8 @@ export function createJudgeWorker(deps = {}) {
         breakerOpen: Boolean(state.breakerUntil && Date.parse(state.breakerUntil) > Date.now()),
         promptVersion: settings().promptVersion,
         promptHash: judgePromptHash(settings()),
+        feedback: feedbackStats(),
+        autoActivate: settings().autoActivate,
         queue: {
           pending: queue.filter((job) => job.status === 'pending').length,
           rejected: queue.filter((job) => job.status === 'rejected').length,

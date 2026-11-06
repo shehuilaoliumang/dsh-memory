@@ -31,6 +31,8 @@ import {
 export const MEMORY_LAYERS = ['10_Raw', '20_Digest', '30_Canon'];
 export const TOTAL_INJECTION_LIMIT = 5;
 export const GLOBAL_INJECTION_LIMIT = 2;
+// Adaptive spillover may add at most two extra global memories (total stays 5).
+export const ADAPTIVE_GLOBAL_LIMIT = 4;
 
 // Warn once per store for global-scope leaks in non-legacy project stores.
 const scopeLeakWarned = new Set();
@@ -120,6 +122,8 @@ export function scanStoreNotes(storeRoot) {
       tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
       summary: String(data.summary || ''),
       subject: String(data.subject || ''),
+      supersedes: Array.isArray(data.supersedes) ? data.supersedes.map(String) : [],
+      reviewAfter: String(data.reviewAfter || ''),
       updated: String(data.updated || ''),
       file: path.relative(root, file).split(path.sep).join('/'),
     });
@@ -283,12 +287,51 @@ export function createSurface(options = {}) {
     }
     const current = currentTruthEntries(entries, scope);
     const picked = pickBySourceControls(current, { globalLimit, projectLimit, isPinned, isMuted });
-    const pickedGlobal = picked.globalPicked.slice(0, globalLimit);
-    const pickedProject = picked.projectPicked.slice(0, Math.max(0, TOTAL_INJECTION_LIMIT - pickedGlobal.length));
+    let pickedGlobal = picked.globalPicked.slice(0, globalLimit);
+    let pickedProject = picked.projectPicked.slice(0, Math.max(0, TOTAL_INJECTION_LIMIT - pickedGlobal.length));
+
+    // 3.2 adaptive budget: a source may underfill (few candidates / all muted)
+    // while the other has better-ranked candidates left over. Move the unused
+    // slots across, but keep hard per-source ceilings so one store can never
+    // take over the whole prompt block. The total is still capped at 5.
+    const adaptive = selectOptions.adaptiveBudget !== false;
+    if (adaptive) {
+      const selected = new Set([...pickedGlobal, ...pickedProject].map((note) => String(note.id || '')));
+      const overflow = current
+        .filter((entry) => entry && entry.note && !isMuted(String(entry.note.id || '')))
+        .filter((entry) => !selected.has(String(entry.note.id || '')))
+        .sort((a, b) => (Number(a.rank) || 0) - (Number(b.rank) || 0));
+      for (const entry of overflow) {
+        if (pickedGlobal.length + pickedProject.length >= TOTAL_INJECTION_LIMIT) break;
+        if (entry.source === 'global' && pickedGlobal.length < ADAPTIVE_GLOBAL_LIMIT) {
+          pickedGlobal = [...pickedGlobal, entry.note];
+          selected.add(String(entry.note.id || ''));
+        } else if (entry.source === 'project' && pickedProject.length < TOTAL_INJECTION_LIMIT) {
+          pickedProject = [...pickedProject, entry.note];
+          selected.add(String(entry.note.id || ''));
+        }
+      }
+    }
+
+    const selectedIds = new Set([...pickedGlobal, ...pickedProject].map((note) => String(note.id || '')));
+    const suggestions = current
+      .filter((entry) => entry && entry.note && !isMuted(String(entry.note.id || '')))
+      .filter((entry) => !selectedIds.has(String(entry.note.id || '')))
+      .sort((a, b) => (Number(a.rank) || 0) - (Number(b.rank) || 0))
+      .slice(0, 3)
+      .map((entry) => ({
+        id: String(entry.note.id || ''),
+        summary: String(entry.note.summary || entry.note.title || ''),
+        source: entry.source,
+        reason: 'budget',
+        message: '排名紧随其后，但本轮 5 条预算已满',
+      }));
+
     return {
       globalPicked: pickedGlobal,
       projectPicked: pickedProject,
       candidates: current.map((entry) => entry.note),
+      suggestions,
     };
   };
 
@@ -315,7 +358,11 @@ export function createSurface(options = {}) {
 
   const injectionFor = (scope = 'global', controls = {}, selectOptions = {}) => {
     const selected = selectInjection(scope, controls, selectOptions);
-    return { ...manifestFor(selected, controls), candidates: selected.candidates };
+    return {
+      ...manifestFor(selected, controls),
+      candidates: selected.candidates,
+      suggestions: selected.suggestions,
+    };
   };
 
   const limitsFor = () => ({
@@ -411,7 +458,8 @@ export function createSurface(options = {}) {
     const targets = workspace === 'all' ? listWorkspaces(storeOptions) : [resolveView(workspace, storeOptions, stores)];
     const rows = [];
     let total = 0;
-    const strategy = { pinyin: false, semantic: false };
+    const strategy = { pinyin: false, semantic: false, vector: false };
+    let intent = null;
     for (const target of targets) {
       const result = runCli(['--root', target.root, 'search', '--query', query, '--limit', String(limit), '--json']);
       if (result.code !== 0) continue;
@@ -425,7 +473,9 @@ export function createSurface(options = {}) {
       if (payload.strategy) {
         strategy.pinyin = strategy.pinyin || payload.strategy.pinyin === true;
         strategy.semantic = strategy.semantic || payload.strategy.semantic === true;
+        strategy.vector = strategy.vector || payload.strategy.vector === true;
       }
+      if (!intent && payload.intent) intent = payload.intent;
       const allowed = new Set(scanStoreNotes(target.root).map((note) => note.id));
       for (const row of payload.results || []) {
         if (!allowed.has(String(row.id))) continue;
@@ -439,7 +489,7 @@ export function createSurface(options = {}) {
       // for a single store and the same additive rule for the union.
     }
     if (workspace === 'all') rows.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
-    return { ok: true, query, total, strategy, results: rows.slice(0, limit) };
+    return { ok: true, query, total, strategy, ...(intent ? { intent } : {}), results: rows.slice(0, limit) };
   };
 
   return {

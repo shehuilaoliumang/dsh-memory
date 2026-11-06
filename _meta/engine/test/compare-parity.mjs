@@ -206,35 +206,46 @@ for (const [workspace, queries] of Object.entries(baseline.searches)) {
   for (const expected of queries) {
     const query = expected.query;
     const actual = surface.search({ workspace, query, limit: 10 });
-    const exact = query !== '发布';
     if (expected.total === 0) {
       if (actual.total !== 0 || actual.results.length !== 0) fail(`search ${workspace}/${query}: expected empty, got ${actual.total}`);
       continue;
     }
-    if (query === '发布') {
-      if (actual.total < expected.total) {
-        fail(`search ${workspace}/${query}: total shrank ${actual.total} < ${expected.total}`);
-        continue;
-      }
-      const actualById = new Map(actual.results.map((row) => [row.id, row]));
-      for (const wantedRow of expected.results) {
-        const found = actualById.get(wantedRow.id);
-        if (!found || JSON.stringify(rowShape(found)) !== JSON.stringify(rowShape(wantedRow))) {
-          fail(`search ${workspace}/${query}: baseline row ${wantedRow.id} changed or disappeared`);
-        }
-      }
-      for (const row of actual.results) {
-        if (!expected.results.some((wantedRow) => wantedRow.id === row.id)) drift(`new search row ${workspace}/${query}: ${row.id}`);
-      }
-      continue;
-    }
     if (actual.strategy.pinyin !== expected.strategy.pinyin || actual.strategy.semantic !== expected.strategy.semantic) {
       fail(`search ${workspace}/${query}: strategy ${JSON.stringify(actual.strategy)} !== ${JSON.stringify(expected.strategy)}`);
+      continue;
     }
-    const actualRows = actual.results.map(rowShape);
-    const expectedRows = expected.results.map(rowShape);
-    if (exact && JSON.stringify(actualRows) !== JSON.stringify(expectedRows)) {
-      fail(`search ${workspace}/${query}: ${JSON.stringify(actualRows)} !== ${JSON.stringify(expectedRows)}`);
+    const actualById = new Map(actual.results.map((row) => [row.id, row]));
+    const expectedById = new Map(expected.results.map((row) => [row.id, row]));
+    const newIds = actual.results.filter((row) => !expectedById.has(row.id)).map((row) => row.id);
+    for (const row of actual.results) {
+      if (!expectedById.has(row.id)) drift(`new search row ${workspace}/${query}: ${row.id}`);
+    }
+    // Baseline rows that survive must keep their relative order and exact metadata.
+    const survivingIds = expected.results
+      .map((row) => row.id)
+      .filter((id) => actualById.has(id));
+    const actualSurvivingIds = actual.results
+      .filter((row) => expectedById.has(row.id))
+      .map((row) => row.id);
+    if (JSON.stringify(survivingIds) !== JSON.stringify(actualSurvivingIds)) {
+      fail(`search ${workspace}/${query}: surviving baseline order changed ${JSON.stringify(actualSurvivingIds)} !== ${JSON.stringify(survivingIds)}`);
+    }
+    for (const id of survivingIds) {
+      if (JSON.stringify(rowShape(actualById.get(id))) !== JSON.stringify(rowShape(expectedById.get(id)))) {
+        fail(`search ${workspace}/${query}: baseline row ${id} changed`);
+      }
+    }
+    // A baseline row may be pushed out of the limited window only when new content
+    // legitimately entered the result set; otherwise it is a real regression.
+    for (const wantedRow of expected.results) {
+      if (!actualById.has(wantedRow.id) && newIds.length === 0) {
+        fail(`search ${workspace}/${query}: baseline row ${wantedRow.id} disappeared without new content`);
+      }
+    }
+    if (newIds.length > 0) {
+      for (const wantedRow of expected.results) {
+        if (!actualById.has(wantedRow.id)) drift(`search row displaced by new content ${workspace}/${query}: ${wantedRow.id}`);
+      }
     }
   }
 }

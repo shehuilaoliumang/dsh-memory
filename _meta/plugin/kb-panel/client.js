@@ -22,6 +22,15 @@ window.__ModuleLoader__.load({
     const React = require('react');
     const h = React.createElement;
     const { useState, useEffect, useCallback, useMemo, useRef } = React;
+    // Desktop Next wraps `sidebar.footer.action` in a scroll container
+    // (`overflow-y: auto`). A menu absolutely positioned inside that slot is
+    // clipped, so the reload menu is portalled to <body> when possible.
+    let createPortal = null;
+    try {
+      createPortal = require('react-dom').createPortal;
+    } catch {
+      createPortal = null;
+    }
 
     /**
      * Soft-refresh event: mounted panel surfaces re-read their read-only Host
@@ -97,7 +106,7 @@ window.__ModuleLoader__.load({
      * way to tell whether a page reload picked up new client code is to ask the
      * user what they see.
      */
-    const CLIENT_BUILD = '2026-11-04-c45';
+    const CLIENT_BUILD = '2026-11-06-c47';
 
     /**
      * panel.json URL that also carries this build. The Host records it, so the
@@ -1562,10 +1571,27 @@ window.__ModuleLoader__.load({
       const wide = !props || props.wide !== false;
       const [hovered, setHovered] = useState(false);
       const [menuOpen, setMenuOpen] = useState(false);
+      const [menuPos, setMenuPos] = useState(null);
       const [queued, setQueued] = useState(false);
       const [busyCount, setBusyCount] = useState(0);
       const [flash, setFlash] = useState('');
       const wrapRef = useRef(null);
+      const menuRef = useRef(null);
+      const caretRef = useRef(null);
+
+      // The footer slot owns a clipped, scrollable grid in Desktop Next; the
+      // menu is positioned against the viewport and rendered through a portal
+      // so it is never clipped by that container.
+      const placeMenu = useCallback(() => {
+        const caret = caretRef.current;
+        if (!caret || typeof window === 'undefined') return null;
+        const rect = caret.getBoundingClientRect();
+        const width = 248;
+        const margin = 8;
+        const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+        const left = Math.min(Math.max(rect.left + rect.width - width, margin), maxLeft);
+        return { left, bottom: Math.max(margin, window.innerHeight - rect.top + 6) };
+      }, []);
 
       useEffect(() => {
         if (!flash) return undefined;
@@ -1576,11 +1602,24 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (!menuOpen) return undefined;
         const close = (event) => {
-          if (wrapRef.current && !wrapRef.current.contains(event.target)) setMenuOpen(false);
+          const insideWrap = wrapRef.current && wrapRef.current.contains(event.target);
+          const insideMenu = menuRef.current && menuRef.current.contains(event.target);
+          if (!insideWrap && !insideMenu) setMenuOpen(false);
         };
         document.addEventListener('mousedown', close);
         return () => document.removeEventListener('mousedown', close);
       }, [menuOpen]);
+
+      useEffect(() => {
+        if (!menuOpen) return undefined;
+        const reposition = () => setMenuPos(placeMenu());
+        window.addEventListener('resize', reposition);
+        window.addEventListener('scroll', reposition, true);
+        return () => {
+          window.removeEventListener('resize', reposition);
+          window.removeEventListener('scroll', reposition, true);
+        };
+      }, [menuOpen, placeMenu]);
 
       // A queued full reload waits for every running turn to end. It never
       // forces a reload while `/kb/busy` reports work in progress.
@@ -1706,44 +1745,59 @@ window.__ModuleLoader__.load({
               'button',
               {
                 type: 'button',
+                ref: caretRef,
                 style: S.reloadCaret,
                 title: queued ? '等待空闲后完整重载' : '完整重载界面',
                 'aria-label': '完整重载界面',
                 'aria-haspopup': 'menu',
                 'aria-expanded': menuOpen,
-                onClick: () => setMenuOpen((value) => !value),
+                onClick: () => {
+                  if (menuOpen) {
+                    setMenuOpen(false);
+                    return;
+                  }
+                  setMenuPos(placeMenu());
+                  setMenuOpen(true);
+                },
               },
               '▾',
             )
           : null,
         wide && menuOpen
-          ? h(
-              'div',
-              { style: S.reloadMenu, role: 'menu' },
-              h(
+          ? (() => {
+              const menuStyle =
+                createPortal && menuPos
+                  ? { ...S.reloadMenu, position: 'fixed', left: menuPos.left, bottom: menuPos.bottom, zIndex: 1000 }
+                  : S.reloadMenu;
+              const menu = h(
                 'div',
-                { style: S.reloadMenuNote },
-                queued
-                  ? `正在等待 ${busyCount} 个对话结束；完成后自动完整重载`
-                  : '完整重载会刷新页面；有对话运行时会等待空闲，不会强制中断',
-              ),
-              h(
-                'button',
-                {
-                  type: 'button',
-                  role: 'menuitem',
-                  style: S.menuItem,
-                  onClick: queued
-                    ? () => {
-                        setQueued(false);
-                        setMenuOpen(false);
-                        setFlash('已取消');
-                      }
-                    : startFullReload,
-                },
-                queued ? '取消等待重载' : '完整重载界面',
-              ),
-            )
+                { ref: menuRef, style: menuStyle, role: 'menu' },
+                h(
+                  'div',
+                  { style: S.reloadMenuNote },
+                  queued
+                    ? `正在等待 ${busyCount} 个对话结束；完成后自动完整重载`
+                    : '完整重载会刷新页面；有对话运行时会等待空闲，不会强制中断',
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    role: 'menuitem',
+                    style: S.menuItem,
+                    onClick: queued
+                      ? () => {
+                          setQueued(false);
+                          setMenuOpen(false);
+                          setFlash('已取消');
+                        }
+                      : startFullReload,
+                  },
+                  queued ? '取消等待重载' : '完整重载界面',
+                ),
+              );
+              return createPortal && menuPos ? createPortal(menu, document.body) : menu;
+            })()
           : null,
       );
     }
@@ -1907,6 +1961,10 @@ window.__ModuleLoader__.load({
       const [hoveredNote, setHoveredNote] = useState(null);
       /** Type filter for the list (client-side; "all" keeps every type). */
       const [typeFilter, setTypeFilter] = useState('all');
+      /** Batch confirmation: explicit multi-select, then one batch-status call. */
+      const [batchMode, setBatchMode] = useState(false);
+      const [batchIds, setBatchIds] = useState([]);
+      const [batchBusy, setBatchBusy] = useState(false);
       /** Consolidate dialog: report + busy flag; actions go through /kb/atoms/batch. */
       const [consolidateOpen, setConsolidateOpen] = useState(false);
       const [consolidateReport, setConsolidateReport] = useState(null);
@@ -2327,6 +2385,27 @@ window.__ModuleLoader__.load({
         [load, notify, postAction, workspace],
       );
 
+      /** Explicit multi-select action in the list; one batch-status call. */
+      const applyBatch = useCallback(
+        async (status) => {
+          const list = [...new Set(batchIds)].filter(Boolean);
+          if (!list.length) return;
+          setBatchBusy(true);
+          try {
+            if (!(await postAction('/kb/atoms/batch', { ids: list, status, workspace }))) return;
+            notify(`${status === 'active' ? '已确认' : status === 'archived' ? '已归档' : '已更新'} ${list.length} 条`);
+            setBatchIds([]);
+            setBatchMode(false);
+            await load();
+          } catch {
+            setActionError('批量操作失败');
+          } finally {
+            setBatchBusy(false);
+          }
+        },
+        [batchIds, load, notify, postAction, workspace],
+      );
+
       /** Server-side BM25 over note bodies; read-only, results are ids only. */
       const runDeepSearch = useCallback(async () => {
         const q = query.trim();
@@ -2635,6 +2714,18 @@ window.__ModuleLoader__.load({
             : null,
           view && viewWritable
             ? h(KbButton, { disabled: consolidateBusy, onClick: () => void openConsolidate() }, '整理')
+            : null,
+          view && viewWritable
+            ? h(
+                KbButton,
+                {
+                  onClick: () => {
+                    setBatchMode(!batchMode);
+                    setBatchIds([]);
+                  },
+                },
+                batchMode ? '退出批量' : '批量',
+              )
             : null,
           h(KbButton, { onClick: () => load() }, '刷新'),
         ),
@@ -3012,10 +3103,12 @@ window.__ModuleLoader__.load({
                       const fallback = [];
                       if (deepResults.strategy && deepResults.strategy.pinyin) fallback.push('拼音兜底');
                       if (deepResults.strategy && deepResults.strategy.semantic) fallback.push('同义扩展');
+                      if (deepResults.strategy && deepResults.strategy.vector) fallback.push('向量近似');
                       return h(
                         'div',
                         { style: { ...S.muted, fontSize: '11px', marginTop: '6px' } },
                         `全文检索「${deepResults.query}」命中 ${deepResults.total} 条`,
+                        deepResults.intent && deepResults.intent.label ? ` · 意图：${deepResults.intent.label}` : '',
                         fallback.length ? `（${fallback.join(' + ')}）` : '',
                         ' · ',
                         h(
@@ -3082,6 +3175,26 @@ window.__ModuleLoader__.load({
                     ),
                   )
                 : null,
+              batchMode && viewWritable
+                ? h(
+                    'div',
+                    {
+                      style: {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        flexWrap: 'wrap',
+                        padding: '2px 0 10px',
+                        fontSize: '12px',
+                        color: 'var(--dsw-alias-label-secondary)',
+                      },
+                    },
+                    h('span', null, `已选 ${batchIds.length} 条`),
+                    h(KbButton, { disabled: batchBusy || !batchIds.length, variant: 'primary', onClick: () => void applyBatch('active') }, '确认'),
+                    h(KbButton, { disabled: batchBusy || !batchIds.length, onClick: () => void applyBatch('archived') }, '归档'),
+                    h(KbButton, { disabled: batchBusy || !batchIds.length, onClick: () => setBatchIds([]) }, '清空'),
+                  )
+                : null,
               notes.length
                 ? h(
                     'ul',
@@ -3089,13 +3202,51 @@ window.__ModuleLoader__.load({
                     notes.map((note) =>
                       h(
                         'li',
-                        { key: note.uid || note.id },
+                        {
+                          key: note.uid || note.id,
+                          style: { display: 'flex', alignItems: 'center', gap: '6px' },
+                        },
+                        batchMode && viewWritable
+                          ? h(
+                              'button',
+                              {
+                                type: 'button',
+                                role: 'checkbox',
+                                'aria-checked': batchIds.includes(note.uid || note.id),
+                                'aria-label': `选择 ${note.title || note.summary || note.id}`,
+                                style: {
+                                  flex: '0 0 auto',
+                                  width: '18px',
+                                  height: '18px',
+                                  borderRadius: '5px',
+                                  border: '1px solid var(--dsw-alias-border-strong, rgba(0,0,0,0.25))',
+                                  background: batchIds.includes(note.uid || note.id) ? 'var(--dsw-alias-brand-primary)' : 'transparent',
+                                  color: 'var(--dsw-alias-bg-base, #fff)',
+                                  fontSize: '11px',
+                                  lineHeight: '16px',
+                                  padding: 0,
+                                  cursor: 'pointer',
+                                },
+                                onClick: () => {
+                                  const key = note.uid || note.id;
+                                  setBatchIds((previous) =>
+                                    previous.includes(key)
+                                      ? previous.filter((entry) => entry !== key)
+                                      : [...previous, key],
+                                  );
+                                },
+                              },
+                              batchIds.includes(note.uid || note.id) ? '✓' : '',
+                            )
+                          : null,
                         h(
                           'button',
                           {
                             type: 'button',
                             style: {
                               ...S.noteBtn2,
+                              flex: '1 1 auto',
+                              minWidth: 0,
                               ...(selected === (note.uid || note.id) ? S.noteOn : null),
                               ...(hoveredNote === (note.uid || note.id) && selected !== (note.uid || note.id) ? S.noteHover : null),
                             },
@@ -3288,6 +3439,22 @@ window.__ModuleLoader__.load({
             )
           : null;
 
+      const suggestionCard =
+        data && data.injection && Array.isArray(data.injection.suggestions) && data.injection.suggestions.length
+          ? h(
+              'details',
+              { style: { ...S.details, margin: '0 0 8px' } },
+              h('summary', { style: S.summary }, `另有 ${data.injection.suggestions.length} 条接近入选（预算已满）`),
+              ...data.injection.suggestions.map((entry) =>
+                h(
+                  'div',
+                  { key: `${entry.source}:${entry.id}`, style: S.injectionRow },
+                  `· ${entry.summary}（${entry.id} · ${entry.source}）`,
+                ),
+              ),
+            )
+          : null;
+
       // Consolidate report view: every button is an explicit action; the report
       // itself never mutates the store.
       const report = consolidateReport || {};
@@ -3296,6 +3463,34 @@ window.__ModuleLoader__.load({
       const reportCandidates = Array.isArray(report.readCandidates) ? report.readCandidates : [];
       const reportUncovered = Array.isArray(report.uncoveredAtoms) ? report.uncoveredAtoms : [];
       const reportWork = report.work || {};
+
+      const HEALTH_KIND_LABEL = {
+        conflict: '结论冲突',
+        'orphan-supersedes': '取代目标缺失',
+        'pending-supersedes': '取代待确认',
+        'missing-subject': '缺主题',
+        'scope-mismatch': '范围可疑',
+        stale: '长期未更新',
+        'review-due': '待复审',
+        duplicate: '重复摘要',
+        unclassified: '未分类',
+        'low-recall': '低召回',
+      };
+      const memoryHealthCard =
+        data && data.memoryHealth
+          ? h(
+              'details',
+              { style: { ...S.details, margin: '0 0 8px' } },
+              h('summary', { style: S.summary }, `记忆健康：${data.memoryHealth.headline || '未发现问题'}`),
+              ...(Array.isArray(data.memoryHealth.issues) ? data.memoryHealth.issues : []).slice(0, 8).map((issue) =>
+                h(
+                  'div',
+                  { key: `${issue.kind}:${(issue.ids || []).join(',')}`, style: S.injectionRow },
+                  `· [${HEALTH_KIND_LABEL[issue.kind] || issue.kind}] ${issue.message}`,
+                ),
+              ),
+            )
+          : null;
 
       const runStatus = healthBar
         ? h(
@@ -3315,9 +3510,11 @@ window.__ModuleLoader__.load({
           header,
           statusBar,
           injectionCard,
+          suggestionCard,
           workspaceSetup,
           actionError ? h('div', { style: S.errorBar }, actionError) : null,
           body,
+          memoryHealthCard,
           runStatus ? h('div', { style: S.pageFooter }, runStatus) : null,
         ),
         toast ? h('div', { style: S.toast, role: 'status', 'aria-live': 'polite' }, toast) : null,

@@ -156,6 +156,50 @@ test('cross-store subject arbitration keeps the newer claim', () => {
   assert.match(old.injection.detail, /2026-11-04-a-0301/);
 });
 
+test('adaptive budget spills unused slots across the source boundary', () => {
+  const globalStore = makeStore('global', { slug: 'global', global: true });
+  for (let i = 0; i < 4; i += 1) {
+    writeAtom(globalStore, {
+      id: `2026-11-04-a-07${i}0`,
+      scope: 'global',
+      title: `全局 ${i}`,
+      summary: `全局记忆 ${i}`,
+      updated: `2026-11-0${i + 1}`,
+    });
+  }
+  const project = makeStore('demo6', { slug: 'demo6' });
+  writeAtom(project, { id: '2026-11-04-a-0701', scope: 'project:demo6', summary: '项目记忆' });
+  const surface = surfaceFor({ globalRoot: globalStore, projectRoot: project });
+  const selected = surface.selectInjection('project:demo6');
+  // Base global cap is 2; with only one project candidate the two spare slots
+  // move to the global overflow, but its hard ceiling is 4.
+  assert.equal(selected.globalPicked.length, 4);
+  assert.equal(selected.projectPicked.length, 1);
+  assert.equal(selected.globalPicked.length + selected.projectPicked.length, 5);
+});
+
+test('adaptive budget keeps suggestions for near-miss candidates', () => {
+  const globalStore = makeStore('global', { slug: 'global', global: true });
+  for (let i = 0; i < 8; i += 1) {
+    writeAtom(globalStore, {
+      id: `2026-11-04-a-08${i}0`,
+      scope: 'global',
+      title: `全局 ${i}`,
+      summary: `全局记忆 ${i}`,
+      updated: `2026-11-0${i + 1}`,
+    });
+  }
+  const project = makeStore('demo7', { slug: 'demo7' });
+  writeAtom(project, { id: '2026-11-04-a-0901', scope: 'project:demo7', summary: '项目记忆' });
+  const surface = surfaceFor({ globalRoot: globalStore, projectRoot: project });
+  const selected = surface.selectInjection('project:demo7');
+  assert.equal(selected.globalPicked.length + selected.projectPicked.length, 5);
+  assert.equal(selected.globalPicked.length, 4);
+  assert.equal(selected.projectPicked.length, 1);
+  assert.ok(selected.suggestions.length > 0);
+  assert.equal(selected.suggestions[0].reason, 'budget');
+});
+
 test('search aggregates stores and tags each row with its workspace', () => {
   const globalStore = makeStore('global', { slug: 'global', global: true });
   writeAtom(globalStore, { id: '2026-11-04-a-0400', scope: 'global', title: '发布流程', summary: '发布流程' });
@@ -180,7 +224,7 @@ test('unknown query does not fall back to unrelated memories', () => {
   const surface = surfaceFor({ globalRoot: globalStore, projectRoot: project });
   const result = surface.search({ workspace: 'all', query: 'zzqqxx', limit: 10 });
   assert.equal(result.total, 0);
-  assert.deepEqual(result.strategy, { pinyin: false, semantic: false });
+  assert.deepEqual(result.strategy, { pinyin: false, semantic: false, vector: false });
 });
 
 test('snapshotAll unions stores read-only with workspace-tagged uids', () => {

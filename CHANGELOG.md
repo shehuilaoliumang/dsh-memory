@@ -2,6 +2,18 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 3.2.0 — 2026-11-06
+
+记忆智能增强（minor：候选建议与分层确认、自适应注入预算与排序实验、记忆健康、检索意图/向量回退；仍零运行时依赖、写入 fail-closed、无跨库写）。
+
+- **更聪明的候选（①）**：新增 `_meta/engine/lib/candidates.mjs`，对裁判原子做显式记忆识别、摘要相似度去重建议、`subject`/`supersedes`/`scope` 建议与审计备注；`judge.js` 接入并把候选信息写入 `note`，不改变默认 inbox 语义。
+- **分层确认与自动激活（②）**：新增可配置 `judge.autoActivate`（默认关闭；仅显式记忆/项目库/会话 scope 匹配且置信度与历史反馈达标时激活，global/system 永不自动激活）；复用 `_meta/state/judge-feedback.jsonl` 的确认/拒绝统计；记忆页新增列表级多选「批量确认/归档/清空」，继续走 `/kb/atoms/batch` 与登录/写权限校验。
+- **自适应预算与排序实验（③）**：`read-model.mjs` 在全局 2/项目 3/总计 5 基础预算上，把未用槽位按排名回填（全局硬上限 4、总计 5），并在 `injection.suggestions` 暴露最多 3 条“预算已满但接近入选”；新增 `rank-experiment.mjs` 按 session 稳定分桶记录 heat/relevance 分配（`_meta/state/rank-experiment.jsonl`，默认关闭），prompt 注入可按实验模式使用相关性 query。
+- **记忆健康（④）**：新增 `_meta/engine/lib/health.mjs` 纯函数健康分析（冲突、孤儿取代、待生效取代、缺 subject、scope 可疑、陈旧、到期复核、重复、未分类、低召回），`/kb/panel.json` 返回报告 + headline，记忆页展示健康卡与问题明细。
+- **检索升级（⑤）**：新增 `intent.mjs` 查询意图分类（状态/决策/偏好/通用）与 `vector.mjs` 零依赖 2048 桶 FNV n-gram 向量回退（特征重叠阈值 + minScore 0.12），`semantic.mjs` 增加 catalog 行 tags/subject/title 同义扩展；`kb search` 字面命中按意图 ×1.15 重排，回退链拼音→同义→向量；JSON 增 `intent` 与 `strategy.vector`，面板深度搜索显示意图与「向量近似」。
+- **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.2.0，客户端 c47；插件 193/193、engine 78/78（read-model 8 + host 6 + conformance 4 + candidates 15 + health 33 + search-upgrade 12）、脚本 17/17、smoke 106/106、`check-plugin-load` 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS；本地 `validate` 15 篇/主索引 13 + 归档 1、0 警告；parity 6 content drift / 0 regression；bench 5×300 检索约 346ms/快照约 125ms/零 spawn。
+- 公开快照：3.2.0 发布后回填。
+
 ## 3.1.0 — 2026-11-05
 
 第三宿主与 legacy 回退删除（minor：新增本地 HTTP 宿主与三宿主一致性闸门；删除 3.0 的 `surface.unified` 回退与插件本地三件套；写入授权/注入预算/fail-closed 边界不变）。

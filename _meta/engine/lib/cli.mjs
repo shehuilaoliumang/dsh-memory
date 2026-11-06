@@ -32,7 +32,9 @@ import { redactSecrets } from './redact.mjs';
 import { parseFrontmatter } from './shared/frontmatter.mjs';
 import { WORK_SECTIONS } from './shared/work-sections.mjs';
 import { pinyinAvailable, toPinyin } from './search/pinyin.mjs';
-import { expandQuery } from './search/semantic.mjs';
+import { expandQueryWithRows } from './search/semantic.mjs';
+import { classifyQuery } from './search/intent.mjs';
+import { vectorRank } from './search/vector.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // A store root is not derivable from the engine package location: the caller
@@ -825,9 +827,13 @@ function pinyinRank(docs, query, limit = 5) {
  * Synonym fallback: expand the query through `search/semantic.mjs`, rank the
  * expanded terms with a relaxed match requirement, then halve the score so a
  * literal hit always wins. Every result carries the alias that caused it.
+ *
+ * `seedRows` are the top literal hits; their tags/subject/title seed extra
+ * expansion terms, so a paraphrase can be bridged by the vocabulary the catalog
+ * itself uses. With no rows this is the plain synonym table.
  */
-function semanticRank(docs, query, limit = 5) {
-  const expansion = expandQuery(query);
+function semanticRank(docs, query, limit = 5, seedRows = []) {
+  const expansion = expandQueryWithRows(query, seedRows);
   if (!expansion.terms.length || !docs.length) return [];
   const expanded = `${query} ${expansion.terms.join(' ')}`;
   const { results } = bm25Rank(docs, expanded, limit, { requiredMatches: 1 });
@@ -854,6 +860,7 @@ function cmdSearch(opts) {
     const d = n.data;
     const { body } = parseFrontmatter(readText(n.file));
     const tags = Array.isArray(d.tags) ? d.tags.join(' ') : (d.tags || '');
+    const tagList = Array.isArray(d.tags) ? d.tags.map(String) : (d.tags ? [String(d.tags)] : []);
     return {
       id: d.id,
       title: String(d.title || ''),
@@ -864,13 +871,29 @@ function cmdSearch(opts) {
       summary: String(d.summary || ''),
       updated: d.updated,
       path: n.rel,
+      // Catalog-shaped metadata for the row-seeded synonym expansion; never
+      // rendered in search output and never a candidate filter.
+      tags: tagList,
+      subject: typeof d.subject === 'string' ? d.subject : '',
       text: [d.title, d.title, d.title, d.summary, d.summary, tags, d.scope, body].filter(Boolean).join('\n'),
     };
   });
-  const literal = bm25Rank(docs, query, limit);
-  const merged = literal.results.map((row) => ({ ...row, matchedBy: 'literal', matchLabel: '' }));
+  const literal = bm25Rank(docs, query, docs.length);
+  const intent = classifyQuery(query);
+  // Intent only nudges the *literal* rows, after the required-match filter, so
+  // it can reorder notes that are already about the query but never add one.
+  const boosted = literal.results.map((row) => (
+    intent.boostTypes.includes(row.type) || intent.boostLevels.includes(row.level)
+      ? { ...row, score: row.score * 1.15 }
+      : row
+  ));
+  boosted.sort((a, b) => b.score - a.score
+    || String(b.updated || '').localeCompare(String(a.updated || ''))
+    || a.id.localeCompare(b.id));
+  const literalRows = boosted.slice(0, limit);
+  const merged = literalRows.map((row) => ({ ...row, matchedBy: 'literal', matchLabel: '' }));
   const seen = new Set(merged.map((row) => row.id));
-  const strategy = { pinyin: false, semantic: false };
+  const strategy = { pinyin: false, semantic: false, vector: false };
   const fallbackTarget = Math.min(limit, 3);
   const append = (rows, flag) => {
     let added = 0;
@@ -885,7 +908,10 @@ function cmdSearch(opts) {
     return added;
   };
   if (merged.length < fallbackTarget) append(pinyinRank(docs, query, limit), 'pinyin');
-  if (merged.length < fallbackTarget) append(semanticRank(docs, query, limit), 'semantic');
+  if (merged.length < fallbackTarget) append(semanticRank(docs, query, limit, literalRows), 'semantic');
+  // Hashed-cosine approximation is the last resort: it only fills when the
+  // lexical/synonym stages left the fallback target short.
+  if (merged.length < fallbackTarget) append(vectorRank(docs, query, limit), 'vector');
   const total = literal.total + merged.filter((row) => row.matchedBy !== 'literal').length;
   const results = merged.slice(0, limit);
   const payload = {
@@ -893,6 +919,7 @@ function cmdSearch(opts) {
     limit,
     total,
     strategy,
+    intent: { intent: intent.intent, label: intent.label },
     results: results.map(({ id, title, level, type, status, scope, summary, updated, path, score, matchedBy, matchLabel, matchTerms }) => ({
       id, title, level, type, status, scope, summary, updated, path,
       score: Number(Number(score).toFixed(4)),
@@ -902,10 +929,11 @@ function cmdSearch(opts) {
     })),
   };
   if (opts.json) return out(JSON.stringify(payload, null, 2));
+  out(`意图：${intent.label}`);
   if (!results.length) return out(`没有匹配：「${query}」`);
   out(`检索「${query}」：${total} 条命中，显示前 ${results.length} 条`);
-  if (strategy.pinyin || strategy.semantic) {
-    out(`（回退：${[strategy.pinyin ? '拼音' : '', strategy.semantic ? '同义扩展' : ''].filter(Boolean).join(' + ')}）`);
+  if (strategy.pinyin || strategy.semantic || strategy.vector) {
+    out(`（回退：${[strategy.pinyin ? '拼音' : '', strategy.semantic ? '同义扩展' : '', strategy.vector ? '向量近似' : ''].filter(Boolean).join(' + ')}）`);
   }
   for (const [i, row] of results.entries()) {
     out(`${i + 1}. [${row.id}] ${row.title}（${row.score.toFixed(2)}）${row.matchLabel ? ` ${row.matchLabel}` : ''}`);

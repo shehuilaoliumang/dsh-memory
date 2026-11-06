@@ -59,7 +59,8 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 - **2.4.1 注入解释同源**：`explainInjection` 接收 `selectInjection` 的 catalog-backed 跨库候选（`candidates`），跨库同 subject 与未 `rebuild` 窗口的标签与真实注入一致（第 15 轮复审 B1/B2）。
 - **2.4 检索回退/注入原因**：`lib/search/pinyin.mjs`（vendored tiny-pinyin 1.3.2 MIT，全拼/首字母，ASCII 查询，`Intl.Collator` 缺失降级为空）+ `lib/search/semantic.mjs`（21 组中英同义词，整词/中文 ≥2 字扩展，单组 ≤4、总 ≤10）只在字面命中 < min(limit,3) 时补位，语义分 ×0.5，响应带 `strategy`/`matchedBy`，仍不写 access；`lib/injection-reasons.mjs` 的 `explainInjection` 给逐条注入原因（advisory，不参与选择），插件写入 `/kb/panel.json` 的 `notes[].injection`。
 - **3.0.1 读面单一入口与 parity 可证伪**：插件 prompt 注入也走 `createSurface().selectInjection()`（本地三件套仅 `surface.unified:false` 回退），engine 补回项目库 global 泄漏告警；`compare-parity.mjs` 夹具扩为 6 条（4 个 global 候选竞争 2 槽、精确顺序、跨库同 subject 取代），`GLOBAL_INJECTION_LIMIT 2→3` 变异已验证会失败。
-- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 7 JSON / 9 manifest / 19 engine / 2 locale / 36 JS）；插件单测 187 条（含 context 5、behavior-matrix 9、inject-ranking 8、engine-api 3、search-fallback 4；work-brief 36），engine 另含 read-model 6、host 6 与 host-conformance 4，`compare-parity.mjs`/`bench-read-model.mjs` 为 3.0 读面闸门、3.1 起 host-conformance 覆盖 direct/MCP/HTTP 三宿主。
+- **3.2 记忆智能增强**：`lib/candidates.mjs`（候选建议/显式记忆/autoActivate）、`lib/health.mjs`（10 类只读健康）、`lib/search/intent.mjs`（意图分类）、`lib/search/vector.mjs`（2048 桶 n-gram 近似，非 embedding）；read-model 自适应预算与 `injection.suggestions`，插件 `rank-experiment.mjs` 稳定分桶（默认关闭），`judge.autoActivate` 默认关闭。
+- **闸门**：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本一致性/语法（当前 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS）；插件单测 193 条（含 context 5、behavior-matrix 9、inject-ranking 8、engine-api 3、search-fallback 4、rank-experiment 6；work-brief 36），engine 另含 read-model 8、host 6、host-conformance 4、candidates 15、health 33、search-upgrade 12，`compare-parity.mjs`/`bench-read-model.mjs` 为 3.0 读面闸门、3.1 起 host-conformance 覆盖 direct/MCP/HTTP 三宿主。
 
 ## 设计约束
 
@@ -122,7 +123,8 @@ node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
 node _meta/plugin/kb-panel/test/inject-ranking.test.mjs
 node _meta/plugin/kb-panel/test/engine-api.test.mjs
 node _meta/plugin/kb-panel/test/search-fallback.test.mjs
-# 共 187 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 36 / http-guard 14 / redact 8 / shared-frontmatter 4 / stores 21 / context 5 / behavior-matrix 9 / inject-ranking 8 / engine-api 3 / search-fallback 4
+# 共 193 条：ingest 34 / judge 30 / promote 5 / transcript 6 / work-brief 36 / http-guard 14 / redact 8 / shared-frontmatter 4 / stores 21 / context 5 / behavior-matrix 9 / inject-ranking 8 / engine-api 3 / search-fallback 4 / rank-experiment 6
+# engine 78 条：read-model 8 / host 6 / host-conformance 4 / candidates 15 / health 33 / search-upgrade 12
 ```
 
 ## 脚本单测（export rules）

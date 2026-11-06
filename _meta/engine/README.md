@@ -65,7 +65,9 @@ MCP stdout 只输出 JSON-RPC；HTTP 启动时向 stdout 输出一条启动记�
 - `lib/promote.mjs` — 单条原子提升为全局
 - `lib/redact.mjs` — 写原文/裁判 prompt 前的脱敏
 - `lib/injection-reasons.mjs` — 逐条注入原因（v2.4，纯函数/advisory）
-- `lib/search/pinyin.mjs`、`lib/search/semantic.mjs` — 检索回退（v2.4；拼音 vendored tiny-pinyin 1.3.2 MIT，见 `PINYIN-NOTICE.md`）
+- `lib/candidates.mjs` — 候选建议/显式记忆/autoActivate 判定（v3.2，纯函数/advisory）
+- `lib/health.mjs` — 10 类只读记忆健康报告（v3.2，纯函数）
+- `lib/search/pinyin.mjs`、`lib/search/semantic.mjs`、`lib/search/intent.mjs`、`lib/search/vector.mjs` — 检索回退/意图/向量近似（v2.4、v3.2；拼音 vendored tiny-pinyin 1.3.2 MIT，见 `PINYIN-NOTICE.md`）
 - `lib/shared/frontmatter.mjs`、`lib/shared/work-sections.mjs` — 共享解析契约
 - `bin/kb.mjs` → `lib/cli.mjs` — 校验/索引/写入/检索/整理/工作页/删除闸门/attach
 
@@ -77,8 +79,8 @@ MCP stdout 只输出 JSON-RPC；HTTP 启动时向 stdout 输出一条启动记�
 - 依赖方向固定为 **engine ← plugin**：engine 零 DSH/插件依赖；插件、`_meta/scripts/`
   与文档都是下游。禁止在 engine 里 import DSH API 或 `_meta/plugin/`。
 - 公开模块：`lib/index.mjs`（聚合导出）与 `package.json` 的 `exports` 子路径
-  （`./context`、`./stores`、`./work-brief`、`./injection`、`./read-model`、`./host`、`./hosts/http`、`./injection-reasons`、`./promote`、`./redact`、
-  `./search/pinyin`、`./search/semantic`、`./shared/frontmatter`、`./shared/work-sections`）；CLI 入口 `bin/kb.mjs`。
+  （`./context`、`./stores`、`./work-brief`、`./injection`、`./read-model`、`./host`、`./hosts/http`、`./injection-reasons`、`./candidates`、`./health`、`./promote`、`./redact`、
+  `./search/pinyin`、`./search/semantic`、`./search/intent`、`./search/vector`、`./shared/frontmatter`、`./shared/work-sections`）；CLI 入口 `bin/kb.mjs`。
   v2.4 的检索/解释模块经 `exports` 子路径提供；3.0 起 `lib/index.mjs` 聚合导出 `injection.mjs`/`read-model.mjs`，`read-model`/`host` 也作为子路径导出。
 - 上下文语义：`lib/context.mjs` 是唯一「会话能看哪些 store、能写哪个 store」的决策
   （`describeStore`/`resolveContext`/`resolveWriteTarget`，写权限 fail closed）。
@@ -115,12 +117,14 @@ MCP stdout 只输出 JSON-RPC；HTTP 启动时向 stdout 输出一条启动记�
   topic/work/session → fail-closed scope → 同 subject 更新 → 预算满 → 本轮未入选。插件用它在
   `/kb/panel.json` 的 `notes[].injection` 展示原因。v2.4.1 起该函数接收 `selectInjection` 的 catalog-backed 跨库候选（`candidates`），同 subject 取代与真实选择同源。
 - **多库只读视图（v2.4 起；v3.0 服务端单快照）**：3.0 起插件 `/kb/panel.json?workspace=all` 由 `surface.snapshotAll()` 一次合并（每库候选/注入/标签均由 read model 产出，`uid = workspaceId::noteId`），`GET /kb/search.json?workspace=all` 也走 `surface.search()`，逐库白名单过滤、结果带 `workspace`/`workspaceLabel`、全局最多 20 条、按 score 排序；只读、不跨库写、不写 access。2.x 客户端并发合并仅作为 `surface.unified:false` 回退。
+- **记忆智能增强（v3.2）**：`candidates.mjs` 在 judge 写盘前给 subject/supersedes/scope 建议与显式记忆识别（只写 note，不改状态），`autoActivateDecision()` 默认关闭且 global/system 永不自动；read-model 在 base 2/3/5 上回填未用槽（global 硬上限 4、total 5）并返回 `suggestions`；`rank-experiment.mjs` 按 session 稳定分桶 heat/relevance（默认关闭）；`health.mjs` 10 类只读报告；`search/intent.mjs` 意图、`search/vector.mjs` 2048 桶 n-gram 近似（非 embedding）、catalog 同义扩展。
 - 闸门：`_meta/scripts/check-plugin-load.mjs` 校验 engine 清单/版本/语法
-  （19 个 engine 文件、36 个 JS）；`read-model.test.mjs` 6 条 + `host.test.mjs` 6 条 +
+  （23 个 engine 文件、45 个 JS）；`read-model.test.mjs` 8 条 + `host.test.mjs` 6 条 +
   `host-conformance.test.mjs` 4 条覆盖统一读面/宿主/MCP/HTTP 三宿主一致性；
+  `candidates.test.mjs` 15 条、`health.test.mjs` 33 条、`search-upgrade.test.mjs` 12 条；
   `context.test.mjs` 5 条 + `behavior-matrix.test.mjs` 9 条 + `inject-ranking.test.mjs` 8 条 +
   `engine-api.test.mjs` 3 条 + `search-fallback.test.mjs` 4 条覆盖上下文/路由/排序/进程内 API/检索回退，
-  插件单测合计 187 条；`work-brief.test.mjs` 36 条覆盖排名/预算/简报/注入解释同源（v2.4.1）。
+  插件单测合计 193 条；`work-brief.test.mjs` 36 条覆盖排名/预算/简报/注入解释同源（v2.4.1）。
   `compare-parity.mjs`（2.4.1 基线 0 regression）与 `bench-read-model.mjs`（5 库 × 300 条）已进 CI。
 
 ## 复核条件

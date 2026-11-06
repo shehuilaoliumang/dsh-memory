@@ -79,7 +79,15 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 ## 引擎包（可继承性）
 
-v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。v2.1 起 6 个插件 shim 已删除，插件直接 import `_meta/engine/lib/*`；engine 增加跨进程 registry 锁 `withRegistryLock`，导出规则抽为纯函数并进 CI。v2.2 起提供**进程内 API**：`runCli(argv, { root })` → `{ code, stdout, stderr }`、不污染宿主状态，`createEngine({ root }).run(argv)` 为状态化门面（同步、单线程、单根顺序）；同时库面行为改由 **policy** 表达（legacy 不是独立行为分支，见下）。v2.3 起排序按曝光加权（`inject`×0.1）、项目 store 带 1 个 exploration 槽，注入优先读 `catalog.jsonl`（含 title/scope/subject），BM25 检索按字段加权。v2.4 起检索增加拼音/首字母与同义词回退，`/kb/panel.json` 逐条给出注入原因，`workspace=all` 提供只读多库合并视图。v3.0 起注入选择/解释/检索/全库快照统一到 `read-model.mjs`，并新增宿主契约与零依赖 MCP stdio 第二宿主；3.0.1 起 prompt 注入也走同一 `surface.selectInjection()`，parity 夹具覆盖全局预算/顺序/跨库取代；3.1.0 新增零依赖本地 HTTP 第三宿主与 direct/MCP/HTTP 一致性闸门，并删除 `surface.unified` 回退与插件 legacy 三件套。2.0.0 是结构版本（行为不变），2.1–2.4 是行为 minor，3.0.0 是内部结构 major（行为边界不变），3.0.1 为第 17 轮复审 D1/D2 补丁，3.1.0 为第三宿主 minor。
+v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。v2.1 起 6 个插件 shim 已删除，插件直接 import `_meta/engine/lib/*`；engine 增加跨进程 registry 锁 `withRegistryLock`，导出规则抽为纯函数并进 CI。v2.2 起提供**进程内 API**：`runCli(argv, { root })` → `{ code, stdout, stderr }`、不污染宿主状态，`createEngine({ root }).run(argv)` 为状态化门面（同步、单线程、单根顺序）；同时库面行为改由 **policy** 表达（legacy 不是独立行为分支，见下）。v2.3 起排序按曝光加权（`inject`×0.1）、项目 store 带 1 个 exploration 槽，注入优先读 `catalog.jsonl`（含 title/scope/subject），BM25 检索按字段加权。v2.4 起检索增加拼音/首字母与同义词回退，`/kb/panel.json` 逐条给出注入原因，`workspace=all` 提供只读多库合并视图。v3.0 起注入选择/解释/检索/全库快照统一到 `read-model.mjs`，并新增宿主契约与零依赖 MCP stdio 第二宿主；3.0.1 起 prompt 注入也走同一 `surface.selectInjection()`，parity 夹具覆盖全局预算/顺序/跨库取代；3.1.0 新增零依赖本地 HTTP 第三宿主与 direct/MCP/HTTP 一致性闸门，并删除 `surface.unified` 回退与插件 legacy 三件套；3.2.0 增加候选建议/分层确认/自适应预算/健康检查/检索意图与哈希向量回退，仍零运行时依赖、写入 fail-closed。2.0.0 是结构版本（行为不变），2.1–2.4 是行为 minor，3.0.0 是内部结构 major（行为边界不变），3.0.1 为第 17 轮复审 D1/D2 补丁，3.1.0 为第三宿主 minor，3.2.0 为记忆智能 minor。
+
+## v3.2 新增（候选建议、分层确认、自适应预算、健康、检索升级）
+
+- **候选与确认**：`_meta/engine/lib/candidates.mjs` 为裁判原子做显式记忆识别、去重/主题/取代/scope 建议与审计备注；`judge.autoActivate` 默认关闭，开启后仅低风险路径自动 active（global/system 永不自动）；记忆页新增列表多选「批量确认/归档」，复用 `/kb/atoms/batch` 与 `judge-feedback.jsonl`。
+- **自适应预算与排序实验**：`read-model.mjs` 在全局 2/项目 3/总计 5 上把未用槽位按排名回填（global 硬上限 4、total 5），`injection.suggestions` 给出最多 3 条“预算已满但接近入选”；`rank-experiment.mjs` 按 session 稳定分桶记录 heat/relevance 分配（默认关闭）。
+- **记忆健康**：`_meta/engine/lib/health.mjs` 纯函数检查冲突/孤儿取代/待生效取代/缺 subject/scope 可疑/陈旧/到期复核/重复/未分类/低召回，`/kb/panel.json` 返回报告与 headline，面板健康卡展示明细；只读 advisory。
+- **检索升级**：`intent.mjs` 查询意图分类（状态/决策/偏好/通用）+ `vector.mjs` 零依赖 2048 桶 FNV n-gram 向量回退 + catalog 行同义扩展；`kb search` 按意图重排字面命中，回退链拼音→同义→向量，JSON 新增 `intent`/`strategy.vector`，面板深度搜索显示意图与「向量近似」。仍不写 access、不做 embedding。
+- **闸门/发布**：插件 193/193、engine 78/78、脚本 17/17、smoke 106/106、check 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS、本地 validate 15 篇/13+1、parity 0 回归；3.2.0 发布后回填 public commit/CI/快照。
 
 ## v3.1 新增（HTTP 第三宿主、删除回退）
 
@@ -156,17 +164,20 @@ node _meta/plugin/kb-panel/test/stores.test.mjs
 node _meta/plugin/kb-panel/test/promote.test.mjs
 node _meta/plugin/kb-panel/test/context.test.mjs
 node _meta/plugin/kb-panel/test/behavior-matrix.test.mjs
+node _meta/plugin/kb-panel/test/rank-experiment.test.mjs
 
 # 脚本单测（导出安全规则，CI 同款）
 node --test --test-isolation=none _meta/scripts/test/export-rules.test.mjs
 
 # 3.0/3.1 读面/宿主与闸门
 node --test --test-isolation=none _meta/engine/test/read-model.test.mjs _meta/engine/test/host.test.mjs _meta/engine/test/host-conformance.test.mjs
+# 3.2 候选/健康/检索升级
+node --test --test-isolation=none _meta/engine/test/candidates.test.mjs _meta/engine/test/health.test.mjs _meta/engine/test/search-upgrade.test.mjs
 node _meta/engine/test/compare-parity.mjs
 node _meta/engine/test/bench-read-model.mjs
 ```
 
-当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 187 条全过、脚本测试 17 条全过、引擎 read-model 6/6、host 6/6、host-conformance 4/4；**本地完整库** `validate` 14 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 7 决策）/主索引 12 行 + 归档 1 行、0 警告；闸门 7 JSON / 9 manifest / 19 engine / 2 locale / 36 JS。公开快照（无 `10_Raw/`）13 篇（core.md + 工作页 + 4 digest 原子 + 7 决策）/主索引 11 行 + 归档 1 行、0 警告。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
+当前：冒烟 106 条断言全过（夹具自包含，不再依赖存量笔记）、插件单测 193 条全过、脚本测试 17 条全过、引擎 78 条全过（read-model 8 + host 6 + host-conformance 4 + candidates 15 + health 33 + search-upgrade 12）；**本地完整库** `validate` 15 篇（core.md + `10_Raw` 会话 + 工作页 + 4 digest 原子 + 8 决策）/主索引 13 行 + 归档 1 行、0 警告；闸门 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS。公开快照（无 `10_Raw/`）14 篇（core.md + 工作页 + 4 digest 原子 + 8 决策）/主索引 12 行 + 归档 1 行、0 警告。`30_Canon/decisions` 更早历史见 git `bdf14e3`。
 
 ## 裁判评估
 

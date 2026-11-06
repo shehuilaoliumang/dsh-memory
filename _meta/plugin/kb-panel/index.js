@@ -53,7 +53,9 @@ import { parseFrontmatterData as parseFrontmatter } from '../../engine/lib/share
 import { globalAtomSpec, isGlobalPromotable, localDateStamp } from '../../engine/lib/promote.mjs';
 import { briefText, currentTruthNotes } from '../../engine/lib/work-brief.mjs';
 import { isInsideLegacy, resolveContext, resolveWriteTarget } from '../../engine/lib/context.mjs';
-import { createSurface } from '../../engine/lib/read-model.mjs';
+import { createSurface, readAccessRows, scanStoreNotes } from '../../engine/lib/read-model.mjs';
+import { assignmentSummary, recordAssignment, resolveRankExperiment, resolveRankMode } from './rank-experiment.mjs';
+import { analyzeMemoryHealth, healthSummary } from '../../engine/lib/health.mjs';
 
 export const inject = ['webServer', 'systemPrompt'];
 
@@ -166,18 +168,41 @@ export function apply(ctx, config = {}) {
    * model sees, so it must be opted into and compared, not flipped silently.
    */
   const injectConfig = (() => {
-    const fallback = { rankMode: 'heat', relevanceMaxAgeMs: 1800000 };
+    const fallback = {
+      rankMode: 'heat',
+      relevanceMaxAgeMs: 1800000,
+      rankExperiment: resolveRankExperiment(null),
+    };
     try {
       const raw = JSON.parse(fs.readFileSync(path.join(root, '_meta', 'config.json'), 'utf8'));
       const inject = raw && raw.inject ? raw.inject : {};
       return {
         rankMode: inject.rankMode === 'relevance' ? 'relevance' : 'heat',
         relevanceMaxAgeMs: Number(inject.relevanceMaxAgeMs) > 0 ? Number(inject.relevanceMaxAgeMs) : fallback.relevanceMaxAgeMs,
+        rankExperiment: resolveRankExperiment(inject.rankExperiment),
       };
     } catch {
       return fallback;
     }
   })();
+  /**
+   * Session id → experiment variant. The assignment is deterministic across
+   * host restarts and is logged once to `_meta/state/rank-experiment.jsonl`.
+   */
+  const rankModes = new Map();
+  const rankModeFor = (agent) => {
+    const id = bareId(agent && agent.id);
+    if (!id) return injectConfig.rankMode;
+    if (!rankModes.has(id)) {
+      const experiment = injectConfig.rankExperiment;
+      const variant = experiment.enabled
+        ? resolveRankMode({ sessionId: id, rankMode: injectConfig.rankMode, experiment })
+        : injectConfig.rankMode;
+      rankModes.set(id, variant);
+      if (experiment.enabled) recordAssignment(root, { sessionId: id, variant });
+    }
+    return rankModes.get(id);
+  };
   const cache = new Map();
   /** Session id → true (memory forced on) | false (memory silenced). */
   const overrides = new Map();
@@ -216,8 +241,10 @@ export function apply(ctx, config = {}) {
       /* advisory: ranking must never affect the turn */
     }
   };
-  const recentQueryFor = (agent) => {
-    if (!agent || injectConfig.rankMode !== 'relevance') return '';
+  const recentQueryFor = (agent, mode = null) => {
+    if (!agent) return '';
+    const resolved = mode || rankModeFor(agent);
+    if (resolved !== 'relevance') return '';
     const entry = recentUserText.get(bareId(agent.id));
     if (!entry || Date.now() - entry.at > injectConfig.relevanceMaxAgeMs) return '';
     return entry.text || '';
@@ -1117,7 +1144,9 @@ export function apply(ctx, config = {}) {
     if (sessionId) {
       const agent = lookupAgent(sessionId);
       if (agent) {
-        sessionQuery = recentQueryFor(agent);
+        const rankMode = rankModeFor(agent);
+        session.rankMode = rankMode;
+        sessionQuery = rankMode === 'relevance' ? recentQueryFor(agent, rankMode) : '';
         session.cwd = cwdOf(agent) || null;
         // Opening the page is the natural repair point for a renamed workspace:
         // the registry follows the store id, never a client-supplied path.
@@ -1133,6 +1162,7 @@ export function apply(ctx, config = {}) {
         // is not. Keep the two concepts separate so the panel does not lie.
         session.mode = stores && (stores.globalRoot || stores.projectRoot) ? 'on' : modeOf(agent);
         session.manual = overrides.has(bareId(agent.id));
+        session.rankMode = rankModeFor(agent);
         session.scope = memoryScopeFor(agent, stores);
         session.projectRoot = stores ? stores.projectRoot : null;
         session.globalRoot = stores ? stores.globalRoot : null;
@@ -1216,6 +1246,21 @@ export function apply(ctx, config = {}) {
     // explanation labels are carried on the notes by notesWithInjection/
     // snapshotAll from the same catalog-backed candidate universe as selection.
     const injectionReasons = new Map(sorted.map((note) => [String(note.id), note.injection || null]));
+    const memoryHealth = (() => {
+      try {
+        if (allView) return null;
+        const healthReport = analyzeMemoryHealth({
+          notes: scanStoreNotes(view.root),
+          accessRows: readAccessRows(view.root),
+          scope: session.scope || 'global',
+          storeKind: view.kind,
+          storeSlug: view.kind === 'project' && view.meta ? view.meta.slug : undefined,
+        });
+        return { ...healthReport, headline: healthSummary(healthReport).headline };
+      } catch {
+        return null;
+      }
+    })();
     return {
       workspace: allView ? null : view.root,
       view,
@@ -1282,6 +1327,10 @@ export function apply(ctx, config = {}) {
       })),
       recent: sorted.slice(0, 5),
       session,
+      rankExperiment: injectConfig.rankExperiment.enabled
+        ? { enabled: true, modes: injectConfig.rankExperiment.modes, summary: assignmentSummary(root) }
+        : null,
+      memoryHealth,
       ingest: (() => {
         try {
           const live = ingestor.snapshot();
@@ -1367,7 +1416,8 @@ export function apply(ctx, config = {}) {
           // 3.1: prompt selection is the engine surface, unconditionally. The 2.x
           // plugin-local selection copy was removed after the stabilization
           // window, so this path cannot drift from the panel (c-1007, 3.0.1 D1).
-          const sessionQuery = recentQueryFor(agent);
+          const rankMode = rankModeFor(agent);
+          const sessionQuery = rankMode === 'relevance' ? recentQueryFor(agent, rankMode) : '';
           const surface = createSurface({
             legacyRoot: root,
             globalRoot,
@@ -1378,7 +1428,7 @@ export function apply(ctx, config = {}) {
           const { globalPicked, projectPicked } = surface.selectInjection(
             scope,
             controlsFor(agent.id),
-            { query: sessionQuery },
+            { query: sessionQuery, rankMode },
           );
           if (globalPicked.length) {
             recordRecall(globalPicked.map((note) => note.id), 'inject', `session:${bareId(agent.id)}`, stores.globalRoot);

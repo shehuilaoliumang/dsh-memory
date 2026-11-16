@@ -4,6 +4,12 @@ import { fileURLToPath } from 'node:url';
 /**
  * Same-origin / CSRF / loopback guard for the local `/kb/*` HTTP surface.
  *
+ * The host's own Connection fence runs first (`options.admission`, wired to
+ * `ctx.connection.requestRejection`): when DSH rejects a request for Host or
+ * Origin reasons the guard stops there instead of trusting its own weaker
+ * same-origin comparison. Connection's 401 (no browser session) is not fatal
+ * here because Desktop and local scripts reach these routes without one.
+ *
  * This is not full process authentication: a same-user process that can open
  * the port can still call it. It blocks a malicious web page from driving the
  * vault through the user's browser, rejects non-loopback connections, and
@@ -69,6 +75,17 @@ export function requestRejected(req, res, options = {}) {
   if (localAddress && !isLoopbackAddress(localAddress)) {
     reject(res, 403, 'non-loopback connection rejected');
     return true;
+  }
+  // DSH Connection's Host/Origin fence and browser authentication, when the
+  // host supplies it. A 403 is that fence refusing the request however it is
+  // dressed, so it stops here; a 401 only means the caller has no
+  // authenticated browser session (the Desktop bridge and local scripts never
+  // do), so the checks below still decide for local callers.
+  if (options.admission) {
+    if (options.admission(req) === 403) {
+      reject(res, 403, 'rejected by the DSH host/origin fence');
+      return true;
+    }
   }
   let sameOrigin = false;
   if (origin) {

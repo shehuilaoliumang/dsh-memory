@@ -394,7 +394,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 
 已知限制：Client 文案目前是简体中文硬编码，未接 Client locale 服务；面板展示已接入项目及当前/可写/只读状态，创建/接入卡片用于已有库或仓库自带库（新库由 Host 自动创建，§17.9），没有独立的授权管理页。自动写入在 Host 侧触发器，不在面板操作里。软刷新只更新已挂载面板的数据，不加载新版前端代码；完整重载始终以 `/kb/busy` 为准，忙时不强制。浏览器原生 `Ctrl+R` 仍是可绕过 busy 检查的兜底，本功能不改变这一点。触发器单测的临时目录用系统 temp（`os.tmpdir()`），不写 `_meta/state/`。
 
-`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1 即 403），但监听地址本身仍由 DSH Host 配置决定。所有路由经 `http-guard.js`：带 `Origin` 时必须与 `Host` 同源，`sec-fetch-site: cross-site` 一律拒绝，写端点只接受 `content-type: application/json` 并校验 Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；非浏览器写请求还必须携带从 `_meta/state/http-token` 读取的 `x-kb-local-token`。`/kb/ui` 仅收客户端版本，免 token。这挡浏览器跨站请求和随意本机进程，不等于操作系统进程级鉴权——同机进程读文件后仍可访问端口（§15）。
+`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1 即 403），但监听地址本身仍由 DSH Host 配置决定。所有路由先问 DSH Connection（`ctx.connection.requestRejection`）：403 直接拒绝，401（无已认证浏览器会话）继续本地判定；再经 `http-guard.js`：带 `Origin` 时必须与 `Host` 同源，`sec-fetch-site: cross-site` 一律拒绝，写端点只接受 `content-type: application/json` 并校验 Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；非浏览器写请求还必须携带从 `_meta/state/http-token` 读取的 `x-kb-local-token`。`/kb/ui` 仅收客户端版本，免 token。这挡浏览器跨站请求和随意本机进程，不等于操作系统进程级鉴权——同机进程读文件后仍可访问端口（§15）。
 
 ## 11. 规则层（v1.1 新增）
 
@@ -508,7 +508,7 @@ node _meta/scripts/kb.mjs consolidate --json   # 看 truth
 
 ### 15.4 HTTP 写入口
 
-`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1/::ffff:127.0.0.1 即 403），但监听地址本身仍由 DSH Host 配置决定。写端点五道检查：Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；`Origin` 必须与 `Host` 同源；拒绝 `sec-fetch-site: cross-site`；只接受 `content-type: application/json`；非浏览器写请求还要带 `x-kb-local-token`（从 `_meta/state/http-token` 读取，0600）。`/kb/ui` 仅上报客户端版本，免 token。CSRF token 在进程内生成，local token 写入 state 文件，重启即换。写端点包括 `/kb/mode`、`/kb/scope`、`/kb/atom`、`/kb/atoms/batch`、`/kb/atom/to-global`、`/kb/workspace/attach`、`/kb/workspace/rename`、`/kb/workspace/relocate`、`/kb/extract`、`/kb/judge*`、`/kb/consolidate`。
+`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 不是 127.0.0.1/::1/::ffff:127.0.0.1 即 403），但监听地址本身仍由 DSH Host 配置决定。写端点先过 DSH Connection 准入（`ctx.connection.requestRejection`，403 拒绝、401 继续本地判定），再做五道检查：Host 启动时生成、`/kb/panel.json` 下发的 `x-kb-csrf` token；`Origin` 必须与 `Host` 同源；拒绝 `sec-fetch-site: cross-site`；只接受 `content-type: application/json`；非浏览器写请求还要带 `x-kb-local-token`（从 `_meta/state/http-token` 读取，0600）。`/kb/ui` 仅上报客户端版本，免 token。CSRF token 在进程内生成，local token 写入 state 文件，重启即换。写端点包括 `/kb/mode`、`/kb/scope`、`/kb/atom`、`/kb/atoms/batch`、`/kb/atom/to-global`、`/kb/workspace/attach`、`/kb/workspace/rename`、`/kb/workspace/relocate`、`/kb/extract`、`/kb/judge*`、`/kb/consolidate`。
 
 **诚实边界**：能读时同用户进程可以读 token 文件；也能伪造 `sec-fetch-site: same-origin` 并先 GET `/kb/panel.json` 拿到 CSRF token。因此这提高的是“随手写”的门槛，不是进程认证，不能写成“阻止任意本机进程”。
 

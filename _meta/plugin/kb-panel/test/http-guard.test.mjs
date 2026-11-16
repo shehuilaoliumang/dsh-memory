@@ -158,3 +158,63 @@ test('a browser same-origin write only needs the CSRF token', () => {
   );
   assert.equal(result.rejected, false);
 });
+
+test('the DSH host fence rejects a request the local checks would accept', () => {
+  const result = exchange(
+    { host: '127.0.0.1:9223', origin: 'http://127.0.0.1:9223' },
+    'GET',
+    { admission: () => 403 },
+  );
+  assert.equal(result.rejected, true);
+  assert.equal(result.status, 403);
+  assert.match(result.body, /host\/origin fence/);
+});
+
+test('the DSH host fence runs before same-origin and fetch-metadata checks', () => {
+  const result = exchange(
+    { host: '127.0.0.1:9223', origin: 'http://127.0.0.1:9223' },
+    'POST',
+    { admission: () => 403, token: 'csrf', localToken: 'local' },
+  );
+  assert.equal(result.status, 403);
+  assert.match(result.body, /host\/origin fence/);
+});
+
+test('a DSH 401 (no browser session) still lets local callers through the guard', () => {
+  const read = exchange(
+    { host: '127.0.0.1:9223', origin: 'http://127.0.0.1:9223' },
+    'GET',
+    { admission: () => 401 },
+  );
+  assert.equal(read.rejected, false);
+  const write = exchange(
+    {
+      host: '127.0.0.1:9223',
+      'content-type': 'application/json',
+      'x-kb-csrf': 'csrf',
+      'x-kb-local-token': 'local',
+    },
+    'POST',
+    { admission: () => 401, token: 'csrf', localToken: 'local' },
+  );
+  assert.equal(write.rejected, false);
+  const bare = exchange(
+    { host: '127.0.0.1:9223', 'content-type': 'application/json', 'x-kb-csrf': 'csrf' },
+    'POST',
+    { admission: () => 401, token: 'csrf', localToken: 'local' },
+  );
+  assert.equal(bare.status, 403);
+});
+
+test('a non-loopback connection is rejected without asking the host', () => {
+  let asked = 0;
+  const result = exchange(
+    {},
+    'GET',
+    { admission: () => { asked += 1; return 401; } },
+    { localAddress: '192.168.1.20' },
+  );
+  assert.equal(result.status, 403);
+  assert.match(result.body, /non-loopback/);
+  assert.equal(asked, 0);
+});

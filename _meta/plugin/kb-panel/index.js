@@ -162,6 +162,24 @@ export function apply(ctx, config = {}) {
   }
   const refreshMs = Number(config.refreshMs) > 0 ? Number(config.refreshMs) : 30000;
   /**
+   * DSH Connection admission for every `/kb/*` route. The web-server carrier
+   * applies no Host/Origin policy of its own, so each handler asks Connection
+   * first: `403` is the Host/Origin fence refusing the request, `401` means the
+   * caller has no authenticated browser session (the loopback + token guard
+   * below then decides), and `undefined` means it may proceed to that guard.
+   */
+  const admission = (req) => {
+    try {
+      const connection = ctx.get('connection');
+      return connection && typeof connection.requestRejection === 'function'
+        ? connection.requestRejection(req)
+        : undefined;
+    } catch {
+      return 403;
+    }
+  };
+  const guard = (req, res, options = {}) => requestRejected(req, res, { admission, ...options });
+  /**
    * Injection ranking mode, read once per plugin load from the vault config:
    * `heat` (default, historical) or `relevance` (recent user message + heat
    * fallback). A switch is intentional: relevance ordering changes what the
@@ -1473,7 +1491,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res)) return;
+        if (guard(req, res)) return;
         let sessionId;
         let workspace;
         let build;
@@ -1510,7 +1528,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res)) return;
+        if (guard(req, res)) return;
         let query = '';
         let workspace;
         let limit = 10;
@@ -1547,7 +1565,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res)) return;
+        if (guard(req, res)) return;
         let id;
         let workspace;
         try {
@@ -1597,7 +1615,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -1632,7 +1650,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -1682,7 +1700,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -1717,7 +1735,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const view = workspaceView(body && body.workspace, null);
@@ -1752,7 +1770,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -1810,7 +1828,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const id = bareId(body && body.session);
@@ -1851,7 +1869,7 @@ export function apply(ctx, config = {}) {
         }
         // Build telemetry is not a vault write and may fire before the first
         // panel response (which is where the Client learns the token).
-        if (requestRejected(req, res, { write: true })) return;
+        if (guard(req, res, { write: true })) return;
         try {
           const body = await readJsonBody(req);
           lastUiReport = {
@@ -1879,7 +1897,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const agent = lookupAgent(body && body.session);
@@ -1910,7 +1928,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const result = await judgeWorker.runOnce();
           sendJson(res, 200, { ok: true, ...result, worker: judgeWorker.snapshot() });
@@ -1933,7 +1951,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const offset = Math.max(0, Number(body && body.offset) || 0);
@@ -1974,7 +1992,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const view = workspaceWriteTarget(body && body.workspace);
@@ -2018,7 +2036,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res)) return;
+        if (guard(req, res)) return;
         try {
           let agents;
           try {
@@ -2052,7 +2070,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const body = await readJsonBody(req);
           const view = workspaceWriteTarget(body && body.workspace);
@@ -2097,7 +2115,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         let specFile = '';
         try {
           const body = await readJsonBody(req);
@@ -2173,7 +2191,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         let specFile = '';
         try {
           const body = await readJsonBody(req);
@@ -2280,7 +2298,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           const outcome = judgeWorker.retryErrored();
           sendJson(res, 200, { ok: true, ...outcome, worker: judgeWorker.snapshot() });
@@ -2300,7 +2318,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res, { write: true, token: csrfToken, localToken })) return;
+        if (guard(req, res, { write: true, token: csrfToken, localToken })) return;
         try {
           sendJson(res, 200, { ok: true, consolidate: await runConsolidate() });
         } catch (error) {
@@ -2320,7 +2338,7 @@ export function apply(ctx, config = {}) {
           sendJson(res, 405, { error: 'method not allowed' });
           return;
         }
-        if (requestRejected(req, res)) return;
+        if (guard(req, res)) return;
         try {
           sendJson(res, 200, {
             ...ingestor.snapshot(),

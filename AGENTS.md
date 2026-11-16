@@ -111,7 +111,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 改源码后：`plugin_manager set_plugin` 在 `include:kb-panel` 上禁用→启用即可热加载（**profile 全局操作**，会瞬时撤掉所有会话的 core.md 注入，需排在空档）。CI 在 `validate` 前先跑 `_meta/scripts/check-plugin-load.mjs` 加载形状闸门（JSON/BOM/manifest/patch/语法），覆盖 1.14.0 那类 BOM 导致插件被拒载的盲区；该闸门是静态形状检查，不替代真实 Host 启动。
 
-`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 非 127.0.0.1/::1 即 403），但监听地址仍由 DSH Host 决定。所有路由经 `http-guard.js`：`Origin` 必须与 `Host` 同源，`sec-fetch-site: cross-site` 拒绝，写端点只接受 `application/json` 并校验 `/kb/panel.json` 下发的 `x-kb-csrf` token（`/kb/ui` 免 token）；非浏览器写请求还必须带 `_meta/state/http-token`（0600）里的 `x-kb-local-token`。这挡浏览器跨站写，也让未读 token 文件的普通脚本不能直接写；同用户进程仍可伪造浏览器头或读 token 文件，因此不是操作系统进程级鉴权。
+`/kb/*` 的 handler 拒绝非 loopback 连接（`req.socket.localAddress` 非 127.0.0.1/::1 即 403），但监听地址仍由 DSH Host 决定。所有路由先过 DSH Connection 准入：`ctx.connection.requestRejection(req)` 返回 403 即拒绝（`rejected by the DSH host/origin fence`，Host/Origin 栅栏比本地同源判断更强），返回 401（无已认证浏览器会话）不拦，继续下面的本地判定；再经 `http-guard.js`：`Origin` 必须与 `Host` 同源，`sec-fetch-site: cross-site` 拒绝，写端点只接受 `application/json` 并校验 `/kb/panel.json` 下发的 `x-kb-csrf` token（`/kb/ui` 免 token）；非浏览器写请求还必须带 `_meta/state/http-token`（0600）里的 `x-kb-local-token`。这挡浏览器跨站写，也让未读 token 文件的普通脚本不能直接写；同用户进程仍可伪造浏览器头或读 token 文件，因此不是操作系统进程级鉴权。
 
 **脱敏**：`redact.js` 在 `append-session` 写 raw 与裁判 prompt 前替换常见 token/密钥（`sk-*`、GitHub/Slack/AWS、Bearer、`password=…`、PEM 私钥）；这是模式匹配，不保证覆盖所有形态，已落盘的原文与 git 历史不会被追改。
 

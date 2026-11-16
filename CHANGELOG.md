@@ -2,6 +2,15 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 3.2.1 — 2026-11-16
+
+安全补丁（patch：`/kb/*` 路由接入 DSH Connection 准入；无新功能、无存储格式变化、无写入边界变化）。
+
+- **DSH 准入**：`_meta/plugin/kb-panel/index.js` 每个路由 handler 先调 `ctx.connection.requestRejection(req)`（经 `ctx.get('connection')`；服务不存在或抛错按 403 处理）。`403` 是 Host/Origin 栅栏拒绝——直接返回 403 `rejected by the DSH host/origin fence`，不再依赖本地同源比较；`401` 只表示没有已认证的浏览器会话（Desktop 的 IPC 桥、本地脚本、HTTP 宿主都属于此类），因此放行给原有 loopback/token 判定。`_meta/plugin/kb-panel/http-guard.js` 新增 `options.admission`，在 loopback 检查之后、同源检查之前执行。
+- **动机**：`ctx.webServer.register` 挂的路由不经过 DSH Connection 的 Host/Origin 准入。awesome-dsh-plugin 维护者在合并收录条目时据此披露"HTTP 路由没有 DSH 的访问检查"；本补丁补上这一层，以便更新条目去掉那半句。
+- **测试**：`_meta/plugin/kb-panel/test/http-guard.test.mjs` 增 5 条——host fence 拒绝本地检查本会放行的请求、fence 先于同源/fetch-metadata、401 时本地读与带 token 写仍通过而裸写仍 403、非 loopback 连接不询问宿主管线。
+- **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.2.1；插件 197/197、engine 78/78、脚本 17/17、smoke 106/106、`check-plugin-load` 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS；本地 `validate` 16 篇/主索引 14 + 归档 1、0 警告。
+
 ## 3.2.0 — 2026-11-06
 
 记忆智能增强（minor：候选建议与分层确认、自适应注入预算与排序实验、记忆健康、检索意图/向量回退；仍零运行时依赖、写入 fail-closed、无跨库写）。

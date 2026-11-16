@@ -56,8 +56,25 @@ import { isInsideLegacy, resolveContext, resolveWriteTarget } from '../../engine
 import { createSurface, readAccessRows, scanStoreNotes } from '../../engine/lib/read-model.mjs';
 import { assignmentSummary, recordAssignment, resolveRankExperiment, resolveRankMode } from './rank-experiment.mjs';
 import { analyzeMemoryHealth, healthSummary } from '../../engine/lib/health.mjs';
+import { runCli } from '../../engine/lib/index.mjs';
 
 export const inject = ['webServer', 'systemPrompt'];
+
+/**
+ * `~`/`~/x` expansion for configured paths. Empty input stays empty so callers
+ * can tell "not configured" from "configured to the empty string".
+ */
+export function expandHome(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed === '~') return os.homedir();
+  if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) return path.join(os.homedir(), trimmed.slice(2));
+  return trimmed;
+}
+
+/** Store root for a marketplace install: the parent of the global store. */
+export const DEFAULT_STORE_ROOT = path.dirname(DEFAULT_GLOBAL_ROOT);
 
 const LAYERS = ['10_Raw', '20_Digest', '30_Canon'];
 const NOTE_BODY_LIMIT = 200000;
@@ -135,12 +152,29 @@ function readJsonBody(req) {
  * reject HTML form posts (`text/plain`, `application/x-www-form-urlencoded`).
  */
 export function apply(ctx, config = {}) {
-  const root = path.resolve(config.workspaceRoot || process.cwd());
+  const configuredRoot = expandHome(config.workspaceRoot);
+  // No configured root means "installed from npm, no vault of its own": the
+  // store lives at ~/.dsh-memory, the parent of DEFAULT_GLOBAL_ROOT, so a fresh
+  // install has somewhere to write before the user opens any project.
+  const root = configuredRoot ? path.resolve(configuredRoot) : DEFAULT_STORE_ROOT;
   // Phase 5: the legacy root stays the explicit project store, while a global
   // preference store and other attached project stores are discovered per
   // session. Discovery is trust-gated by the user-level registry (stores.js).
-  const globalRoot = path.resolve(config.globalRoot || DEFAULT_GLOBAL_ROOT);
-  const registryFile = path.resolve(config.registryFile || DEFAULT_REGISTRY_FILE);
+  const globalRoot = path.resolve(expandHome(config.globalRoot) || DEFAULT_GLOBAL_ROOT);
+  const registryFile = path.resolve(expandHome(config.registryFile) || DEFAULT_REGISTRY_FILE);
+  /**
+   * First-run bootstrap. Only the *default* root is created silently: a
+   * configured path belongs to the user, and dropping a memory skeleton into
+   * their notes would be worse than an empty memory. `init` is idempotent and
+   * writes the store's own `.gitignore` when the directory is `.dsh-memory`.
+   */
+  if (config.autoInit !== false && !configuredRoot && !isStoreRoot(root)) {
+    const created = runCli(['init'], { root });
+    if (created.code !== 0) console.warn(`[kb-panel] cannot initialise ${root}: ${(created.stderr || '').trim()}`);
+  }
+  if (config.autoInit !== false && !configuredRoot && isStoreRoot(root) && !isStoreRoot(globalRoot)) {
+    runCli(['init'], { root: globalRoot });
+  }
   // Per-process CSRF token: the Client reads it from `/kb/panel.json` (same
   // origin) and echoes it on every write. A cross-origin page cannot read it.
   const csrfToken = randomBytes(16).toString('hex');

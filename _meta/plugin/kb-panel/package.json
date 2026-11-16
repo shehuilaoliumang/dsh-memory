@@ -1,9 +1,29 @@
 {
-  "name": "@local/kb-panel",
-  "version": "3.2.1",
-  "private": true,
+  "name": "dsh-kb-panel",
+  "version": "3.3.2",
+  "description": "Governed long-term memory for dsh: an append-only raw layer, confirmed-only injection, isolated project stores, and a local memory page.",
+  "license": "MIT",
   "type": "module",
-  "description": "Knowledge base page and multi-project memory: global preference store + explicitly attached project stores, schema §5 pipeline trigger, and the local /kb/* surface.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shehuilaoliumang/dsh-memory.git",
+    "directory": "_meta/plugin/kb-panel"
+  },
+  "homepage": "https://github.com/shehuilaoliumang/dsh-memory#readme",
+  "bugs": {
+    "url": "https://github.com/shehuilaoliumang/dsh-memory/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "memory",
+    "agent-memory",
+    "knowledge-base"
+  ],
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.0 <0.3.0"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -17,6 +37,8 @@
     "ingest.js",
     "judge.js",
     "http-guard.js",
+    "inject-ranking.mjs",
+    "rank-experiment.mjs",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg"
@@ -32,5 +54,8 @@
         "@deepseek-ai/dsh-client-ui-conversation"
       ]
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

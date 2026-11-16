@@ -120,7 +120,7 @@ notes.push(`${jsonFiles.length} JSON config(s) parsed`);
 // 2) Plugin manifest shape (the exact surface the DSH profile loader reads).
 const pkg = readJsonStrict('_meta/plugin/kb-panel/package.json');
 if (pkg) {
-  if (pkg.name !== '@local/kb-panel') fail(`plugin name must be @local/kb-panel, got ${pkg.name}`);
+  if (pkg.name !== 'dsh-kb-panel') fail(`plugin name must be dsh-kb-panel, got ${pkg.name}`);
   if (pkg.type !== 'module') fail('plugin package.json must declare "type": "module"');
   if (!pkg.dsh || !pkg.dsh.bundle || typeof pkg.dsh.bundle.patch !== 'string') {
     fail('plugin package.json is missing dsh.bundle.patch');
@@ -195,7 +195,7 @@ if (enginePkg) {
   } else {
     if (patchBuf.length >= 3 && patchBuf.subarray(0, 3).equals(BOM)) fail(`${patchRel}: UTF-8 BOM is not allowed`);
     const text = patchBuf.toString('utf8');
-    if (!text.includes('@local/kb-panel')) fail(`${patchRel}: does not insert @local/kb-panel`);
+    if (!text.includes(pkg.name)) fail(`${patchRel}: does not insert ${pkg.name}`);
     const firstLine = text.split(/\r?\n/).find((line) => line.trim() && !line.trim().startsWith('#'));
     if (!firstLine || !firstLine.trim().startsWith('- ')) fail(`${patchRel}: does not look like a loader patch list`);
   }

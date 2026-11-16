@@ -77,6 +77,16 @@ node _meta/scripts/kb.mjs --root C:\path\to\project\.dsh-memory attach --write
 
 **可维护性**：根目录 `VERSION` 是唯一版本号（**版本号纪律：UI/文档补丁走 patch，行为变更才 minor，结构性模块变化走 major**），`CHANGELOG.md` 记录各阶段；`kb.mjs init` 幂等创建 7 个实际使用的目录（不创建未使用的顶层目录）；frontmatter parser 与工作页节名在 `_meta/engine/lib/shared/`，插件直接 import engine（2.1 起无 shim），CLI 与插件共用；同分钟会话按前缀加 `-2`/`-3` 去重；`access.jsonl` 超阈值自动轮转、不删除；`_meta/scripts/check-plugin-load.mjs` 是 CI 第一步的**加载形状闸门**（全部 JSON 禁 BOM/可解析、manifest 与文件存在、engine 清单/版本/语法、bundle patch 形状、`node --check`），本地改插件/engine/清单后先跑它；导出安全规则集中在 `_meta/scripts/lib/export-rules.mjs`（纯函数 + 17 单测 + CI「Script unit tests」），导出/发布脚本不得另写判断。
 
+## 安装插件（npm）
+
+```bash
+dsh plugin --profile web add dsh-kb-panel
+```
+
+不配 `workspaceRoot` 时库默认在 `~/.dsh-memory`：首次运行自动 `init`（生成 `10_Raw/` 等 7 个目录与 `_meta/config.json`，目录名是 `.dsh-memory` 时写自忽略的 `.gitignore`），不需要你先准备 vault。想指向自己的 Obsidian vault 或已有记忆库，在 profile 的 bundle patch 里填 `workspaceRoot`（绝对路径或 `~/...`）；**填了就不再自动建库**，路径由你负责。
+
+包是**单包 + 内置 engine**：npm 不能打包包根之外的路径，所以 `_meta/scripts/build-npm.mjs` 在装配时把 `_meta/engine/{lib,hosts,bin}` 拷进 `vendor/engine/`，并把插件里的 `../../engine/*` import 改写成 `./vendor/engine/*`。仓库内仍是 engine/plugin 分开的结构与相对 import，开发、测试、CI 都不需要先构建；发布前跑 `node _meta/scripts/build-npm.mjs --check` 复现整条装配并验证（相对 import 全部可解析、vendored engine 能 `init` + `validate`）。engine 自身仍是 `private: true`，不单独发布。
+
 ## 引擎包（可继承性）
 
 v2.0.0 起规则层抽成宿主无关的 `_meta/engine/`（`@local/kb-engine`，零 DSH 依赖）：**CLI** `node _meta/engine/bin/kb.mjs --root <库> <command>` 供脚本/其它宿主调用（`--root` 也可用 `KB_ROOT`/`KB_DEFAULT_ROOT`）；**模块导出** `_meta/engine/lib/index.mjs` 与 `package.json` 的 `exports` 子路径（context/stores/work-brief/promote/redact/shared）供进程内 import。仓库内所有命令仍可走 `_meta/scripts/kb.mjs`——它是设置默认 root 的 20 行**兼容包装**。依赖方向固定为 **engine ← plugin**（engine 不 import DSH/插件）。v2.1 起 6 个插件 shim 已删除，插件直接 import `_meta/engine/lib/*`；engine 增加跨进程 registry 锁 `withRegistryLock`，导出规则抽为纯函数并进 CI。v2.2 起提供**进程内 API**：`runCli(argv, { root })` → `{ code, stdout, stderr }`、不污染宿主状态，`createEngine({ root }).run(argv)` 为状态化门面（同步、单线程、单根顺序）；同时库面行为改由 **policy** 表达（legacy 不是独立行为分支，见下）。v2.3 起排序按曝光加权（`inject`×0.1）、项目 store 带 1 个 exploration 槽，注入优先读 `catalog.jsonl`（含 title/scope/subject），BM25 检索按字段加权。v2.4 起检索增加拼音/首字母与同义词回退，`/kb/panel.json` 逐条给出注入原因，`workspace=all` 提供只读多库合并视图。v3.0 起注入选择/解释/检索/全库快照统一到 `read-model.mjs`，并新增宿主契约与零依赖 MCP stdio 第二宿主；3.0.1 起 prompt 注入也走同一 `surface.selectInjection()`，parity 夹具覆盖全局预算/顺序/跨库取代；3.1.0 新增零依赖本地 HTTP 第三宿主与 direct/MCP/HTTP 一致性闸门，并删除 `surface.unified` 回退与插件 legacy 三件套；3.2.0 增加候选建议/分层确认/自适应预算/健康检查/检索意图与哈希向量回退，仍零运行时依赖、写入 fail-closed；3.2.1 把 `/kb/*` 路由接入 DSH Connection 准入（`requestRejection` 的 403 直接拒绝，401 放行给本地 loopback/token 判定），补上 `webServer.register` 缺失的 Host/Origin 栅栏。2.0.0 是结构版本（行为不变），2.1–2.4 是行为 minor，3.0.0 是内部结构 major（行为边界不变），3.0.1 为第 17 轮复审 D1/D2 补丁，3.1.0 为第三宿主 minor，3.2.0 为记忆智能 minor。

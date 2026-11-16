@@ -130,3 +130,6 @@
 2026-11-03 11:25 | status | 2026-11-03-a-0004 → active scope=global
 2026-11-03 11:25 | status | 2026-11-03-a-0003 → active scope=global
 2026-11-03 11:25 | status | 2026-11-03-a-0002 → active scope=global
+2026-11-16 09:58 | extract | session-<redacted>e2-0561-4f25-a2e9-29b21fc22012 候选 1 条 → judge 队列（idle）
+2026-11-16 10:22 | extract | session-<redacted>e2-0561-4f25-a2e9-29b21fc22012 候选 3 条 → judge 队列（idle）
+2026-11-16 12:16 | extract | session-<redacted>e2-0561-4f25-a2e9-29b21fc22012 候选 1 条 → judge 队列（idle）

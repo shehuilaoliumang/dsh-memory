@@ -1,10 +1,12 @@
 - insert:
     - id: kb-panel
-      name: '@local/kb-panel'
+      name: 'dsh-kb-panel'
       config:
-        workspaceRoot: '<path-to-vault>'
+        # 默认库：安装后没有配置 workspaceRoot 时使用 ~/.dsh-memory（首次运行自动建库）。
+        # 想指向自己的 Obsidian vault 或已有记忆库时再填绝对路径或 ~/...。
+        # workspaceRoot: 'D:/notes/MyVault'
         refreshMs: 30000
-        # 入库触发器默认开启；真正的阈值在 _meta/config.json（extract / ingest），
+        # 入库触发器默认开启；真正的阈值在库内 _meta/config.json（extract / ingest），
         # 那份文件改完即生效，不需要重载插件。
         ingest:
           enabled: true

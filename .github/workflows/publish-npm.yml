@@ -1,0 +1,54 @@
+name: Publish npm package
+
+# Publishes dsh-kb-panel to npm with trusted publishing (OIDC): no long-lived
+# token, no 2FA bypass token, provenance attached by the registry.
+#
+# One-time setup on npm (package settings → Trusted Publisher → GitHub Actions):
+#   organization/user : shehuilaoliumang
+#   repository        : dsh-memory
+#   workflow filename : publish-npm.yml
+#   environment       : (leave empty)
+# The workflow filename, repository and ref must match exactly; npm rejects the
+# OIDC token otherwise.
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Show tool versions
+        run: node --version && npm --version
+
+      - name: Plugin load-shape gate
+        run: node _meta/scripts/check-plugin-load.mjs
+
+      - name: Build npm package (vendored engine)
+        run: node _meta/scripts/build-npm.mjs --out dist-npm
+
+      # npm detects the GitHub OIDC token because this job has
+      # `id-token: write`, so no NODE_AUTH_TOKEN is needed. Registry left
+      # explicit so a stray user/global npmrc cannot redirect the publish.
+      - name: Publish to npm
+        working-directory: dist-npm
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+        run: npm publish --access public

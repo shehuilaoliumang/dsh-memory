@@ -98,6 +98,7 @@ function allowed(rel) {
   if (rel.startsWith('_meta/')) return true;
   if (rel.startsWith('scripts/')) return true;
   if (rel === '.github/workflows/kb.yml') return true;
+  if (rel === '.github/workflows/publish-npm.yml') return true;
   return false;
 }
 

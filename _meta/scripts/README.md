@@ -85,7 +85,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 用 PowerShell 而非 `node:test`：DSH 沙箱禁止 node 子进程用管道 stdio 再 spawn（EPERM），而 kb.mjs 是独立脚本、需要真实执行。
 
-管理页（`@local/kb-panel` v2.4.0，客户端 c44，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」；2.1 新增「记一条」与「本轮注入」，2.2 新增「本会话固定/排除」、「整理」与类型筛选，2.3 新增「深度搜索」，2.4 新增注入原因短标签/详情「标签：原因」与「来源」、搜索回退提示、工作区 >1 时「全部记忆库」只读合并视图）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
+管理页（`dsh-kb-panel` v2.4.0，客户端 c44，工作区选择器为自绘玻璃下拉并显示各库实际名称、下拉浮于内容卡之上、玻璃表面不透明度 92–96%；改名用自绘玻璃对话框；迁移卡片区分「已迁移」/「未确认副本」；2.1 新增「记一条」与「本轮注入」，2.2 新增「本会话固定/排除」、「整理」与类型筛选，2.3 新增「深度搜索」，2.4 新增注入原因短标签/详情「标签：原因」与「来源」、搜索回退提示、工作区 >1 时「全部记忆库」只读合并视图）在本机新工作区第一次开会话时自动创建并接入 `<cwd>/.dsh-memory`：Host 调 `kb.mjs init --slug`（含自忽略 `.dsh-memory/.gitignore`）后写用户级 registry 并默认允许记录；已有库与克隆仓库自带库仍需在记忆页显式创建/接入。目标只认 live 会话 cwd，legacy 根、任意路径一律拒绝；不自动扫描磁盘、不批量创建所有工作区。已确认原子详情另有「提升为全局」（`POST /kb/atom/to-global`，§17.10）：复制到 `~/.dsh-memory/global` 并把源条置 `promoted`，人工单条、不自动/不批量。project 与 legacy（知识库本体）的「改名」（`POST /kb/workspace/rename`）只改显示名（global 不可）；文件夹迁移时「重新定位到当前路径」（`POST /kb/workspace/relocate`）人工确认 registry（§17.11）。
 
 ## 发布
 
@@ -102,7 +102,7 @@ node _meta/scripts/publish-public.mjs --dir D:\dsh-memory-public --orphan
 
 ## 加载形状闸门
 
-`node _meta/scripts/check-plugin-load.mjs`（零依赖；CI 第一步，在 validate 之前）：严格解析仓库内全部 JSON 配置并禁止 UTF-8 BOM（对应 1.14.0 的 BOM outage 类问题）；校验插件 manifest 的 `name`/`type`/`dsh.bundle.patch`/`dsh.client.platform`/`version`（与根 `VERSION` 一致）与 engine manifest（`@local/kb-engine`/version 与根 `VERSION` 一致），并确认 `exports`/`files` 指向的文件（含 19 个 engine 文件）都存在；校验 bundle patch 无 BOM、形如 loader patch 列表且含 `@local/kb-panel`；对引擎与插件的 36 个 JS 跑 `node --check`。它是**静态加载形状检查**（不启动 DSH Host），保证“loader 会碰的东西都存在且能解析”；CI 在 `validate` 前先跑它，本地改插件/engine/清单后也应先跑一次。
+`node _meta/scripts/check-plugin-load.mjs`（零依赖；CI 第一步，在 validate 之前）：严格解析仓库内全部 JSON 配置并禁止 UTF-8 BOM（对应 1.14.0 的 BOM outage 类问题）；校验插件 manifest 的 `name`/`type`/`dsh.bundle.patch`/`dsh.client.platform`/`version`（与根 `VERSION` 一致）与 engine manifest（`@local/kb-engine`/version 与根 `VERSION` 一致），并确认 `exports`/`files` 指向的文件（含 19 个 engine 文件）都存在；校验 bundle patch 无 BOM、形如 loader patch 列表且含 `dsh-kb-panel`；对引擎与插件的 36 个 JS 跑 `node --check`。它是**静态加载形状检查**（不启动 DSH Host），保证“loader 会碰的东西都存在且能解析”；CI 在 `validate` 前先跑它，本地改插件/engine/清单后也应先跑一次。
 
 ## 插件单测
 
@@ -136,5 +136,5 @@ node _meta/plugin/kb-panel/test/search-fallback.test.mjs
 ## 已知限制
 
 - frontmatter 解析只支持单行 `key: value` 与行内数组 `[a, b]`；不支持多行字符串、嵌套对象。
-- 第 3 步裁判需要 LLM，脚本只产候选，不调用模型。第 1/2 步的触发与调度在 `@local/kb-panel`（`_meta/plugin/kb-panel/ingest.js`）：轮末 `turn/end` 自动 `append-session`，静默/兜底定时跑 `candidates`；裁判在 `judge.js` 里直调 `llm.stream`。
+- 第 3 步裁判需要 LLM，脚本只产候选，不调用模型。第 1/2 步的触发与调度在 `dsh-kb-panel`（`_meta/plugin/kb-panel/ingest.js`）：轮末 `turn/end` 自动 `append-session`，静默/兜底定时跑 `candidates`；裁判在 `judge.js` 里直调 `llm.stream`。
 - `consolidate` 已接召回日志：stale 判定取「最后编辑」与「最后召回」较晚者，并输出 `hot` Top10 与 `readCandidates`（被读过 ≥2 次的 inbox 条目建议确认）。

@@ -17,7 +17,7 @@
 
 ## 写
 
-- 每轮对话原文由 `@local/kb-panel` 触发器在 `turn/end` **自动追加**，模型不需要手动 `append-session`（手动仅作兜底）。
+- 每轮对话原文由 `dsh-kb-panel` 触发器在 `turn/end` **自动追加**，模型不需要手动 `append-session`（手动仅作兜底）。
 - 抽取由静默窗口触发，语义裁判（deepseek-flash 直调）判定后经 `kb.mjs add-atom` 写入 `20_Digest/atoms/`。
 - **知识库建设窗口默认冻结**：待抽取窗口命中 `extract.meta_keywords` 达到阈值时不进裁判队列（施工日志不是记忆，见 2026-10-20-a-0016）；原文照常落 `10_Raw/`。
 - **裁判写入默认 `status: inbox`，不会进入对话**；必须显式确认（`set-status --status active`）才可能被注入。
@@ -93,6 +93,8 @@ node --test --test-isolation=none _meta/scripts/test/export-rules.test.mjs   # �
 
 **依赖方向**：engine ← plugin（`engine` 不 import DSH/插件）。2.1 起 shim 已移除，插件直接 import engine（`_meta/engine/lib/*`）；2.2 起 engine 提供进程内 API `runCli(argv, {root})` / `createEngine({root}).run(argv)`（同步、单线程、单根顺序，返回 `{code, stdout, stderr}`，不污染宿主进程状态），`_meta/scripts/kb.mjs` 仍是默认 root 的兼容包装。仓库结构：`_meta/engine/`（引擎）+ `_meta/scripts/`（兼容入口、导出/发布与 CI 脚本）+ `_meta/plugin/kb-panel/`（DSH 适配层）。
 
+**npm 发行（3.3.0 起）**：对外只发 **一个包** `dsh-kb-panel`，engine 仍是 `private: true` 不单独发。npm 不能打包包根之外的路径，所以发布走 `_meta/scripts/build-npm.mjs`：把 `_meta/engine/{lib,hosts,bin}` 拷进 `vendor/engine/`、把插件里的 `../../engine/*` import 改写成 `./vendor/engine/*`、生成带 `engines.dsh` 与 `dsh.bundle.patch` 的清单，并**验证**（相对 import 全可解析 + vendored `runCli` 能 `init`/`validate`）。仓库内结构与相对 import 不变，开发/测试/CI 都不需要先构建；CI 有 `node _meta/scripts/build-npm.mjs --check` 与 `_meta/scripts/test/build-npm.test.mjs` 两道闸。没有配置 `workspaceRoot` 时库根默认 `~/.dsh-memory`（`DEFAULT_STORE_ROOT = dirname(DEFAULT_GLOBAL_ROOT)`），`apply()` 首次运行自动 `runCli(['init'])`；配置了路径就**不**自动建库（`autoInit: false` 也能关闭）。`workspaceRoot`/`globalRoot`/`registryFile` 都支持 `~` 展开。
+
 规则层冒烟测试（把 vault 复制到临时目录跑全部命令，不碰真实库）：
 
 ```powershell
@@ -104,7 +106,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 ## 界面插件
 
-`@local/kb-panel`（源码 `_meta/plugin/kb-panel/`，客户端 build `2026-11-06-c47`）：composer 记忆 chip、会话「⋯」菜单行、侧栏知识库页、侧栏「刷新界面」按钮；记忆页工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，胶囊触发钮 + 玻璃菜单 + 选中品牌色 + 外点/Escape 关闭 + aria；下拉菜单经状态条 `z-index` 浮于列表卡之上；玻璃表面底不透明度 92–96%，≥90%）；改名用自绘玻璃命名对话框（Electron 无 `window.prompt`，Enter 保存 / Escape 或点遮罩取消）；迁移卡片区分「已迁移」与「未确认副本」两态；2.1 起新增「记一条」（`POST /kb/remember`，只写当前可写库、默认 inbox、须人工确认）与「本轮注入」折叠卡（只读展示 panel `injection` manifest）；2.2 起注入卡给固定标识、详情可「本会话固定/排除」（`POST /kb/session/memory`）、新增「整理」对话框（归档过期/重复旧副本/确认热候选，走 `/kb/atoms/batch`）与类型筛选 chips；2.3 起新增「深度搜索」（只读 `GET /kb/search.json`，服务端 BM25 顺序、本地输入仍子串过滤）；2.4 起（c44）记忆页列表显示逐条注入短标签、详情显示「标签：原因」与「来源：库名」，深度搜索显示回退策略与匹配方式，可见工作区 >1 时选择器前置「全部记忆库」（`workspace=all` 只读合并、隐藏写操作）；3.2 起（c47）新增列表多选「批量确认/归档」、记忆健康卡、预算外「接近入选」提示，深度搜索显示意图与向量回退。主按钮是软刷新（只重读快照，不卸载页面、不中断对话）；右侧菜单的「完整重载界面」在空闲时立即执行，有对话运行时排队等待并自动重载，也可取消；3.1.0 起 c46 修复 DSH NEXT 页脚兼容导致的菜单裁切（portal + fixed 定位）。
+`dsh-kb-panel`（源码 `_meta/plugin/kb-panel/`，客户端 build `2026-11-06-c47`）：composer 记忆 chip、会话「⋯」菜单行、侧栏知识库页、侧栏「刷新界面」按钮；记忆页工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，胶囊触发钮 + 玻璃菜单 + 选中品牌色 + 外点/Escape 关闭 + aria；下拉菜单经状态条 `z-index` 浮于列表卡之上；玻璃表面底不透明度 92–96%，≥90%）；改名用自绘玻璃命名对话框（Electron 无 `window.prompt`，Enter 保存 / Escape 或点遮罩取消）；迁移卡片区分「已迁移」与「未确认副本」两态；2.1 起新增「记一条」（`POST /kb/remember`，只写当前可写库、默认 inbox、须人工确认）与「本轮注入」折叠卡（只读展示 panel `injection` manifest）；2.2 起注入卡给固定标识、详情可「本会话固定/排除」（`POST /kb/session/memory`）、新增「整理」对话框（归档过期/重复旧副本/确认热候选，走 `/kb/atoms/batch`）与类型筛选 chips；2.3 起新增「深度搜索」（只读 `GET /kb/search.json`，服务端 BM25 顺序、本地输入仍子串过滤）；2.4 起（c44）记忆页列表显示逐条注入短标签、详情显示「标签：原因」与「来源：库名」，深度搜索显示回退策略与匹配方式，可见工作区 >1 时选择器前置「全部记忆库」（`workspace=all` 只读合并、隐藏写操作）；3.2 起（c47）新增列表多选「批量确认/归档」、记忆健康卡、预算外「接近入选」提示，深度搜索显示意图与向量回退。主按钮是软刷新（只重读快照，不卸载页面、不中断对话）；右侧菜单的「完整重载界面」在空闲时立即执行，有对话运行时排队等待并自动重载，也可取消；3.1.0 起 c46 修复 DSH NEXT 页脚兼容导致的菜单裁切（portal + fixed 定位）。
 
 只读接口：`/kb/panel.json`（快照 + 会话模式/范围 + 热度 + 每条 `injection` 原因）、`/kb/note.json?id=`、`/kb/ingest.json`（cursor/队列/裁判/整理/客户端版本）、`/kb/search.json?workspace&q&limit`（深度搜索，BM25 + 拼音/同义词回退、本店白名单、`workspace=all` 只读跨库、不记 access）。
 操作接口（POST）：`/kb/mode`（会话记忆开关）、`/kb/scope`（会话项目范围）、`/kb/session/memory`（本会话 pin/mute，ephemeral、不改笔记状态）、`/kb/extract`（立即抽窗口）、`/kb/judge`（排空裁判队列）、`/kb/judge/retry`、`/kb/judge/eval`（分批跑黄金集，评估用）、`/kb/consolidate`（返回整理明细；动作走 `/kb/atoms/batch`）、`/kb/atom`（单条状态）、`/kb/atom/to-global`（单条已确认原子提升为全局，§17.10）、`/kb/atoms/batch`、`/kb/workspace/attach`（当前工作区建库/接入）、`/kb/workspace/rename`（改 project/legacy 显示名，§17.11）、`/kb/workspace/relocate`（确认文件夹迁移重定位，§17.11）、`/kb/ui`（客户端版本自报）。
@@ -117,7 +119,7 @@ $env:KB_REPO = (Get-Location).Path; Invoke-Expression (Get-Content _meta/scripts
 
 ## 写权限
 
-- **单写通道**：只有 DSH 写入。`10_Raw/`、`_meta/catalog*.jsonl`、`_meta/log.md` 由 `@local/kb-panel` 的入库触发器（`ingest.js`）与裁判（`judge.js`）经 `kb.mjs` 自动写入。
+- **单写通道**：只有 DSH 写入。`10_Raw/`、`_meta/catalog*.jsonl`、`_meta/log.md` 由 `dsh-kb-panel` 的入库触发器（`ingest.js`）与裁判（`judge.js`）经 `kb.mjs` 自动写入。
 - `20_Digest/`、`30_Canon/` 由五步管线产出；人工修改也走 DSH。
 - `_meta/state/`（运行时状态）与 `_meta/access.jsonl`（召回遥测）不进 git。
 - Claudian / Workbuddian 默认只读，除非用户明确要求。

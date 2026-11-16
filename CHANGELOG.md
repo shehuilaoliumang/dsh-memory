@@ -2,6 +2,28 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 3.3.2 — 2026-11-16
+
+npm 发布链路改用 Trusted Publishing（patch：只换发布方式；插件代码、存储格式、注入规则不变）。
+
+- **背景**：账号开启 2FA 后，npm 把 `dsh-kb-panel` 3.3.0 / 3.3.1 的 `PUT` 自动转成「暂存发布」，再次发布会得到 `409 Conflict - Cannot publish over previously staged version`；而 `GET /-/stage` 对 bypass token 返回 `{"items":[],"total":0}`、网页暂存页也没有待审条目，无法自行批准。npm 的官方建议正是对 CI 使用 Trusted Publishing。
+- **新增** `.github/workflows/publish-npm.yml`：`workflow_dispatch` / `release` 触发，`permissions: contents: read` + `id-token: write`；步骤为 `check-plugin-load.mjs` → `build-npm.mjs --out dist-npm` → `npm publish --access public`。身份由 GitHub OIDC 证明，**不需要 token、不需要 OTP**，registry 侧自动附 provenance。
+- **一次性设置**：npm 包设置 → Trusted Publisher → GitHub Actions，填 `shehuilaoliumang` / `dsh-memory` / `publish-npm.yml` / 环境留空；三者必须与实际 workflow 完全一致。
+- **导出白名单**：`_meta/scripts/export-public.mjs` 允许 `.github/workflows/publish-npm.yml` 进公开快照（公开仓库要能跑这个 workflow）。
+- **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.3.2；闸门与 3.3.1 相同（插件 197、engine 78、脚本 18、smoke 106、check-plugin-load 7/11/23/2/45、validate 16 篇/14+1 归档）。
+
+## 3.3.0 — 2026-11-16
+
+npm 发行化（minor：对外可安装的包形态；仓库内结构、存储格式、写入边界与注入规则不变）。
+
+- **单包发布**：插件包改名为 `dsh-kb-panel`、去掉 `private: true`、补 `repository`/`homepage`/`bugs`/`keywords`/`engines`（`node >=20`、`dsh >=0.2.0 <0.3.0`）。engine 仍是 `private: true`，**不单独发布**：npm 不能打包包根之外的路径，所以发布物由新增的 `_meta/scripts/build-npm.mjs` 装配——把 `_meta/engine/{lib,hosts,bin}` 拷进 `vendor/engine/`，用正则 `/(['"])\.\.\/\.\.\/engine\//g` 把插件里的跨包 import 改写成 `./vendor/engine/`，生成显式 `files` 清单。仓库内仍是 engine/plugin 分离结构与相对 import，开发、测试、CI 都不需要先构建。
+- **构建即验证**：`build-npm.mjs` 装配后逐文件检查相对 import 可解析（悬空即失败）、清单含 `dsh.bundle.patch`/`engines.dsh`/指向公开仓库的 `repository`，并用 vendored `runCli` 在临时库里跑 `init` + `validate`；`--check` 模式构建到临时目录后删除。新增 `_meta/scripts/test/build-npm.test.mjs`（1 条，覆盖包名/版本/清单字段、import 改写、`files[]` 齐全、patch 不含作者机器路径），CI 增 `npm package build (dry run)` 步骤。
+- **默认库根**：没有配置 `workspaceRoot` 时根为 `~/.dsh-memory`（`DEFAULT_STORE_ROOT = dirname(DEFAULT_GLOBAL_ROOT)`），`apply()` 首次运行自动 `runCli(['init'])` 建骨架；配置了路径就**不**自动建库（避免把记忆骨架撒进用户笔记），`autoInit: false` 可显式关闭。`workspaceRoot`/`globalRoot`/`registryFile` 支持 `~` 展开（`expandHome`）。
+- **bundle patch 去掉写死路径**：`cordis.patch.yml` 不再含作者的绝对 `workspaceRoot`，改为注释说明默认根与可填写法；包名同步为新名，`check-plugin-load.mjs` 的插件名/patch 名检查改为从清单读取，不再硬编码 `@local/kb-panel`。
+- **发布清单修复**：旧 `files` 漏了 `inject-ranking.mjs` 与 `rank-experiment.mjs`（本地 `link:` 安装不会暴露，npm 打包会缺模块），一并补上。
+- **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.3.0；插件 197/197、engine 78/78、脚本 18/18、smoke 106/106、`check-plugin-load` 7 JSON / 11 manifest / 23 engine / 2 locale / 45 JS；本地 `validate` 16 篇/主索引 14 + 归档 1、0 警告；parity 13 content drift / 0 regression；bench 检索约 351ms、零 spawn。
+- **市场侧**：目录条目已在 3.2.1 PR #15706 更新；DSH 应用内市场只索引 npm 包（`scripts/lib/market-index.mjs` 跳过无 `npm` 的条目），本版本是进入应用内「插件 → 发现」的前置条件，索引由上游每日 probe，无法强推。
+
 ## 3.2.1 — 2026-11-16
 
 安全补丁（patch：`/kb/*` 路由接入 DSH Connection 准入；无新功能、无存储格式变化、无写入边界变化）。

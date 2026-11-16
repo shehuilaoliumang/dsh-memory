@@ -227,7 +227,7 @@ updated: 2026-10-20
 
 ### 触发实现（v1.3）
 
-第 1、2 步**不再依赖模型自觉**，由 `@local/kb-panel` 的宿主半边（`_meta/plugin/kb-panel/ingest.js`）驱动；插件只在会话工作目录位于 `memory/` 内时生效，判据与 core.md 注入共用同一个 `modeOf`。
+第 1、2 步**不再依赖模型自觉**，由 `dsh-kb-panel` 的宿主半边（`_meta/plugin/kb-panel/ingest.js`）驱动；插件只在会话工作目录位于 `memory/` 内时生效，判据与 core.md 注入共用同一个 `modeOf`。
 
 | 步 | 触发点 | 行为 |
 |---|---|---|
@@ -366,7 +366,7 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 
 ## 9. 治理
 
-- **单写通道**：只允许一个 agent（DSH）写，其它 agent 默认只读。DSH 的 Host 插件经 `kb.mjs` 代写 `10_Raw/`、`_meta/catalog*.jsonl`、`_meta/log.md`（当前 `@local/kb-panel`，迁移目标 `@local/kb-writer`）；插件不直接改笔记正文。
+- **单写通道**：只允许一个 agent（DSH）写，其它 agent 默认只读。DSH 的 Host 插件经 `kb.mjs` 代写 `10_Raw/`、`_meta/catalog*.jsonl`、`_meta/log.md`（当前 `dsh-kb-panel`，迁移目标 `@local/kb-writer`）；插件不直接改笔记正文。
 - **Pickpen 与 git 二选一**：已定 git 为唯一权威，Pickpen 只读（c-0002）。
 - **索引禁止手改**：`catalog*.jsonl` 由脚本重建。
 - **每周复查**：`status: review` 的条目要么修、要么降级。
@@ -378,13 +378,13 @@ node _meta/scripts/kb.mjs delete --ticket <ticket> --key <key> --json
 3. ~~抽取用哪个轻量模型~~ → 已定：`deepseek-flash` 子代理（c-0004）。
 4. 冲突裁决做成界面还是只写日志。
 5. 第 5 步「晋升提议」的确认界面（v2）。
-6. ~~核心记忆如何"真正注入"~~ → 已定：`@local/kb-panel` 插件用 `systemPrompt.context()` 注入（§12）。
+6. ~~核心记忆如何"真正注入"~~ → 已定：`dsh-kb-panel` 插件用 `systemPrompt.context()` 注入（§12）。
 
 ## 12. 界面层插件（v1.2 新增）
 
 | 项 | 内容 |
 |---|---|
-| 包名 | `@local/kb-panel`（本地目录安装，源码 `_meta/plugin/kb-panel/`） |
+| 包名 | `dsh-kb-panel`（本地目录安装，源码 `_meta/plugin/kb-panel/`） |
 | Host | `systemPrompt.context()` 注入 `30_Canon/core.md` + 工作页简报（§13）；`GET /kb/panel.json` 提供派生快照；`GET /kb/ingest.json` 提供触发器状态（cursor/窗口/队列） |
 | 触发器 | `ingest.js`：监听 `session/event` 的 `turn/end` → 第 1 步原文追加；按会话 cwd 选可写项目库，外部库走 `kb.mjs --root <store>`；未命中时仅 legacy root/无 cwd 回退 legacy ingestor，跳过子会话与记忆开关 `off`；静默/兜底/轮数 → 第 2 步 `candidates` 调度；第 3 步由 `judge.js` 直调 deepseek-flash，队列只用于重试/审计；`index.js` 在 `agent/created` 与 `turn/end` 兜底时按项目判定自动建库并允许记录（§17.9）；`POST /kb/atom/to-global` 把单条已确认原子提升到全局库并把源条置 `promoted`（§17.10）；`POST /kb/workspace/rename` 改显示名、`POST /kb/workspace/relocate` 确认文件夹迁移（§17.11） |
 | Client | `conversation.composer.dock` 的 `kb-memory` 条目：chip 显示“已记住 N · 待确认 N”，弹层显示三项计数与最近记住；侧栏“记忆”页四页签（待确认/已记住/项目状态/全部），默认待确认，隐藏 raw/session，详情按状态给确认/归档/改范围，正文 Markdown 渲染；工作区选择器为自绘玻璃下拉 `WorkspacePicker`（替代原生 `select`，客户端 c40：胶囊触发钮、玻璃菜单、选中品牌色、外点/Escape 关闭、`aria-haspopup/listbox/option`；状态条 `position: relative` + `z-index: 40` 保证下拉浮于内容卡之上；玻璃表面底不透明度 92–96%，≥90% 并保留 `backdrop-filter`；改名用自绘玻璃对话框，Enter 保存 / Escape 或点遮罩取消，Electron 无 `window.prompt`），显示各库 `project.json.title`（legacy 同）；已确认 digest 原子详情提供「提升为全局」（c30，§17.10）；project 与 legacy 可写工作区显示「改名」、迁移候选时显示「重新定位到当前路径」卡片（c36 起区分「已迁移」与「未确认副本」两种文案）；2.1 起（c37）新增「记一条」对话框（空态引导按钮，`POST /kb/remember`，默认 inbox、必须人工确认）与「本轮注入」折叠卡（只读展示 `/kb/panel.json` 的 `injection` manifest）；2.2 起（c39）注入卡给固定标识、详情可「本会话固定/排除」（`POST /kb/session/memory`，ephemeral、快照 `session.memoryControls`）、新增「整理」对话框（归档过期/重复旧副本/确认热候选，走 `/kb/atoms/batch`）与类型筛选 chips（含计数）；2.3 起（c40）新增「深度搜索」（只读 `GET /kb/search.json?workspace&q&limit`，服务端 BM25 顺序展示，本地输入仍子串过滤）；2.4 起（c44）记忆页列表显示逐条注入短标签、详情显示「标签：原因」与「来源：库名」，搜索展示回退策略与匹配方式，可见工作区 >1 时工作区选择器前置「全部记忆库」（`workspace=all` 只读合并各库结果、隐藏全部写操作）；`sidebar.footer.action` 的「刷新界面」主按钮只重读面板快照（软刷新，不卸载页面），右侧菜单的「完整重载界面」空闲即重载、忙时排队到全部会话空闲后自动重载，绝不强制中断 |

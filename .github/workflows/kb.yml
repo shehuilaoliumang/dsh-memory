@@ -23,6 +23,10 @@ jobs:
         shell: pwsh
         run: node _meta/scripts/check-plugin-load.mjs
 
+      - name: npm package build (dry run)
+        shell: pwsh
+        run: node _meta/scripts/build-npm.mjs --check
+
       - name: Validate notes and indexes
         shell: pwsh
         run: node _meta/scripts/kb.mjs validate
@@ -55,7 +59,7 @@ jobs:
         shell: pwsh
         run: node _meta/engine/test/bench-read-model.mjs
 
-      - name: Script unit tests (export rules)
+      - name: Script unit tests (export rules, npm build)
         shell: pwsh
         run: |
           $failed = $false

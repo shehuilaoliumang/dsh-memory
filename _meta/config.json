@@ -24,7 +24,7 @@
     "meta_threshold": 2
   },
   "ingest": {
-    "note": "第 1/2 步触发器的运行参数（@local/kb-panel 读取）。状态文件写在 stateDir，已被 .gitignore 忽略。",
+    "note": "第 1/2 步触发器的运行参数（dsh-kb-panel 读取）。状态文件写在 stateDir，已被 .gitignore 忽略。",
     "enabled": true,
     "nodePath": "",
     "stateDir": "_meta/state",

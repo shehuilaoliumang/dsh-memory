@@ -38,6 +38,14 @@ jobs:
       - name: Show tool versions
         run: node --version && npm --version
 
+      - name: Show OIDC availability
+        env:
+          OIDC_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
+        run: |
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL set: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL != '' }}"
+          echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
+          echo "GITHUB_WORKFLOW_REF: $GITHUB_WORKFLOW_REF"
+
       - name: Plugin load-shape gate
         run: node _meta/scripts/check-plugin-load.mjs
 
@@ -51,4 +59,4 @@ jobs:
         working-directory: dist-npm
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-        run: npm publish --access public
+        run: npm publish --access public --provenance --loglevel verbose

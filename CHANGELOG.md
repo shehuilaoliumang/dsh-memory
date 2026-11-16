@@ -10,6 +10,7 @@
 - **动机**：`ctx.webServer.register` 挂的路由不经过 DSH Connection 的 Host/Origin 准入。awesome-dsh-plugin 维护者在合并收录条目时据此披露"HTTP 路由没有 DSH 的访问检查"；本补丁补上这一层，以便更新条目去掉那半句。
 - **测试**：`_meta/plugin/kb-panel/test/http-guard.test.mjs` 增 5 条——host fence 拒绝本地检查本会放行的请求、fence 先于同源/fetch-metadata、401 时本地读与带 token 写仍通过而裸写仍 403、非 loopback 连接不询问宿主管线。
 - **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.2.1；插件 197/197、engine 78/78、脚本 17/17、smoke 106/106、`check-plugin-load` 7 JSON / 9 manifest / 23 engine / 2 locale / 45 JS；本地 `validate` 16 篇/主索引 14 + 归档 1、0 警告。
+- 公开快照：3.2.1 已发布（public commit `ff403b8`，tree `19df8d1`，CI `43788202442` 全绿；快照 14 篇/主索引 12 + 归档 1、0 警告）。同步向上游 awesome-dsh-plugin 提 PR 去掉条目描述里"HTTP 路由没有 DSH 的访问检查"那半句（en/zh 改为"路由先过 DSH Connection 的 Host/Origin 准入"）。
 
 ## 3.2.0 — 2026-11-06
 

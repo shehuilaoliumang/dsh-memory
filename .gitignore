@@ -16,3 +16,6 @@ _meta/state/
 # 召回日志：高频追加的遥测，是热度的唯一来源，但不是笔记
 _meta/access.jsonl
 _meta/access-*.jsonl
+
+# 宿主/引擎测试的临时工作区（每个用例自建自清，失败时可能残留）
+.tmp-test-run/

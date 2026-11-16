@@ -2,6 +2,14 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 3.3.3 — 2026-11-16
+
+发布链路补上 token 兜底（patch：只换发布认证方式；插件代码、存储格式、注入规则不变）。
+
+- **背景**：3.3.2 的纯 OIDC 方案在 npm 侧回 `404 - OIDC token exchange error - package not found`——`dsh-kb-panel` 上还没有 Trusted Publisher 记录，而本机 CLI 建不了：`npm trust` 用 bypass-2FA 的 granular token 直接 `403 Granular access tokens that bypass two-factor authentication may not perform this action`。也就是说在绑定信任方之前必须有一条 token 通路。
+- **workflow**：`actions/setup-node@v5` 增加 `registry-url: https://registry.npmjs.org`，发布步骤注入 `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`（setup-node 写的 `.npmrc` 读该变量，token 不进命令行）；保留 `id-token: write` 与 `--provenance`，信任方一旦配置好 npm 会优先用 OIDC。去掉上一版的 OIDC 探测步骤与 `--loglevel verbose`。
+- **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.3.3；闸门与 3.3.2 相同（插件 197、engine 78、脚本 18、smoke 106、check-plugin-load 7/11/23/2/45、validate 16 篇/14+1 归档）。
+
 ## 3.3.2 — 2026-11-16
 
 npm 发布链路改用 Trusted Publishing（patch：只换发布方式；插件代码、存储格式、注入规则不变）。

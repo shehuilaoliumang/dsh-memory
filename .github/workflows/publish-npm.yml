@@ -1,7 +1,13 @@
 name: Publish npm package
 
-# Publishes dsh-kb-panel to npm with trusted publishing (OIDC): no long-lived
-# token, no 2FA bypass token, provenance attached by the registry.
+# Publishes dsh-kb-panel to npm.
+#
+# Auth: the NPM_TOKEN repository secret holds a publish-capable npm token.
+# Prefer a granular token with "Bypass two-factor authentication (2FA)" off and
+# the package's Trusted Publisher configured (see below); a Classic "Automation"
+# token also works. OIDC trusted publishing is still enabled (`id-token: write`),
+# so provenance is attached by the registry; when the Trusted Publisher exists
+# npm uses it and ignores the token.
 #
 # One-time setup on npm (package settings → Trusted Publisher → GitHub Actions):
 #   organization/user : shehuilaoliumang
@@ -34,17 +40,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Show tool versions
         run: node --version && npm --version
-
-      - name: Show OIDC availability
-        env:
-          OIDC_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
-        run: |
-          echo "ACTIONS_ID_TOKEN_REQUEST_URL set: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL != '' }}"
-          echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
-          echo "GITHUB_WORKFLOW_REF: $GITHUB_WORKFLOW_REF"
 
       - name: Plugin load-shape gate
         run: node _meta/scripts/check-plugin-load.mjs
@@ -52,11 +51,12 @@ jobs:
       - name: Build npm package (vendored engine)
         run: node _meta/scripts/build-npm.mjs --out dist-npm
 
-      # npm detects the GitHub OIDC token because this job has
-      # `id-token: write`, so no NODE_AUTH_TOKEN is needed. Registry left
-      # explicit so a stray user/global npmrc cannot redirect the publish.
+      # setup-node writes an .npmrc that reads NODE_AUTH_TOKEN, so the token is
+      # never interpolated into a command line. Registry is pinned explicitly so
+      # a stray user/global npmrc cannot redirect the publish.
       - name: Publish to npm
         working-directory: dist-npm
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-        run: npm publish --access public --provenance --loglevel verbose
+        run: npm publish --access public --provenance

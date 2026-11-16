@@ -1,6 +1,6 @@
 {
   "name": "dsh-kb-panel",
-  "version": "3.3.2",
+  "version": "3.3.3",
   "description": "Governed long-term memory for dsh: an append-only raw layer, confirmed-only injection, isolated project stores, and a local memory page.",
   "license": "MIT",
   "type": "module",

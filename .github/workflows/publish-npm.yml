@@ -1,13 +1,7 @@
 name: Publish npm package
 
-# Publishes dsh-kb-panel to npm.
-#
-# Auth: the NPM_TOKEN repository secret holds a publish-capable npm token.
-# Prefer a granular token with "Bypass two-factor authentication (2FA)" off and
-# the package's Trusted Publisher configured (see below); a Classic "Automation"
-# token also works. OIDC trusted publishing is still enabled (`id-token: write`),
-# so provenance is attached by the registry; when the Trusted Publisher exists
-# npm uses it and ignores the token.
+# Publishes dsh-kb-panel to npm with trusted publishing (OIDC): no long-lived
+# token, no 2FA bypass token, provenance attached by the registry.
 #
 # One-time setup on npm (package settings → Trusted Publisher → GitHub Actions):
 #   organization/user : shehuilaoliumang
@@ -15,7 +9,7 @@ name: Publish npm package
 #   workflow filename : publish-npm.yml
 #   environment       : (leave empty)
 # The workflow filename, repository and ref must match exactly; npm rejects the
-# OIDC token otherwise.
+# OIDC token otherwise (it answers "OIDC token exchange error - package not found").
 
 on:
   workflow_dispatch:
@@ -51,12 +45,11 @@ jobs:
       - name: Build npm package (vendored engine)
         run: node _meta/scripts/build-npm.mjs --out dist-npm
 
-      # setup-node writes an .npmrc that reads NODE_AUTH_TOKEN, so the token is
-      # never interpolated into a command line. Registry is pinned explicitly so
-      # a stray user/global npmrc cannot redirect the publish.
+      # No NODE_AUTH_TOKEN: with a Trusted Publisher bound, npm exchanges the
+      # GitHub OIDC token for a short-lived publish credential. Registry is
+      # pinned so a stray user/global npmrc cannot redirect the publish.
       - name: Publish to npm
         working-directory: dist-npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
         run: npm publish --access public --provenance

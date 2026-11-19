@@ -52,8 +52,14 @@ jobs:
       # No NODE_AUTH_TOKEN: with a Trusted Publisher bound, npm exchanges the
       # GitHub OIDC token for a short-lived publish credential. Registry is
       # pinned so a stray user/global npmrc cannot redirect the publish.
+      - name: Show OIDC env
+        run: |
+          echo "request url: ${ACTIONS_ID_TOKEN_REQUEST_URL:+set}"
+          echo "request token: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+set}"
+          echo "repo: $GITHUB_REPOSITORY ref: $GITHUB_WORKFLOW_REF"
+
       - name: Publish to npm
         working-directory: dist-npm
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-        run: npm publish --access public --provenance --registry https://registry.npmjs.org/
+        run: npm publish --access public --provenance --registry https://registry.npmjs.org/ --loglevel silly

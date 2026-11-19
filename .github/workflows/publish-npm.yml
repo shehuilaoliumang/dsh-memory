@@ -31,10 +31,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # No `registry-url` here on purpose: setup-node would then write an
+      # `.npmrc` holding `_authToken=${NODE_AUTH_TOKEN}` (defaults to the GitHub
+      # token), npm would authenticate with it and answer 404 instead of
+      # exchanging the OIDC token. With no credential on disk, the Trusted
+      # Publisher flow is the only one left.
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Show tool versions
         run: node --version && npm --version
@@ -52,4 +56,4 @@ jobs:
         working-directory: dist-npm
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --registry https://registry.npmjs.org/

@@ -49,6 +49,10 @@ jobs:
       - name: Build npm package (vendored engine)
         run: node _meta/scripts/build-npm.mjs --out dist-npm
 
+      # Refuse to publish a package that cannot be used from an empty store.
+      - name: Fresh install smoke (empty store)
+        run: node _meta/scripts/smoke-install.mjs
+
       # No NODE_AUTH_TOKEN and no setup-node `registry-url`: either one leaves an
       # `_authToken` on disk, npm then authenticates with that credential and the
       # registry answers 404 instead of exchanging the OIDC token. With nothing

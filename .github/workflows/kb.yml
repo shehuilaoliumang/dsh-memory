@@ -27,6 +27,13 @@ jobs:
         shell: pwsh
         run: node _meta/scripts/build-npm.mjs --check
 
+      # The published shape, not the repo shape: an empty store, the vendored
+      # CLI, one remembered atom, consolidate and validate. 3.3.3 shipped
+      # without this and failed on every one of those steps for new users.
+      - name: Fresh install smoke (empty store)
+        shell: pwsh
+        run: node _meta/scripts/smoke-install.mjs
+
       - name: Validate notes and indexes
         shell: pwsh
         run: node _meta/scripts/kb.mjs validate

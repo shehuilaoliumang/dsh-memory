@@ -2,6 +2,15 @@
 
 > 编号说明：记忆层已于 2026-11-02 重置。本文件 1.18.x 及更早版本提到的 `2026-10-xx-c-00xx` 决策编号是历史记录，指向已随重置删除的笔记（仅存 git `bdf14e3`；**该哈希是本地私有仓库历史，公开仓库不可解析**）；重置后的新决策编号从 `c-1001` 起（1.19.0 曾用 `c-0001`，1.19.1 起改为 `c-1001`，避免「同号不同事」）。
 
+## 3.3.5 — 2026-11-19
+
+补上发布包里缺的两个「引擎根文件」（patch：只改打包清单；插件代码、存储格式、注入规则不变）。
+
+- **症状**：从 npm 装上 3.3.4 后新建的库，`VERSION` 是 `0.0.0`，`kb.mjs validate` 报 `⚠ 缺少 _meta/templates/work.md`（`work-new` 因此没有模板可用）。原因是 engine 的相对根是「包根」（`DEFAULT_ROOT = lib/../../..`），而 `build-npm.mjs` 只拷了 `lib`/`hosts`/`bin`，包根既没有 `VERSION` 也没有 `_meta/templates`。
+- **打包**：`build-npm.mjs` 现在把仓库的 `VERSION` 与 `_meta/templates/` 一并放进包根，生成清单的 `files` 加 `VERSION`、`_meta/templates`。
+- **验证**：构建时的空库冒烟增加两条断言——`init` 出来的库必须有 `_meta/templates/work.md`，且 `VERSION` 必须等于包版本（不能是 `0.0.0`）。`_meta/scripts/smoke-install.mjs` 也随之覆盖这条路径。
+- **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.3.5；插件 197、engine 78、脚本 18、`check-plugin-load` 7/11/23/2/45、`build-npm --check`、`smoke-install`、`validate` 16 篇/14+1 归档。
+
 ## 3.3.4 — 2026-11-19
 
 修掉 npm 安装后「面板能开、但空库下三件事全失败」的两个缺陷（patch：不改存储格式、不改注入规则）。

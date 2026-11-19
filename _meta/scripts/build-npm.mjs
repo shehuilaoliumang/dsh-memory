@@ -93,6 +93,13 @@ export async function buildPackage(outDir) {
   copyFile(path.join(REPO, 'README.md'), path.join(outDir, 'README.md'));
   copyFile(path.join(REPO, 'LICENSE'), path.join(outDir, 'LICENSE'));
 
+  // The engine resolves its own templates and version relative to the package
+  // root (`DEFAULT_ROOT = lib/../../..`). Without these two, a store created by
+  // the installed package reports version 0.0.0 and every `work-new` warns that
+  // `_meta/templates/work.md` is missing.
+  copyFile(path.join(REPO, 'VERSION'), path.join(outDir, 'VERSION'));
+  copyDir(path.join(REPO, '_meta', 'templates'), path.join(outDir, '_meta', 'templates'));
+
   // 2. Vendored engine (lib + hosts + bin, so the CLI still works from the tarball).
   for (const name of ['lib', 'hosts', 'bin']) copyDir(path.join(ENGINE, name), path.join(outDir, 'vendor', 'engine', name));
   fs.writeFileSync(
@@ -115,7 +122,7 @@ export async function buildPackage(outDir) {
   //    and an explicit file list so the tarball is exactly what was built.
   const manifest = JSON.parse(fs.readFileSync(path.join(PANEL, 'package.json'), 'utf8'));
   manifest.version = version;
-  manifest.files = [...PLUGIN_FILES, ...PLUGIN_DIRS, 'vendor', 'README.md', 'LICENSE'];
+  manifest.files = [...PLUGIN_FILES, ...PLUGIN_DIRS, 'vendor', 'VERSION', '_meta/templates', 'README.md', 'LICENSE'];
   if (manifest.private === true) delete manifest.private;
   fs.writeFileSync(path.join(outDir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
@@ -140,6 +147,13 @@ export async function buildPackage(outDir) {
       const result = vendoredRun([step], { root: smokeRoot });
       if (result.code !== 0) throw new Error(`vendored engine ${step} failed:\n${result.stderr || result.stdout}`);
     }
+    // `init` stamps the new store with the engine version and copies the
+    // Markdown templates out of the package root; both only work when the
+    // tarball actually carries VERSION and _meta/templates.
+    const templateFile = path.join(smokeRoot, '_meta', 'templates', 'work.md');
+    if (!fs.existsSync(templateFile)) throw new Error('init did not copy _meta/templates/work.md into a new store');
+    const stamped = fs.readFileSync(path.join(smokeRoot, 'VERSION'), 'utf8').trim();
+    if (stamped !== version) throw new Error(`init stamped VERSION ${stamped}, expected ${version}`);
   } finally {
     fs.rmSync(smokeRoot, { recursive: true, force: true });
   }

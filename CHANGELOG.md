@@ -10,6 +10,7 @@
 - **打包**：`build-npm.mjs` 现在把仓库的 `VERSION` 与 `_meta/templates/` 一并放进包根，生成清单的 `files` 加 `VERSION`、`_meta/templates`。
 - **验证**：构建时的空库冒烟增加两条断言——`init` 出来的库必须有 `_meta/templates/work.md`，且 `VERSION` 必须等于包版本（不能是 `0.0.0`）。`_meta/scripts/smoke-install.mjs` 也随之覆盖这条路径。
 - **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.3.5；插件 197、engine 78、脚本 18、`check-plugin-load` 7/11/23/2/45、`build-npm --check`、`smoke-install`、`validate` 16 篇/14+1 归档。
+- **发布结果**：公开快照 `80d5bd4`（tree `eb03e1c`），`publish-npm` run `44526708020` 成功，`+ dsh-kb-panel@3.3.5`，registry `dist-tags.latest = 3.3.5`（`2026-11-19T12:48:03.765Z`）；tarball 201,164 字节，含 `VERSION`、`_meta/templates/work.md`、`vendor/engine/bin/kb.mjs`，`client.js:20` 注册 id 为 `dsh-kb-panel`；用包内 CLI 对空库 `init` + `validate` 得「版本 3.3.5 / 0 个警告」。
 
 ## 3.3.4 — 2026-11-19
 
@@ -19,6 +20,7 @@
 - **engine CLI 路径**：`index.js` 原先只找 `<store>/_meta/scripts/kb.mjs`。npm 安装的 `~/.dsh-memory` 里没有这个文件，于是「自动创建项目库」「手动记一条」「整理记忆」全部失败（面板本身仍能打开，所以不易发现）。现在按 `panelDir/vendor/engine/bin/kb.mjs`（npm 包）→ `panelDir/../../engine/bin/kb.mjs`（仓库 checkout）→ `<root>/_meta/scripts/kb.mjs`（legacy vault）依次解析，所有派生进程共用同一个值。
 - **测试**：`_meta/scripts/test/build-npm.test.mjs` 新增三条断言——构建产物的 `client.js` 必须以包名注册、`index.js` 必须解析到 vendored CLI 且文件存在、源清单不得声明 `vendor`（由构建生成）。
 - **版本/闸门**：`VERSION`、engine/plugin manifest 升 3.3.4；插件 197、engine 78、脚本 18、`check-plugin-load` 7/11/23/2/45、`build-npm --check`、`validate` 16 篇/14+1 归档。
+- **发布结果**：公开快照 `051f531`（tree `5350477`）；npm 发布两次失败都是 Trusted Publisher 记录缺失（`OIDC token exchange error - package not found`），重新绑定后 `publish-npm` run `44525367695` 成功（`+ dsh-kb-panel@3.3.4`，provenance 入 sigstore 透明日志 `3996590940`），registry `dist-tags.latest = 3.3.4`（`2026-11-19T12:39:00.744Z`）。首次从「未验证」的信任方发布仍走了暂存流水线，约 3 分钟后才可下载 tarball。
 
 ## 3.3.3 — 2026-11-16
 

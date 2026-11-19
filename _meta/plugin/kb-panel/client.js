@@ -17,7 +17,7 @@
  * Text is Simplified Chinese only, matching the rest of this bundle.
  */
 window.__ModuleLoader__.load({
-  id: '@local/kb-panel',
+  id: 'dsh-kb-panel',
   factory(require) {
     const React = require('react');
     const h = React.createElement;

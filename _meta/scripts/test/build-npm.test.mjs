@@ -37,6 +37,20 @@ test('npm package builds, rewrites cross-package imports, and stays publishable'
     assert.equal(fs.existsSync(path.join(outDir, 'README.md')), true);
     assert.equal(fs.existsSync(path.join(outDir, 'LICENSE')), true);
 
+    // The client half must register under the published package name: the host
+    // loads `dsh-kb-panel` and rejects a bundle that registers any other id
+    // ("loaded without registering ... via __ModuleLoader__.load").
+    const client = fs.readFileSync(path.join(outDir, 'client.js'), 'utf8');
+    assert.match(client, new RegExp(`id: '${manifest.name}'`));
+
+    // The panel shells out to the engine CLI; that path has to sit next to the
+    // plugin (vendor/), not inside the store, or a fresh marketplace install
+    // cannot create its own store, remember a note, or consolidate.
+    assert.match(index, /'vendor', 'engine', 'bin', 'kb\.mjs'/);
+    assert.equal(fs.existsSync(path.join(outDir, 'vendor', 'engine', 'bin', 'kb.mjs')), true);
+    const sourceManifest = JSON.parse(fs.readFileSync(path.join(REPO, '_meta', 'plugin', 'kb-panel', 'package.json'), 'utf8'));
+    assert.equal(sourceManifest.files.includes('vendor'), false, 'vendor is emitted by the build, not declared in the source manifest');
+
     // The patch template must not bake in the author's machine.
     const patch = fs.readFileSync(path.join(outDir, 'cordis.patch.yml'), 'utf8');
     assert.doesNotMatch(patch, /C:\/Users\//);

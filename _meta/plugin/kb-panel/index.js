@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { createIngestor, messageText, resolveNode, runProcess } from './ingest.js';
 import { createJudgeWorker } from './judge.js';
 import { requestRejected } from './http-guard.js';
@@ -653,7 +654,30 @@ export function apply(ctx, config = {}) {
   // `_meta/state/judge-dry-run.jsonl` so the distillation can be reviewed
   // before any atom can reach `20_Digest/`.
   const nodeRuntime = resolveNode({ ...config, home: profileHome }, process.env, process.platform);
-  const engineKb = path.join(root, '_meta', 'scripts', 'kb.mjs');
+  /**
+   * The engine CLI this panel shells out to. It must resolve **next to the
+   * plugin**, not inside the store: an npm install has no `_meta/scripts/` in
+   * `~/.dsh-memory`, so looking only at `<root>/_meta/scripts/kb.mjs` made
+   * "create project store", "remember one" and "consolidate" fail on a fresh
+   * marketplace install while the panel itself still opened.
+   */
+  const panelDir = path.dirname(fileURLToPath(import.meta.url));
+  const resolveEngineKb = () => {
+    const candidates = [
+      path.join(panelDir, 'vendor', 'engine', 'bin', 'kb.mjs'),
+      path.join(panelDir, '..', '..', 'engine', 'bin', 'kb.mjs'),
+      path.join(root, '_meta', 'scripts', 'kb.mjs'),
+    ];
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) return candidate;
+      } catch {
+        /* keep looking */
+      }
+    }
+    return candidates[candidates.length - 1];
+  };
+  const engineKb = resolveEngineKb();
 
   /** Enable/disable transcript capture flags of one project store's config. */
   const setStoreCapture = (storeRoot, enabled) => {

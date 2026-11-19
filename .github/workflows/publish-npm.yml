@@ -49,17 +49,20 @@ jobs:
       - name: Build npm package (vendored engine)
         run: node _meta/scripts/build-npm.mjs --out dist-npm
 
-      # No NODE_AUTH_TOKEN: with a Trusted Publisher bound, npm exchanges the
-      # GitHub OIDC token for a short-lived publish credential. Registry is
-      # pinned so a stray user/global npmrc cannot redirect the publish.
-      - name: Show OIDC env
+      # No NODE_AUTH_TOKEN and no setup-node `registry-url`: either one leaves an
+      # `_authToken` on disk, npm then authenticates with that credential and the
+      # registry answers 404 instead of exchanging the OIDC token. With nothing
+      # stored, the Trusted Publisher exchange is the only path left.
+      #
+      # If this step reports `OIDC token exchange error - package not found`,
+      # npm has no matching Trusted Publisher on package settings → Access.
+      - name: Check OIDC availability
         run: |
-          echo "request url: ${ACTIONS_ID_TOKEN_REQUEST_URL:+set}"
-          echo "request token: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+set}"
-          echo "repo: $GITHUB_REPOSITORY ref: $GITHUB_WORKFLOW_REF"
+          test -n "$ACTIONS_ID_TOKEN_REQUEST_URL" || { echo "id-token: write is missing"; exit 1; }
+          echo "workflow: $GITHUB_WORKFLOW_REF"
 
       - name: Publish to npm
         working-directory: dist-npm
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-        run: npm publish --access public --provenance --registry https://registry.npmjs.org/ --loglevel silly
+        run: npm publish --access public --provenance --registry https://registry.npmjs.org/
